@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, Dict
+
 from transformers import PretrainedConfig
 
 
@@ -32,10 +34,15 @@ class ModelConfig:
     norm_topk_prob: bool
     model_type: str
     architectures: list[str]
+    kimi: Any | None = None
 
     @property
     def is_moe(self) -> bool:
-        return "moe" in self.model_type
+        return (self.num_experts or 0) > 0
+
+    @property
+    def is_kimi(self) -> bool:
+        return self.kimi is not None
 
     @classmethod
     def from_hf(cls, config: PretrainedConfig) -> ModelConfig:
@@ -46,8 +53,42 @@ class ModelConfig:
                 if not getattr(config, attr, None) and getattr(top, attr, None):
                     setattr(config, attr, getattr(top, attr))
 
+        if getattr(config, "model_type", None) == "kimi_linear":
+            from .kimi_config import KimiTextConfig
+
+            kimi = KimiTextConfig(**config.to_dict())
+            kimi.validate_text()
+            return cls(
+                num_layers=kimi.num_hidden_layers,
+                num_qo_heads=kimi.num_attention_heads,
+                num_kv_heads=1,
+                head_dim=kimi.kv_lora_rank + kimi.qk_rope_head_dim,
+                hidden_size=kimi.hidden_size,
+                vocab_size=kimi.vocab_size,
+                intermediate_size=kimi.intermediate_size,
+                rms_norm_eps=kimi.rms_norm_eps,
+                rotary_config=RotaryConfig(
+                    head_dim=kimi.qk_rope_head_dim,
+                    rotary_dim=kimi.qk_rope_head_dim,
+                    max_position=kimi.max_position_embeddings,
+                    base=kimi.rope_theta,
+                    scaling=kimi.rope_scaling,
+                ),
+                hidden_act=kimi.hidden_act,
+                tie_word_embeddings=kimi.tie_word_embeddings,
+                num_experts=kimi.num_experts,
+                num_experts_per_tok=kimi.num_experts_per_token,
+                moe_intermediate_size=getattr(kimi, "moe_intermediate_size", 0),
+                norm_topk_prob=kimi.moe_renormalize,
+                model_type="kimi_linear",
+                architectures=["KimiK3LinearForCausalLM"],
+                kimi=kimi,
+            )
+
         num_kv_heads = getattr(config, "num_key_value_heads", config.num_attention_heads)
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        head_dim = (
+            getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        )
         tie_word_embeddings = getattr(config, "tie_word_embeddings", False)
         model_type = getattr(config, "model_type", "llama")
         num_experts = getattr(config, "num_local_experts", getattr(config, "num_experts", 0))

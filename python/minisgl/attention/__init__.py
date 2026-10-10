@@ -19,6 +19,13 @@ class BackendCreator(Protocol):
 SUPPORTED_ATTENTION_BACKENDS = Registry[BackendCreator]("Attention Backend")
 
 
+@SUPPORTED_ATTENTION_BACKENDS.register("kimi")
+def create_kimi_backend(config: ModelConfig):
+    from .kimi import KimiBackend
+
+    return KimiBackend(config)
+
+
 @SUPPORTED_ATTENTION_BACKENDS.register("trtllm")
 def create_trtllm_backend(config: ModelConfig):
     from .trtllm import TensorRTLLMBackend

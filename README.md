@@ -22,6 +22,12 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
   - **Optimized Kernels**: Integrates **FlashAttention** and **FlashInfer** for maximum efficiency.
   - ...
 
+## Experimental Kimi-K3 text baseline
+
+An eager TP=1 KDA/MLA correctness baseline is available. It has CPU numerical
+checks, but no released-checkpoint/GPU parity or performance validation yet.
+See [scope, tests and validation gates](docs/kimi-k3.md) before using it.
+
 ## 🚀 Quick Start
 
 > **⚠️ Platform Support**: Mini-SGLang currently supports **Linux only** (x86_64 and aarch64). Windows and macOS are not supported due to dependencies on Linux-specific CUDA kernels (`sgl-kernel`, `flashinfer`). We recommend using [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) on Windows or Docker for cross-platform compatibility.

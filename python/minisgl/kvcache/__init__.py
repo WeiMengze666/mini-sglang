@@ -30,8 +30,18 @@ def create_kvcache_pool(
     page_size: int,
     dtype: torch.dtype,
     device: torch.device,
+    max_running_req: int | None = None,
 ) -> BaseKVCachePool:
-    from .mha_pool import MHAKVCache  # TODO: support other variants (e.g. MLA)
+    if model_config.is_kimi:
+        from .kimi_pool import KimiHybridCache
+
+        if max_running_req is None:
+            raise ValueError("Kimi cache requires max_running_req for bounded recurrent state")
+        return KimiHybridCache(
+            model_config.kimi, num_pages, page_size, max_running_req, dtype, device
+        )
+
+    from .mha_pool import MHAKVCache
 
     return MHAKVCache(
         num_kv_heads=model_config.num_kv_heads,

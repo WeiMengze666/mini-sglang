@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "accelerate",
     "msgpack",
+    "tiktoken>=0.9,<1",
     "modelscope",
     "torch<2.10.0",
     "transformers>=4.56.0,<=4.57.3",

@@ -60,6 +60,7 @@ class Engine:
             page_size=config.page_size,
             device=self.device,
             dtype=self.dtype,
+            max_running_req=config.max_running_req,
         )
 
         # ======================= Page table initialization ========================
@@ -76,7 +77,7 @@ class Engine:
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
             config.attention_backend, config.model_config
         )
-        if config.model_config.is_moe:
+        if config.model_config.is_moe and not config.model_config.is_kimi:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
 
         # ======================= Sampler initialization ========================
@@ -143,7 +144,11 @@ class Engine:
                 for k, v in self.model.state_dict().items()
             }
         else:
-            return {k: v.to(self.dtype) for k, v in load_weight(config.model_path, self.device)}
+            expected = self.model.state_dict()
+            return {
+                k: v.to(expected[k].dtype) if k in expected else v
+                for k, v in load_weight(config.model_path, self.device)
+            }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
         new_free_memory = self._sync_get_memory()[1]
@@ -155,11 +160,27 @@ class Engine:
             * self.dtype.itemsize
             * config.model_config.num_layers
         )
+        fixed_state = 0
+        if config.model_config.is_kimi:
+            from minisgl.kvcache.kimi_pool import (
+                kimi_cache_bytes_per_token,
+                kimi_state_bytes_per_request,
+            )
+
+            cache_per_page = config.page_size * kimi_cache_bytes_per_token(
+                config.model_config.kimi, self.dtype
+            )
+            fixed_state = config.max_running_req * kimi_state_bytes_per_request(
+                config.model_config.kimi, self.dtype
+            )
         num_pages = config.num_page_override
         if num_pages is None:
             model_memory = old_free_memory - new_free_memory
-            available_memory = int(config.memory_ratio * old_free_memory) - model_memory
-            num_pages = available_memory // cache_per_page
+            available_memory = (
+                int(config.memory_ratio * old_free_memory) - model_memory - fixed_state
+            )
+            # Include the dummy page reserved by the cache pool.
+            num_pages = available_memory // cache_per_page - int(config.model_config.is_kimi)
 
         assert num_pages > 1, "Not enough memory for KV cache, try reducing --num-pages"
         num_tokens = num_pages * config.page_size
@@ -218,6 +239,22 @@ def _align_up_32(num: int) -> int:
 def _adjust_config(config: EngineConfig):
     def override(attr: str, value: Any):  # this is dangerous, use with caution
         object.__setattr__(config, attr, value)
+
+    if config.model_config.is_kimi:
+        if config.tp_info.size != 1:
+            raise ValueError("Kimi-K3 eager correctness baseline currently requires TP=1")
+        if config.attention_backend not in ("auto", "kimi"):
+            raise ValueError("Kimi-K3 requires its eager KDA/MLA attention backend")
+        override("attention_backend", "kimi")
+        override("cuda_graph_bs", [])
+        override("cuda_graph_max_bs", 0)
+        if hasattr(config, "cache_type"):
+            override("cache_type", "naive")
+        logger.warning_rank0(
+            "Kimi-K3 experimental text-only baseline: TP=1, eager, no prefix reuse, "
+            "no overlap. Released checkpoint/GPU parity is not validated."
+        )
+        return
 
     if config.attention_backend == "auto":
         backend = "trtllm" if is_sm100_supported() else ("fa,fi" if is_sm90_supported() else "fi")

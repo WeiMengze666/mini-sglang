@@ -13,7 +13,7 @@ from minisgl.message import (
     ExitMsg,
     UserMsg,
 )
-from minisgl.utils import init_logger, load_tokenizer
+from minisgl.utils import get_stop_token_ids, init_logger, load_tokenizer
 
 from .cache import CacheManager
 from .config import SchedulerConfig
@@ -47,6 +47,7 @@ class Scheduler(SchedulerIOMixin):
         from minisgl.engine import Engine
 
         self.engine = Engine(config)
+        self._is_kimi = config.model_config.is_kimi
 
         # use another stream to overlap metadata processing with computation
         self.device = self.engine.device
@@ -68,6 +69,7 @@ class Scheduler(SchedulerIOMixin):
         self.finished_reqs: Set[Req] = set()
         self.tokenizer = load_tokenizer(config.model_path)
         self.eos_token_id = self.tokenizer.eos_token_id
+        self.stop_token_ids = get_stop_token_ids(self.tokenizer)
         self.token_pool = self.table_manager.token_pool
         self.prefill_budget = config.max_extend_tokens
         # self.config = config
@@ -119,7 +121,7 @@ class Scheduler(SchedulerIOMixin):
 
     @torch.inference_mode()
     def run_forever(self) -> NoReturn:
-        if ENV.DISABLE_OVERLAP_SCHEDULING:
+        if ENV.DISABLE_OVERLAP_SCHEDULING or self._is_kimi:
             with self.engine_stream_ctx:
                 self.engine.stream.wait_stream(self.stream)
                 while True:
@@ -152,7 +154,7 @@ class Scheduler(SchedulerIOMixin):
                 next_token = int(next_token.item())
                 finished = not req.can_decode
                 if not req.sampling_params.ignore_eos:
-                    finished |= next_token == self.eos_token_id
+                    finished |= next_token in self.stop_token_ids
                 reply.append(DetokenizeMsg(uid=req.uid, next_token=next_token, finished=finished))
 
                 # NOTE: overlap scheduling may make the request freed twice, skip second free
@@ -198,6 +200,8 @@ class Scheduler(SchedulerIOMixin):
             raise NotImplementedError
 
     def _free_req_resources(self, req: Req) -> None:
+        if self._is_kimi:
+            self.engine.kv_cache.release_request(req.table_idx, req.uid)
         self.table_manager.free(req.table_idx)
         self.cache_manager.cache_req(req, finished=True)
 

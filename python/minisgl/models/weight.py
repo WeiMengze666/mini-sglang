@@ -77,8 +77,15 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
     and on device. Peak CPU memory: one full tensor + a small merge buffer."""
     from .config import ModelConfig
 
-    model_folder = download_hf_weight(model_path)
     config = ModelConfig.from_hf(cached_load_hf_config(model_path))
+    if config.is_kimi:
+        from .kimi_weight import load_kimi_weight
+
+        yield from load_kimi_weight(
+            model_path, device, num_layers=config.num_layers, tp_size=get_tp_info().size
+        )
+        return
+    model_folder = download_hf_weight(model_path)
     files = glob.glob(f"{model_folder}/*.safetensors")
     files = [f for f in files if not f.endswith("consolidated.safetensors")] or files
     tp_info = get_tp_info()
