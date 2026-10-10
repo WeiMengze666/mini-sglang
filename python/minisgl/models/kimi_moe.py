@@ -1,4 +1,4 @@
-"""Readable TP=1 Kimi-K3 feed-forward reference operations.
+"""Readable tensor-parallel Kimi-K3 feed-forward operations.
 
 Checkpoint names deliberately remain unfused. This eager implementation favors
 correctness over throughput; it is not a fused or quantized MoE kernel.
@@ -9,6 +9,8 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 from minisgl.layers.base import BaseOP, OPList
+
+from .kimi_parallel import KimiTP, local_size
 
 
 class KimiLinear(BaseOP):
@@ -66,14 +68,18 @@ class KimiK3MLP(BaseOP):
 
     def __init__(self, config, intermediate_size: int | None = None):
         self._config = config
+        self._tp = KimiTP()
         width = intermediate_size if intermediate_size is not None else config.intermediate_size
+        width = local_size(width, self._tp.size, "MLP intermediate_size")
         self.gate_proj = KimiLinear(config.hidden_size, width)
         self.up_proj = KimiLinear(config.hidden_size, width)
         self.down_proj = KimiLinear(width, config.hidden_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.down_proj.forward(
-            _activation(self.gate_proj.forward(x), self.up_proj.forward(x), self._config)
+        return self._tp.all_reduce(
+            self.down_proj.forward(
+                _activation(self.gate_proj.forward(x), self.up_proj.forward(x), self._config)
+            )
         )
 
 
@@ -82,6 +88,7 @@ class _Expert(BaseOP):
 
     def __init__(self, hidden_size: int, intermediate_size: int, config):
         self._config = config
+        intermediate_size = local_size(intermediate_size, KimiTP().size, "expert intermediate_size")
         self.w1 = KimiLinear(hidden_size, intermediate_size)
         self.w2 = KimiLinear(intermediate_size, hidden_size)
         self.w3 = KimiLinear(hidden_size, intermediate_size)
@@ -149,6 +156,7 @@ class KimiRouter(BaseOP):
 class KimiK3MoE(BaseOP):
     def __init__(self, config):
         self._config = config
+        self._tp = KimiTP()
         self.gate = KimiRouter(config)
         latent = getattr(config, "routed_expert_hidden_size", None)
         width = latent or config.hidden_size
@@ -184,7 +192,9 @@ class KimiK3MoE(BaseOP):
             if rows.numel():
                 values = expert.forward(routed[rows]).float() * weights[rows, slots, None]
                 mixed.index_add_(0, rows, values)
-        output = mixed.to(x.dtype)
+        # Reduce the full routed mixture once, before nonlinear latent norm/up.
+        # Individual experts must never issue collectives: routing is sparse.
+        output = self._tp.all_reduce(mixed).to(x.dtype)
         if self.routed_expert_norm is not None:
             output = self.routed_expert_norm.forward(output)
         if self.routed_expert_up_proj is not None:

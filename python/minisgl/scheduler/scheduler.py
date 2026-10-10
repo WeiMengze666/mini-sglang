@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, List, NamedTuple, NoReturn, Set, Tuple, TypeAlias
 
 import torch
@@ -48,6 +49,7 @@ class Scheduler(SchedulerIOMixin):
 
         self.engine = Engine(config)
         self._is_kimi = config.model_config.is_kimi
+        self.vocab_size = config.model_config.vocab_size
 
         # use another stream to overlap metadata processing with computation
         self.device = self.engine.device
@@ -67,6 +69,7 @@ class Scheduler(SchedulerIOMixin):
 
         # some alias for easy access
         self.finished_reqs: Set[Req] = set()
+        self.aborted_reqs: Set[Req] = set()
         self.tokenizer = load_tokenizer(config.model_path)
         self.eos_token_id = self.tokenizer.eos_token_id
         self.stop_token_ids = get_stop_token_ids(self.tokenizer)
@@ -139,6 +142,7 @@ class Scheduler(SchedulerIOMixin):
 
     def _process_last_data(self, last_data: ForwardData | None) -> None:
         if last_data is None:
+            self.aborted_reqs.clear()
             return
 
         batch, (_, next_tokens_cpu, copy_done) = last_data[0].batch, last_data[1]
@@ -147,7 +151,7 @@ class Scheduler(SchedulerIOMixin):
         new_finished_reqs: Set[Req] = set()
         with self.cache_manager.lazy_free_region():
             for i, req in enumerate(batch.reqs):
-                if isinstance(req, ChunkedReq):
+                if isinstance(req, ChunkedReq) or req in self.aborted_reqs:
                     continue
                 next_token = next_tokens_cpu[i]
                 req.append_host(next_token.unsqueeze(0))
@@ -166,6 +170,7 @@ class Scheduler(SchedulerIOMixin):
                     self.cache_manager.cache_req(req, finished=False)
 
         self.finished_reqs = new_finished_reqs
+        self.aborted_reqs.clear()
         self.send_result(reply)
 
     def _process_one_msg(self, msg: BaseBackendMsg) -> None:
@@ -176,13 +181,41 @@ class Scheduler(SchedulerIOMixin):
             raise KeyboardInterrupt
         elif isinstance(msg, UserMsg):
             logger.debug_rank0("Received user msg: %s", msg)
+            error = None
+            if (
+                msg.input_ids.ndim != 1
+                or not msg.input_ids.is_cpu
+                or msg.input_ids.dtype not in (torch.int32, torch.int64)
+            ):
+                error = "input_ids must be a one-dimensional CPU integer tensor"
+            elif msg.input_ids.numel() == 0:
+                error = "The prompt must contain at least one token"
+            elif msg.input_ids.min().item() < 0 or msg.input_ids.max().item() >= self.vocab_size:
+                error = f"input_ids must contain token IDs in [0, {self.vocab_size})"
+            elif (
+                type(msg.sampling_params.max_tokens) is not int
+                or msg.sampling_params.max_tokens < 0
+            ):
+                error = "max_tokens must be a non-negative integer"
+            if error is not None:
+                self.send_result([DetokenizeMsg(msg.uid, None, True, error=error)])
+                return
             input_len, max_seq_len = len(msg.input_ids), self.engine.max_seq_len
             max_output_len = max_seq_len - input_len
-            if max_output_len <= 0:
-                return logger.warning_rank0(
-                    f"Input sequence length {input_len} exceeds {max_seq_len}, "
-                    f"request {msg.uid} is dropped."
+            if max_output_len < 0 or (max_output_len == 0 and msg.sampling_params.max_tokens > 0):
+                error = (
+                    f"Input sequence length {input_len} leaves no room for generation "
+                    f"within the maximum sequence length {max_seq_len}"
                 )
+                logger.warning_rank0("Rejecting request %d: %s", msg.uid, error)
+                self.send_result([DetokenizeMsg(msg.uid, None, True, error=error)])
+                return
+            if msg.sampling_params.max_tokens == 0:
+                self.send_result([DetokenizeMsg(msg.uid, None, True)])
+                return
+            # SamplingParams may be shared by several offline requests. Clipping
+            # one prompt must not change another request's generation budget.
+            msg = replace(msg, sampling_params=replace(msg.sampling_params))
             if msg.sampling_params.max_tokens > max_output_len:
                 msg.sampling_params.max_tokens = max_output_len
                 logger.warning_rank0(
@@ -195,6 +228,10 @@ class Scheduler(SchedulerIOMixin):
             req_to_free = req_to_free or self.decode_manager.abort_req(msg.uid)
             if req_to_free is not None:
                 self._free_req_resources(req_to_free)
+                self.aborted_reqs.add(req_to_free)
+            # This reaches the detokenizer even when tokenization is handled by
+            # a separate process, after any already-sent token replies.
+            self.send_result([DetokenizeMsg(msg.uid, None, True)])
         else:
             logger.error(f"Unknown message type: {type(msg)}")
             raise NotImplementedError

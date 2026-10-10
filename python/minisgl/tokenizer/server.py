@@ -76,6 +76,7 @@ def tokenize_worker(
                             uid=msg.uid,
                             incremental_output=reply,
                             finished=msg.finished,
+                            error=msg.error,
                         )
                         for msg, reply in zip(detokenize_msg, replies, strict=True)
                     ]
@@ -85,21 +86,22 @@ def tokenize_worker(
                 send_frontend.put(batch_output)
 
             if len(tokenize_msg) > 0:
-                tensors = tokenize_manager.tokenize(tokenize_msg)
-                batch_output = BatchBackendMsg(
-                    data=[
-                        UserMsg(
-                            uid=msg.uid,
-                            input_ids=t,
-                            sampling_params=msg.sampling_params,
-                        )
-                        for msg, t in zip(tokenize_msg, tensors, strict=True)
-                    ]
-                )
-                if len(batch_output.data) == 1:
-                    batch_output = batch_output.data[0]
-                send_backend.put(batch_output)
+                requests: List[BaseBackendMsg] = []
+                for msg in tokenize_msg:
+                    try:
+                        (input_ids,) = tokenize_manager.tokenize([msg])
+                    except (ValueError, TypeError, OverflowError) as exc:
+                        logger.warning("Rejecting request %d: %s", msg.uid, exc)
+                        send_frontend.put(UserReply(msg.uid, "", True, error=str(exc)))
+                        continue
+                    requests.append(UserMsg(msg.uid, input_ids, msg.sampling_params))
+                if requests:
+                    send_backend.put(
+                        requests[0] if len(requests) == 1 else BatchBackendMsg(data=requests)
+                    )
             if len(abort_msg) > 0:
+                for msg in abort_msg:
+                    detokenize_manager.abort(msg.uid)
                 batch_output = BatchBackendMsg(
                     data=[AbortBackendMsg(uid=msg.uid) for msg in abort_msg]
                 )

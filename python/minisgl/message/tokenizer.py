@@ -27,8 +27,9 @@ class BatchTokenizerMsg(BaseTokenizerMsg):
 @dataclass
 class DetokenizeMsg(BaseTokenizerMsg):
     uid: int
-    next_token: int
+    next_token: int | None
     finished: bool
+    error: str | None = None
 
 
 @dataclass

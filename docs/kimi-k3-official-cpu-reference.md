@@ -65,6 +65,33 @@ constructor forces FlashAttention2. Replacing all those pieces with fresh
 handwritten math would introduce another port, rather than validate the existing
 port against unmodified execution. No claim of full hybrid parity is made.
 
+## Additional hybrid math oracle (explicitly adapted)
+
+`tests/models/test_kimi_hybrid_reference.py` adds eight FP32 cases using the same
+hash-verified HF source plus its unchanged `KimiDeltaAttention` and decoder
+classes. GPU-only short convolution, fused gated RMSNorm and raw-gate/QK
+preprocessing are explicitly replaced by independent PyTorch formulas. KDA
+updates execute the unchanged FLA naive recurrence. No mini numerical routine
+computes reference outputs; the convolution uses `F.conv1d` rather than mini's
+window/reduction implementation. Recurrent layout is transposed at the adapter
+boundary, and convolution history storage follows the CPU adapter contract.
+
+These tests compare every layer and AttnRes bank, final logits and three greedy
+steps on KDA/MLA/KDA/MLA tiny networks with both gate ranks, bounded/unbounded
+decay and residual block sizes 1/2. MLA epsilon is the mutually supported 1e-6,
+not the released-config discrepancy. They execute in addition to the original
+unchanged-kernel-boundary operator suite:
+
+```sh
+KIMI_OFFICIAL_REFERENCE_PATH=/path/to/modeling_kimi_linear.py \
+KIMI_FLA_REFERENCE_PATH=/path/to/fla_kda_naive.py PYTHONPATH=python \
+python -m pytest -o addopts='' tests/models/test_kimi_hybrid_reference.py -q
+```
+
+This closes a tiny hybrid wiring/math gap but remains an **adapted independent
+mathematical reference**, not an unchanged full HF/SGLang GPU execution, packed
+kernel validation, production cache-layout parity or released-weight accuracy.
+
 ## Observed upstream disagreements
 
 The implementation follows pinned SGLang for these two behaviors:

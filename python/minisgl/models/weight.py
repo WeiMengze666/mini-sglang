@@ -82,7 +82,12 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
         from .kimi_weight import load_kimi_weight
 
         yield from load_kimi_weight(
-            model_path, device, num_layers=config.num_layers, tp_size=get_tp_info().size
+            model_path,
+            device,
+            num_layers=config.num_layers,
+            tp_size=get_tp_info().size,
+            tp_rank=get_tp_info().rank,
+            packed=bool(getattr(config.kimi, "quantization_config", None)),
         )
         return
     model_folder = download_hf_weight(model_path)

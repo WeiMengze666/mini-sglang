@@ -40,6 +40,7 @@ def test_scheduler_obeys_generation_stop_ids(ignore_eos):
     scheduler.stop_token_ids = get_stop_token_ids(tokenizer())
     scheduler.eos_token_id = 163585
     scheduler.finished_reqs = set()
+    scheduler.aborted_reqs = set()
     scheduler.cache_manager = SimpleNamespace(lazy_free_region=nullcontext)
     freed, removed, replies = [], [], []
     scheduler.decode_manager = SimpleNamespace(remove_req=removed.append)

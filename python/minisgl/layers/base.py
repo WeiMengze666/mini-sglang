@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Dict, Generic, List, TypeAlias, TypeVar
+from typing import Any, Dict, Generic, Iterable, List, TypeAlias, TypeVar
 
 import torch
 
@@ -28,6 +28,37 @@ class BaseOP:
                 param.state_dict(prefix=_concat_prefix(prefix, name), result=result)
 
         return result
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> None:
+        """Assign a checkpoint stream without staging a second full state dictionary.
+
+        Expected tensors may be on meta. Each item is validated before assignment;
+        a failure leaves an incomplete model which must not be used for inference.
+        Unlike load_state_dict, this accepts an iterator and does not consume or
+        mutate a caller-owned dictionary.
+        """
+        remaining = self.state_dict()
+        for name, item in weights:
+            expected = remaining.pop(name, None)
+            if expected is None:
+                raise ValueError(f"Unexpected or duplicate checkpoint tensor: {name}")
+            if item.shape != expected.shape or item.dtype != expected.dtype:
+                raise ValueError(
+                    f"Checkpoint tensor {name}: {tuple(item.shape)}/{item.dtype} != "
+                    f"{tuple(expected.shape)}/{expected.dtype}"
+                )
+            parent = self
+            parts = name.split(".")
+            for part in parts[:-1]:
+                parent = (
+                    parent.op_list[int(part)]
+                    if isinstance(parent, OPList)
+                    else getattr(parent, part)
+                )
+            setattr(parent, parts[-1], item)
+        if remaining:
+            sample = list(remaining)[:5]
+            raise ValueError(f"Missing {len(remaining)} checkpoint tensors, including {sample}")
 
     def load_state_dict(
         self,

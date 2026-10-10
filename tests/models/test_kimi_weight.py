@@ -71,13 +71,13 @@ def test_loader_cross_shard_scales_text_filtering_and_native_names(tmp_path):
     assert loaded["model.layers.0.mlp.gate_proj.weight"].dtype == torch.float32
 
 
-def test_missing_scale_duplicate_and_tp_rejected(tmp_path):
+def test_missing_scale_duplicate_and_tp_requires_config(tmp_path):
     save_file(
         {"model.x.weight_packed": torch.ones(2, 16, dtype=torch.uint8)}, tmp_path / "a.safetensors"
     )
     with pytest.raises(ValueError, match="Missing MXFP4"):
         list(load_kimi_weight(str(tmp_path), "cpu"))
-    with pytest.raises(NotImplementedError, match="TP=1"):
+    with pytest.raises(ValueError, match="requires checkpoint config.json"):
         list(load_kimi_weight(str(tmp_path), "cpu", tp_size=2))
     save_file(
         {"model.x.weight_packed": torch.ones(2, 16, dtype=torch.uint8)}, tmp_path / "b.safetensors"

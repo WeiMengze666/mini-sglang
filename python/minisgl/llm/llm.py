@@ -23,6 +23,7 @@ class RequestStatus:
     uid: int
     input_ids: List[int]
     output_ids: List[int]
+    error: str | None = None
 
 
 class LLM(Scheduler):
@@ -71,7 +72,11 @@ class LLM(Scheduler):
     def offline_send_result(self, reply: List[DetokenizeMsg]) -> None:
         for msg in reply:
             status = self.status_map[msg.uid]
-            if not (msg.finished and msg.next_token in self.stop_token_ids):
+            if msg.error is not None:
+                status.error = msg.error
+            if msg.next_token is not None and not (
+                msg.finished and msg.next_token in self.stop_token_ids
+            ):
                 status.output_ids.append(msg.next_token)
 
     def generate(
@@ -84,12 +89,19 @@ class LLM(Scheduler):
         self.counter = 0
         if isinstance(sampling_params, SamplingParams):
             sampling_params = [sampling_params] * len(prompts)
+        elif len(sampling_params) != len(prompts):
+            raise ValueError("Provide one SamplingParams per prompt")
         for prompt, sp in zip(prompts, sampling_params):
             self.pending_requests.append((prompt, sp))
         try:
             self.run_forever()
         except RequestAllFinished:
             pass
+        # Drain all requests before surfacing an invalid prompt so that other
+        # requests in the same batch do not leave resources allocated.
+        for status in self.status_map.values():
+            if status.error is not None:
+                raise ValueError(f"Request {status.uid}: {status.error}")
         results: List[Dict[str, str | List[int]]] = []
         for i in range(len(prompts)):
             status = self.status_map[i]

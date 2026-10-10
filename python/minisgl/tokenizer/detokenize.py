@@ -70,6 +70,26 @@ class DetokenizeManager:
         self.stop_token_ids = get_stop_token_ids(self.tokenizer)
 
     def detokenize(self, msgs: List[DetokenizeMsg]) -> List[str]:
+        # A batch may contain multiple decoding steps for the same request.
+        # Advance its offsets before decoding its next step, while still batching
+        # independent requests together.
+        output: List[str] = []
+        batch: List[DetokenizeMsg] = []
+        seen: set[int] = set()
+        for msg in msgs:
+            if msg.uid in seen:
+                output.extend(self._detokenize_batch(batch))
+                batch, seen = [], set()
+            batch.append(msg)
+            seen.add(msg.uid)
+        if batch:
+            output.extend(self._detokenize_batch(batch))
+        return output
+
+    def abort(self, uid: int) -> None:
+        self.decode_map.pop(uid, None)
+
+    def _detokenize_batch(self, msgs: List[DetokenizeMsg]) -> List[str]:
         read_ids: List[List[int]] = []
         surr_ids: List[List[int]] = []
         for msg in msgs:
@@ -82,7 +102,9 @@ class DetokenizeManager:
                     sent_offset=0,
                 )
             s = self.decode_map[msg.uid]
-            if not (msg.finished and msg.next_token in self.stop_token_ids):
+            if msg.next_token is not None and not (
+                msg.finished and msg.next_token in self.stop_token_ids
+            ):
                 s.decoded_ids.append(msg.next_token)
             read_ids.append(s.decoded_ids[s.surr_offset :])
             surr_ids.append(s.decoded_ids[s.surr_offset : s.read_offset])

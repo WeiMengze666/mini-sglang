@@ -218,8 +218,11 @@ def test_engine_guards_and_existing_model_config(tmp_path, monkeypatch):
     assert engine.attention_backend == "kimi"
     assert engine.cuda_graph_bs == [] and engine.cache_type == "naive"
     engine_tp = SchedulerConfig(str(tmp_path), DistributedInfo(0, 2), torch.bfloat16)
-    with pytest.raises(ValueError, match="TP=1"):
-        _adjust_config(engine_tp)
+    _adjust_config(engine_tp)
+    assert engine_tp.attention_backend == "kimi" and not engine_tp.use_pynccl
+    engine_bad = SchedulerConfig(str(tmp_path), DistributedInfo(0, 3), torch.bfloat16)
+    with pytest.raises(ValueError, match="divisible"):
+        _adjust_config(engine_bad)
     assert model_config.is_kimi
     llama = ModelConfig.from_hf(LlamaConfig())
     assert not llama.is_moe and not llama.is_kimi

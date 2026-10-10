@@ -307,6 +307,8 @@ def declared_parameters(config_path):
         dtype
     ]
     config = ModelConfig.from_hf(KimiK3Config(**raw))
+    # Logical dequantized shape audit; packed resident storage is audited separately.
+    config.kimi.quantization_config = None
     old_dtype = torch.get_default_dtype()
     try:
         torch.set_default_dtype(torch_dtype)

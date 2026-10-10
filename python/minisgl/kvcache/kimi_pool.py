@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+from minisgl.models.kimi_parallel import local_size, tp_info
 
 from .base import BaseKVCachePool
 
@@ -15,9 +16,14 @@ def kimi_cache_bytes_per_token(config, dtype: torch.dtype) -> int:
     )
 
 
-def kimi_state_bytes_per_request(config, dtype: torch.dtype) -> int:
+def kimi_state_bytes_per_request(config, dtype: torch.dtype, tp_size: int | None = None) -> int:
     linear = config.linear_attn_config
-    heads, dim = linear["num_heads"], linear["head_dim"]
+    if not linear["kda_layers"]:
+        return 0
+    heads = local_size(
+        linear["num_heads"], tp_info()[1] if tp_size is None else tp_size, "KDA heads"
+    )
+    dim = linear["head_dim"]
     conv_width = linear["short_conv_kernel_size"] - 1
     return len(linear["kda_layers"]) * (
         heads * dim * dim * torch.float32.itemsize + 3 * heads * dim * conv_width * dtype.itemsize
@@ -50,7 +56,10 @@ class KimiHybridCache(BaseKVCachePool):
         self.num_tokens = num_pages * page_size
         self.latent_dim = config.kv_lora_rank
         self.rope_dim = config.qk_rope_head_dim
-        heads, dim = linear["num_heads"], linear["head_dim"]
+        heads = (
+            local_size(linear["num_heads"], tp_info()[1], "KDA heads") if self._kda_layers else 0
+        )
+        dim = linear["head_dim"]
         self._mla = torch.empty(
             (len(self._full_layers), self.num_tokens, self.latent_dim + self.rope_dim),
             dtype=dtype,

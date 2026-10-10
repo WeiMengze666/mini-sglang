@@ -84,5 +84,7 @@ hardened-transport evidence are reported separately.
 Headers describe shape, dtype and offsets; they do not establish valid numeric
 contents, absence of NaNs, tensor integrity, dequantized accuracy, successful
 full-model allocation/loading, tokenizer behavior or generation quality. There
-is still no released-weight GPU run, independent full hybrid-model logit parity,
-or TP/EP/DCP/performance validation.
+is still no released-weight GPU run, unchanged full hybrid GPU-model logit
+parity, or real distributed/EP/DCP/performance validation. The separate
+[packed-storage audit](kimi-k3-capacity.md) now validates physical per-rank
+resident tensors; the original audit continues to compare logical decoded shapes.

@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Literal, Tuple
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from minisgl.core import SamplingParams
 from minisgl.env import ENV
@@ -133,49 +133,60 @@ class FrontendManager:
 
     async def wait_for_ack(self, uid: int):
         event = self.event_map[uid]
+        finished = False
+        try:
+            while True:
+                await event.wait()
+                event.clear()
 
-        while True:
-            await event.wait()
-            event.clear()
-
-            pending = self.ack_map[uid]
-            self.ack_map[uid] = []
-            ack = None
-            for ack in pending:
-                yield ack
-            if ack and ack.finished:
-                break
-
-        del self.ack_map[uid]
-        del self.event_map[uid]
+                pending = self.ack_map[uid]
+                self.ack_map[uid] = []
+                for ack in pending:
+                    if ack.finished:
+                        finished = True
+                        # Consumers may stop immediately after the terminal reply.
+                        self.ack_map.pop(uid, None)
+                        self.event_map.pop(uid, None)
+                    yield ack
+                    if finished:
+                        return
+        finally:
+            if not finished:
+                await self.abort_user(uid)
 
     async def stream_generate(self, uid: int):
-        async for ack in self.wait_for_ack(uid):
-            yield f"data: {ack.incremental_output}\n".encode()
-            if ack.finished:
-                break
+        async with aclosing(self.wait_for_ack(uid)) as replies:
+            async for ack in replies:
+                if ack.error is not None:
+                    error = {"error": {"message": ack.error, "type": "invalid_request_error"}}
+                    yield f"data: {json.dumps(error)}\n\n".encode()
+                else:
+                    yield f"data: {ack.incremental_output}\n".encode()
         yield "data: [DONE]\n".encode()
         logger.debug("Finished streaming response for user %s", uid)
 
     async def stream_chat_completions(self, uid: int):
         first_chunk = True
-        async for ack in self.wait_for_ack(uid):
-            delta = {}
-            if first_chunk:
-                delta["role"] = "assistant"
-                first_chunk = False
-            if ack.incremental_output:
-                delta["content"] = ack.incremental_output
+        async with aclosing(self.wait_for_ack(uid)) as replies:
+            async for ack in replies:
+                if ack.error is not None:
+                    error = {"error": {"message": ack.error, "type": "invalid_request_error"}}
+                    yield f"data: {json.dumps(error)}\n\n".encode()
+                    yield b"data: [DONE]\n\n"
+                    return
+                delta = {}
+                if first_chunk:
+                    delta["role"] = "assistant"
+                    first_chunk = False
+                if ack.incremental_output:
+                    delta["content"] = ack.incremental_output
 
-            chunk = {
-                "id": f"cmpl-{uid}",
-                "object": "text_completion.chunk",
-                "choices": [{"delta": delta, "index": 0, "finish_reason": None}],
-            }
-            yield f"data: {json.dumps(chunk)}\n\n".encode()
-
-            if ack.finished:
-                break
+                chunk = {
+                    "id": f"cmpl-{uid}",
+                    "object": "text_completion.chunk",
+                    "choices": [{"delta": delta, "index": 0, "finish_reason": None}],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n".encode()
 
         # send final finish_reason
         end_chunk = {
@@ -188,23 +199,17 @@ class FrontendManager:
         logger.debug("Finished streaming response for user %s", uid)
 
     async def stream_with_cancellation(self, generator, request: Request, uid: int):
-        try:
+        async with aclosing(generator):
             async for chunk in generator:
                 # detect if the client has disconnected
                 if await request.is_disconnected():
                     logger.info("Client disconnected for user %s", uid)
                     raise asyncio.CancelledError
                 yield chunk
-        except asyncio.CancelledError:
-            asyncio.create_task(self.abort_user(uid))
-            raise
 
     async def abort_user(self, uid: int):
-        await asyncio.sleep(0.1)
-        if uid in self.ack_map:
-            del self.ack_map[uid]
-        if uid in self.event_map:
-            del self.event_map[uid]
+        self.ack_map.pop(uid, None)
+        self.event_map.pop(uid, None)
         logger.warning("Aborting request for user %s", uid)
         await self.send_one(AbortMsg(uid=uid))
 
@@ -258,7 +263,8 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
     if req.messages:
         prompt = [msg.model_dump() for msg in req.messages]
     else:
-        assert req.prompt is not None, "Either 'messages' or 'prompt' must be provided"
+        if req.prompt is None:
+            raise HTTPException(400, "Either 'messages' or 'prompt' must be provided")
         prompt = req.prompt
 
     # TODO: support more sampling parameters
@@ -285,10 +291,11 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
 
     # Non-streaming: collect all chunks and return a single JSON response
     full_content = ""
-    async for ack in state.wait_for_ack(uid):
-        full_content += ack.incremental_output
-        if ack.finished:
-            break
+    async with aclosing(state.wait_for_ack(uid)) as replies:
+        async for ack in replies:
+            if ack.error is not None:
+                raise HTTPException(400, ack.error)
+            full_content += ack.incremental_output
 
     return {
         "id": f"chatcmpl-{uid}",
@@ -345,7 +352,6 @@ async def shell_completion(req: OpenAICompletionRequest):
         media_type="text/event-stream",
         background=BackgroundTask(lambda: _abort),
     )
-
 
 
 async def shell():

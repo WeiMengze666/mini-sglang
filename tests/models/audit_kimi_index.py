@@ -18,6 +18,8 @@ def main():
     parser.add_argument("index", type=Path)
     args = parser.parse_args()
     config = ModelConfig.from_hf(KimiK3Config(**json.loads(args.config.read_text())))
+    # This audit compares logical dequantized names, independent of storage.
+    config.kimi.quantization_config = None
     weights = json.loads(args.index.read_text())["weight_map"]
     with torch.device("meta"):
         expected = set(KimiK3LinearForCausalLM(config).state_dict())

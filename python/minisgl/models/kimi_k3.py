@@ -1,4 +1,4 @@
-"""Text-only, eager K3 baseline. No fused kernels or distributed shortcuts."""
+"""Text-only, eager K3 with correctness-first tensor parallelism."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from minisgl.layers.base import BaseOP, OPList
 from .base import BaseLLMModel
 from .kimi_attention_ops import KimiKDA, KimiMLA
 from .kimi_moe import KimiK3MLP, KimiK3MoE, KimiLinear, KimiRMSNorm
+from .kimi_parallel import KimiTP, validate_tp_config
 
 
 def attention_residual(head, bank, norm, proj):
@@ -27,10 +28,23 @@ def attention_residual(head, bank, norm, proj):
 
 class _Embedding(BaseOP):
     def __init__(self, vocab_size, hidden_size):
-        self.weight = torch.empty(vocab_size, hidden_size)
+        self._tp = KimiTP()
+        self._vocab_size = vocab_size
+        self._sharded = self._tp.size > 1 and vocab_size % self._tp.size == 0
+        width = vocab_size // self._tp.size if self._sharded else vocab_size
+        self._start = self._tp.rank * width if self._sharded else 0
+        self.weight = torch.empty(width, hidden_size)
 
     def forward(self, input_ids):
-        return F.embedding(input_ids.long(), self.weight)
+        if not self._sharded:
+            return F.embedding(input_ids.long(), self.weight)
+        if ((input_ids < 0) | (input_ids >= self._vocab_size)).any():
+            raise IndexError("Kimi token ID is outside the vocabulary")
+        local = input_ids.long() - self._start
+        mask = (local >= 0) & (local < self.weight.shape[0])
+        output = F.embedding(local.masked_fill(~mask, 0), self.weight)
+        output = output * mask.unsqueeze(-1).to(output.dtype)
+        return self._tp.all_reduce(output)
 
 
 class KimiDecoderLayer(BaseOP):
@@ -118,11 +132,18 @@ class KimiModel(BaseOP):
 class KimiK3LinearForCausalLM(BaseLLMModel):
     def __init__(self, config):
         text = config.kimi
+        self._tp = KimiTP()
+        validate_tp_config(text, self._tp.size)
+        self._sharded_vocab = self._tp.size > 1 and text.vocab_size % self._tp.size == 0
+        vocab_width = text.vocab_size // self._tp.size if self._sharded_vocab else text.vocab_size
         self.model = KimiModel(text)
-        self.lm_head = KimiLinear(text.hidden_size, text.vocab_size)
+        self.lm_head = KimiLinear(text.hidden_size, vocab_width)
         self._tie_embeddings = text.tie_word_embeddings
         if self._tie_embeddings:
             raise ValueError("Kimi-K3 eager baseline requires untied embeddings")
+        from .kimi_quant import replace_quantized_linears
+
+        replace_quantized_linears(self, text)
 
     def forward(self):
         ctx = get_global_ctx()
@@ -145,6 +166,8 @@ class KimiK3LinearForCausalLM(BaseLLMModel):
                 last = torch.tensor([req.extend_len for req in batch.reqs], device=hidden.device)
                 hidden = hidden[last.cumsum(0) - 1]
             logits = self.lm_head.forward(hidden).float()
+            if self._sharded_vocab:
+                logits = self._tp.all_gather(logits.T.contiguous()).T.contiguous()
             for req in batch.reqs:
                 cache.finish_request(req.table_idx, req.uid, req.device_len)
             return logits

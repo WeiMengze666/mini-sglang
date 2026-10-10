@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Dict, NamedTuple, Tuple
+from typing import Any, Dict, Iterator, NamedTuple, Tuple
 
 import torch
 from minisgl.attention import create_attention_backend
@@ -42,14 +42,19 @@ class Engine:
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
-        init_free_memory = self._sync_get_memory()[1]
+        # Kimi rank capacities must agree with the least-free TP device.
+        init_free_memory = self._sync_get_memory()[0 if config.model_config.is_kimi else 1]
         logger.info_rank0(f"Free memory before loading model: {mem_GB(init_free_memory)}")
 
         # ======================= Model initialization ========================
         set_rope_device(self.device)
         with torch.device("meta"), torch_dtype(config.dtype):
             self.model = create_model(config.model_config)
-        self.model.load_state_dict(self._load_weight_state_dict(config))
+        if config.model_config.is_kimi:
+            self._check_kimi_capacity(init_free_memory, config)
+            self.model.load_weights(self._iter_kimi_weights(config))
+        else:
+            self.model.load_state_dict(self._load_weight_state_dict(config))
 
         # ======================= KV cache initialization ========================
         self.num_pages = self._determine_num_pages(init_free_memory, config)
@@ -137,6 +142,56 @@ class Engine:
             assert tp_cpu_group is not None
         return tp_cpu_group
 
+    def _check_kimi_capacity(self, free_memory: int, config: EngineConfig) -> None:
+        """Reject an impossible rank before downloading or materializing weights.
+
+        This is a lower bound, not a peak-memory guarantee: forward temporaries,
+        communication buffers and allocator overhead still need headroom.
+        """
+        from minisgl.kvcache.kimi_pool import (
+            kimi_cache_bytes_per_token,
+            kimi_state_bytes_per_request,
+        )
+
+        text = config.model_config.kimi
+        weights = sum(t.numel() * t.element_size() for t in self.model.state_dict().values())
+        fixed = config.max_running_req * kimi_state_bytes_per_request(
+            text, self.dtype, tp_size=config.tp_info.size
+        )
+        # Two usable pages plus the dummy page are the minimum engine allocation.
+        pages = (config.num_page_override or 2) + 1
+        cache = pages * config.page_size * kimi_cache_bytes_per_token(text, self.dtype)
+        minimum = weights + fixed + cache
+        budget = int(config.memory_ratio * free_memory)
+        if minimum >= budget:
+            raise MemoryError(
+                f"Kimi rank {config.tp_info.rank} needs at least {mem_GB(minimum)} "
+                f"for weights/state/cache, but its memory budget is {mem_GB(budget)}. "
+                "Increase valid TP size or reduce request/cache capacity. "
+                "This estimate excludes forward temporaries."
+            )
+        logger.info_rank0(
+            f"Kimi per-rank weight storage: {mem_GB(weights)}; "
+            f"fixed request state: {mem_GB(fixed)} (peak forward memory not included)."
+        )
+
+    def _iter_kimi_weights(self, config: EngineConfig) -> Iterator[tuple[str, torch.Tensor]]:
+        expected = self.model.state_dict()
+        if config.use_dummy_weight:
+            for name, tensor in expected.items():
+                if tensor.dtype == torch.uint8:
+                    # Finite deterministic packed values/scales; randn has no U8 kernel.
+                    value = 127 if name.endswith("weight_scale") else 0x22
+                    yield name, torch.full_like(tensor, value, device=self.device)
+                else:
+                    yield name, torch.randn_like(tensor, device=self.device)
+            return
+        for name, tensor in load_weight(config.model_path, self.device):
+            target = expected.get(name)
+            if target is not None and target.is_floating_point() and tensor.is_floating_point():
+                tensor = tensor.to(target.dtype)
+            yield name, tensor
+
     def _load_weight_state_dict(self, config: EngineConfig) -> Dict[str, torch.Tensor]:
         if config.use_dummy_weight:
             return {
@@ -151,7 +206,7 @@ class Engine:
             }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
-        new_free_memory = self._sync_get_memory()[1]
+        new_free_memory = self._sync_get_memory()[0 if config.model_config.is_kimi else 1]
         cache_per_page = (
             2  # key + value
             * config.model_config.head_dim
@@ -171,7 +226,7 @@ class Engine:
                 config.model_config.kimi, self.dtype
             )
             fixed_state = config.max_running_req * kimi_state_bytes_per_request(
-                config.model_config.kimi, self.dtype
+                config.model_config.kimi, self.dtype, tp_size=config.tp_info.size
             )
         num_pages = config.num_page_override
         if num_pages is None:
@@ -241,8 +296,12 @@ def _adjust_config(config: EngineConfig):
         object.__setattr__(config, attr, value)
 
     if config.model_config.is_kimi:
-        if config.tp_info.size != 1:
-            raise ValueError("Kimi-K3 eager correctness baseline currently requires TP=1")
+        from minisgl.models.kimi_parallel import validate_tp_config
+
+        validate_tp_config(config.model_config.kimi, config.tp_info.size)
+        # Correctness-first TP uses native collectives; custom capture/buffer
+        # assumptions have not been validated for K3's FP32 mixtures/vocab gather.
+        override("use_pynccl", False)
         if config.attention_backend not in ("auto", "kimi"):
             raise ValueError("Kimi-K3 requires its eager KDA/MLA attention backend")
         override("attention_backend", "kimi")
@@ -251,7 +310,7 @@ def _adjust_config(config: EngineConfig):
         if hasattr(config, "cache_type"):
             override("cache_type", "naive")
         logger.warning_rank0(
-            "Kimi-K3 experimental text-only baseline: TP=1, eager, no prefix reuse, "
+            "Kimi-K3 experimental text-only baseline: eager TP, no prefix reuse, "
             "no overlap. Released checkpoint/GPU parity is not validated."
         )
         return

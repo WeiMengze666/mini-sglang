@@ -1,4 +1,4 @@
-"""TP=1 eager Kimi attention wrappers with original checkpoint parameter names."""
+"""Eager head-parallel Kimi attention with original checkpoint parameter names."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from .kimi_attention import (
     mla_attention,
 )
 from .kimi_moe import KimiLinear, KimiRMSNorm
+from .kimi_parallel import KimiTP, local_size
 
 
 class _ConvWeight(BaseOP):
@@ -27,7 +28,9 @@ class KimiKDA(BaseOP):
     def __init__(self, config):
         self._config = config
         linear = config.linear_attn_config
-        self._heads, self._dim = linear["num_heads"], linear["head_dim"]
+        self._tp = KimiTP()
+        self._heads = local_size(linear["num_heads"], self._tp.size, "KDA heads")
+        self._dim = linear["head_dim"]
         width = self._heads * self._dim
         hidden = config.hidden_size
         self.q_proj = KimiLinear(hidden, width)
@@ -90,13 +93,16 @@ class KimiKDA(BaseOP):
         output = gated_rms_norm(
             output, gate.reshape_as(output), self.o_norm.weight, self.o_norm.eps
         ).flatten(-2)
-        return self.o_proj.forward(output), KDAState(torch.stack(histories), recurrent)
+        return self._tp.all_reduce(self.o_proj.forward(output)), KDAState(
+            torch.stack(histories), recurrent
+        )
 
 
 class KimiMLA(BaseOP):
     def __init__(self, config):
         self._config = config
-        self._heads = config.num_attention_heads
+        self._tp = KimiTP()
+        self._heads = local_size(config.num_attention_heads, self._tp.size, "MLA heads")
         self._nope = config.qk_nope_head_dim
         self._rope = config.qk_rope_head_dim
         self._value = config.v_head_dim
@@ -155,7 +161,7 @@ class KimiMLA(BaseOP):
         ).flatten(-2)
         if self._output_gate:
             output = output * self.g_proj.forward(x).sigmoid()
-        return self.o_proj.forward(output)
+        return self._tp.all_reduce(self.o_proj.forward(output))
 
     def forward(self, x, positions, state: MLAState | None = None):
         """Convenience CPU/reference path; serving uses project/attend + pooled cache."""

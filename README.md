@@ -24,8 +24,9 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
 
 ## Experimental Kimi-K3 text baseline
 
-An eager TP=1 KDA/MLA correctness baseline is available. It has CPU numerical
-checks, but no released-checkpoint/GPU parity or performance validation yet.
+An eager KDA/MLA correctness baseline with capacity-oriented tensor parallelism
+and persistent MXFP4 storage is available. CPU checks pass, but real distributed
+execution, released-checkpoint/GPU parity and performance remain unvalidated.
 See [scope, tests and validation gates](docs/kimi-k3.md) before using it.
 
 ## 🚀 Quick Start
