@@ -65,9 +65,27 @@ native collectives rather than the unvalidated custom PyNCCL buffer path.
 
 Admission preflight uses the least-free TP rank and declared weights, fixed
 request state and minimum/overridden token pages. It rejects an impossible rank
-before loading weights. Cache page sizing also uses the least-free rank. This
-is a lower bound: activations, collective buffers, allocator overhead, Python
-metadata and packed-decode temporaries require additional headroom.
+before loading weights. After loading, each rank retains its own initial/final
+free-memory pairing and fixed-state cost. The engine computes
+`floor(ratio * local_before) - (local_before - local_after) - local_fixed_state`,
+then MIN-reduces this final budget. All ranks allocate the same number of pages,
+including one dummy page, and explicit page overrides must fit that budget.
+
+Reducing the two snapshots separately is not equivalent. At ratio 0.9, initial
+free memory `[100000, 101000]` MiB, final free memory `[60000, 59000]` MiB and
+1000 MiB fixed state would give 48000 MiB using separate minima, versus the safe
+paired minimum 47900 MiB. Both spreads pass the existing 2 GiB imbalance guard.
+This consumes 100 MiB of intended headroom; it does not by itself exceed the
+measured physical free memory. With equal fixed costs and ratio in [0,1], the
+excess is bounded by `ceil((1-ratio) * initial_spread)` (up to byte rounding),
+approximately 204.8 MiB at ratio 0.9 and the maximum accepted 2 GiB spread.
+CPU regressions mock the budget collective, including changed limiting ranks,
+heterogeneous fixed costs, page overrides and the unchanged non-Kimi path.
+They do not constitute a real distributed or GPU allocation test.
+
+These snapshot calculations are still not a peak-memory guarantee: activations,
+collective buffers, allocator overhead, Python metadata, packed-decode temporaries
+and concurrent external allocations require additional headroom.
 
 ## Evidence
 

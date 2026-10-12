@@ -44,6 +44,8 @@ class Engine:
         self.tp_cpu_group = self._init_communication(config)
         # Kimi rank capacities must agree with the least-free TP device.
         init_free_memory = self._sync_get_memory()[0 if config.model_config.is_kimi else 1]
+        if config.model_config.is_kimi:
+            self._kimi_initial_free_memory = self._local_free_memory
         logger.info_rank0(f"Free memory before loading model: {mem_GB(init_free_memory)}")
 
         # ======================= Model initialization ========================
@@ -229,13 +231,31 @@ class Engine:
                 config.model_config.kimi, self.dtype, tp_size=config.tp_info.size
             )
         num_pages = config.num_page_override
-        if num_pages is None:
+        if config.model_config.is_kimi:
+            # Preserve each rank's before/after pairing. Subtracting separately
+            # reduced minima can spend another rank's reserved ratio headroom.
+            before = self._kimi_initial_free_memory
+            available_memory = (
+                int(config.memory_ratio * before) - (before - self._local_free_memory) - fixed_state
+            )
+            budget = torch.tensor(available_memory, device="cpu", dtype=torch.int64)
+            torch.distributed.all_reduce(
+                budget, op=torch.distributed.ReduceOp.MIN, group=self.tp_cpu_group
+            )
+            max_pages = int(budget.item()) // cache_per_page - 1  # dummy page
+            if num_pages is None:
+                num_pages = max_pages
+            elif num_pages > max_pages:
+                raise MemoryError(
+                    f"Kimi requested {num_pages} cache pages, but the least-safe TP "
+                    f"rank permits {max_pages} within its post-load memory budget"
+                )
+        elif num_pages is None:
             model_memory = old_free_memory - new_free_memory
             available_memory = (
                 int(config.memory_ratio * old_free_memory) - model_memory - fixed_state
             )
-            # Include the dummy page reserved by the cache pool.
-            num_pages = available_memory // cache_per_page - int(config.model_config.is_kimi)
+            num_pages = available_memory // cache_per_page
 
         assert num_pages > 1, "Not enough memory for KV cache, try reducing --num-pages"
         num_tokens = num_pages * config.page_size
@@ -249,6 +269,7 @@ class Engine:
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(self.device)
         free_memory = get_free_memory(self.device)
+        self._local_free_memory = free_memory  # same snapshot as the reduced extrema
         free_mem_tensor = torch.tensor([free_memory, -free_memory], device="cpu", dtype=torch.int64)
         torch.distributed.all_reduce(
             free_mem_tensor, op=torch.distributed.ReduceOp.MIN, group=self.tp_cpu_group
