@@ -156,3 +156,57 @@ packed decoding against the independently synthesized dense tensors, cross-shard
 scales, packed storage retention, runtime lifecycle, explicit CUDA failure,
 local-path-only loading, safe reuse and CLI/report behavior. Existing
 [operator/cache tests](kimi-k3.md) continue to provide narrower unit coverage.
+
+## Long-prefill and non-finite state acceptance
+
+The opt-in tiny-model gate extends both synthetic checkpoint layouts to two
+requests longer than 2,048 tokens, compares batched, isolated and chunked
+prefill, and continues decoding. It checks finite logits and live KDA/MLA cache
+values as well as numerical agreement. Run it separately when iterating on
+short unit tests:
+
+```sh
+PYTHONPATH=python python tests/models/run_kimi_runtime_gate.py \
+  --device cpu --dtype float32 --long-prefill --report /tmp/k3-long-fp32.json
+PYTHONPATH=python python tests/models/run_kimi_runtime_gate.py \
+  --device cpu --dtype bfloat16 --long-prefill --report /tmp/k3-long-bf16.json
+```
+
+The ordinary gate also injects NaN and Inf into one request's recurrent state
+following a successful prefill. The harness must detect the bad state even when
+previous logits remain finite, preserve an unrelated request's continuation,
+and recover cleanly through explicit release/reuse and reset. These are
+acceptance-harness checks, not production-wide scans or automatic runtime
+recovery. Released MLA storage need not be zeroed; only live cache rows are
+checked after they have been written.
+
+Reports include the implementation Git revision, dirty status, actual source
+hashes, pinned reference revisions and whether they ran, distinct prefill and
+decode backend labels, installed library versions and device model. An absent
+optional library is recorded as null. Reference revisions identify the optional
+operator checks; they do not mean that the long-prefill test uses an independent
+full-model oracle. Exported sources can have no Git revision, while source hashes
+still identify their contents.
+
+### Upstream backend caution
+
+[sglang issue44758](https://github.com/sgl-project/sglang/issues/44758), inspected
+2026-10-17, reports non-finite long-prefill results with explicitly selected
+`nvidia_kda`, especially multi-sequence prefills, with persistent polluted state.
+The report distinguishes that path from Triton and the newer FlashInfer default.
+These are upstream reported findings, not a reproduction in this repository.
+Our gate executes mini-sglang's sequential FP32 KDA recurrence and eager PyTorch
+MLA; a batched call processes requests sequentially. Passing it does not validate
+NVIDIA KDA, Triton or FlashInfer kernels, real concurrent GPU execution, or the
+released full checkpoint. Record and validate actual prefill and decode backend
+choices separately when those future hardware gates become available.
+
+CPU acceptance evidence on 2026-10-17: the full opt-in CLI passed FP32 and BF16
+for dense/packed fixtures with lengths 2051/2054 and three continued decode
+steps. Maximum FP32 comparison error across the long gate was approximately
+`3.04e-6`; BF16 comparisons were exact for these synthetic inputs. NaN/Inf fault
+checks passed for both layouts/dtypes. The aggregate CPU suite reported
+312 passed, 3 skipped and 2 expected semantic disagreements; the skips remain
+real Gloo, optional tokenizer asset and optional header pytest coverage. No CUDA,
+real serving concurrency, released-weight or independent full-model accuracy
+gate was run by this change.

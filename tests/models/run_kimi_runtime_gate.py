@@ -262,6 +262,9 @@ def greedy_generate(model, config, dtype, device, *, cached: bool, steps=5):
 
 @torch.inference_mode()
 def run_runtime_gate(root: Path, dtype=torch.float32, device=torch.device("cpu")) -> dict:
+    from kimi_fault_gate import run_nonfinite_fault_gate
+    from kimi_gate_provenance import provenance
+
     manifest = verify_fixtures(root)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was explicitly requested but is unavailable; no CPU fallback")
@@ -349,6 +352,7 @@ def run_runtime_gate(root: Path, dtype=torch.float32, device=torch.device("cpu")
         reports[kind] = {
             "status": "passed",
             "checks": metrics,
+            "nonfinite_faults": run_nonfinite_fault_gate(model, config, dtype, device),
             "greedy_token_ids": generated,
             "cache_bytes": cache.allocated_bytes,
             "weight_bytes": sum(t.numel() * t.element_size() for t in model.state_dict().values()),
@@ -356,6 +360,8 @@ def run_runtime_gate(root: Path, dtype=torch.float32, device=torch.device("cpu")
     return {
         "status": "passed",
         "scope": "synthetic_model_loader_cache_only",
+        "provenance": provenance(device),
+        "long_prefill": "not_run",
         "device": str(device),
         "dtype": str(dtype),
         "seed": manifest["seed"],
@@ -471,6 +477,7 @@ def run_official_checks(hf_source: Path, fla_source: Path) -> dict:
     return {
         "status": "passed_with_documented_expected_disagreements",
         "scope": "official_operator_and_mla_stack_only",
+        "source_sha256": {"hf": _digest(hf_source), "fla": _digest(fla_source)},
         "output": result.stdout,
     }
 
@@ -484,6 +491,11 @@ def main(argv=None):
     )
     parser.add_argument("--dtype", choices=DTYPES, default="float32")
     parser.add_argument("--device", choices=["cpu", "cuda", "cuda:0"], default="cpu")
+    parser.add_argument(
+        "--long-prefill",
+        action="store_true",
+        help="Also compare two >2048-token sequences; synthetic eager kernels only",
+    )
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--generate-only", action="store_true")
     parser.add_argument(
@@ -498,7 +510,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if bool(args.official_source) != bool(args.fla_source):
         parser.error("Provide both --official-source and --fla-source")
-    if args.generate_only and (args.engine_smoke or args.official_source):
+    if args.generate_only and (args.engine_smoke or args.official_source or args.long_prefill):
         parser.error("--generate-only cannot be combined with execution checks")
     if args.engine_smoke and args.device == "cpu":
         parser.error("--engine-smoke requires --device cuda")
@@ -521,6 +533,12 @@ def main(argv=None):
                 if args.generate_only
                 else run_runtime_gate(root, DTYPES[args.dtype], torch.device(args.device))
             )
+            if args.long_prefill:
+                from kimi_long_prefill_gate import run_long_prefill_gate
+
+                report["long_prefill"] = run_long_prefill_gate(
+                    root, DTYPES[args.dtype], torch.device(args.device)
+                )
             if args.engine_smoke:
                 engine_reports = {}
                 for kind in ("dense", "packed"):
@@ -545,9 +563,19 @@ def main(argv=None):
                 report["official_reference"] = run_official_checks(
                     args.official_source, args.fla_source
                 )
+                from kimi_gate_provenance import provenance
+
+                report["provenance"] = provenance(torch.device(args.device), references_run=True)
         finally:
             if temporary is not None:
                 temporary.cleanup()
+    if "provenance" not in report:
+        from kimi_gate_provenance import provenance
+
+        report["provenance"] = provenance(
+            torch.device("cuda:0" if args.engine_checkpoint else args.device),
+            executed=not args.generate_only,
+        )
     rendered = json.dumps(report, indent=2) + "\n"
     if args.report:
         args.report.write_text(rendered)
