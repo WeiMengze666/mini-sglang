@@ -15,8 +15,9 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.kvcache.kimi_pool import KimiHybridCache
+from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.models.config import ModelConfig
+from minisgl.models.kimi_config import cache_config
 from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
 from test_kimi_official_reference import (
     assert_close,
@@ -158,7 +159,7 @@ def test_hybrid_layers_logits_and_greedy_steps(
         ref.load_state_dict(weights, strict=True)
         refs.append(ref.eval())
     ref_cache = hybrid_reference.KimiDynamicCache(rc)
-    cache = KimiHybridCache(c, 32, 1, 1, torch.float32, torch.device("cpu"))
+    cache = HybridCache(cache_config(c), 32, 1, 1, torch.float32, torch.device("cpu"))
     page_table = torch.arange(32)[None]
     final_norm = hybrid_reference.KimiRMSNorm(c.hidden_size, c.rms_norm_eps)
     final_norm.load_state_dict({"weight": model.model.norm.weight.clone()})
@@ -199,7 +200,7 @@ def test_hybrid_layers_logits_and_greedy_steps(
         reference_logits = F.linear(final_norm(reference_hidden), model.lm_head.weight)
         # Independently evaluate the complete production path on a separate fresh
         # cache/prefix, so final normalization/projection wiring is covered too.
-        fresh = KimiHybridCache(c, 32, 1, 1, torch.float32, torch.device("cpu"))
+        fresh = HybridCache(cache_config(c), 32, 1, 1, torch.float32, torch.device("cpu"))
         whole_req = SimpleNamespace(
             uid=11, table_idx=0, cached_len=0, device_len=end, extend_len=end
         )

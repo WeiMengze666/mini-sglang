@@ -125,3 +125,12 @@ class LinearRowParallel(_LinearTPImpl):
         if self._tp_size > 1:
             y = self._comm.all_reduce(y)
         return y
+
+
+class Linear(BaseOP):
+    def __init__(self, input_size: int, output_size: int, has_bias: bool = False):
+        self.weight = torch.empty(output_size, input_size)
+        self.bias = torch.empty(output_size) if has_bias else None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.linear(x, self.weight, self.bias)

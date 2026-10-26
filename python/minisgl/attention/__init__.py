@@ -19,11 +19,11 @@ class BackendCreator(Protocol):
 SUPPORTED_ATTENTION_BACKENDS = Registry[BackendCreator]("Attention Backend")
 
 
-@SUPPORTED_ATTENTION_BACKENDS.register("kimi")
-def create_kimi_backend(config: ModelConfig):
-    from .kimi import KimiBackend
+@SUPPORTED_ATTENTION_BACKENDS.register("recurrent")
+def create_recurrent_backend(config: ModelConfig):
+    from .recurrent import RecurrentAttentionBackend
 
-    return KimiBackend(config)
+    return RecurrentAttentionBackend(config)
 
 
 @SUPPORTED_ATTENTION_BACKENDS.register("trtllm")

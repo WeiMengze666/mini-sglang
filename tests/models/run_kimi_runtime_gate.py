@@ -18,10 +18,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import torch
-from minisgl.kvcache.kimi_pool import KimiHybridCache
+from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.models import create_model
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import KimiK3Config, KimiTextConfig
+from minisgl.models.kimi_config import KimiK3Config, KimiTextConfig, cache_config
 from minisgl.models.kimi_weight import load_kimi_weight
 from minisgl.utils import cached_load_hf_config, torch_dtype
 from safetensors.torch import save_file
@@ -209,7 +209,7 @@ def load_fixture(path: Path, dtype: torch.dtype, device: torch.device):
 
 
 def cache_for(config, dtype, device):
-    return KimiHybridCache(config.kimi, MAX_LENGTH * SLOTS, 1, SLOTS, dtype, device)
+    return HybridCache(cache_config(config.kimi), MAX_LENGTH * SLOTS, 1, SLOTS, dtype, device)
 
 
 def page_table(device):
@@ -273,7 +273,7 @@ def run_runtime_gate(root: Path, dtype=torch.float32, device=torch.device("cpu")
         model, config = load_fixture(root / kind, dtype, device)
         cache, table, metrics = cache_for(config, dtype, device), page_table(device), {}
         full = model.forward_batch(batch_for(PROMPT, device), cache, table, all_logits=True)
-        states = (cache._conv.clone(), cache._recurrent.clone())
+        states = (cache.recurrent._conv.clone(), cache.recurrent._recurrent.clone())
         cache.reset()
         chunks = []
         for start, end in ((0, 2), (2, 5), (5, 6), (6, 7)):
@@ -283,8 +283,8 @@ def run_runtime_gate(root: Path, dtype=torch.float32, device=torch.device("cpu")
                 )
             )
         _close(torch.cat(chunks), full, dtype, metrics, "prefill_chunk_decode")
-        _close(cache._conv, states[0], dtype, metrics, "convolution_state")
-        _close(cache._recurrent, states[1], dtype, metrics, "recurrent_state")
+        _close(cache.recurrent._conv, states[0], dtype, metrics, "convolution_state")
+        _close(cache.recurrent._recurrent, states[1], dtype, metrics, "recurrent_state")
         cache.reset()
         a, b = batch_for(PROMPT, device), batch_for([3, 15, 7], device, uid=11, slot=1)
         isolated_b = model.forward_batch(

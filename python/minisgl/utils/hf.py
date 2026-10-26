@@ -18,9 +18,12 @@ class DisabledTqdm(tqdm):
 
 def load_tokenizer(model_path: str) -> PreTrainedTokenizerBase:
     metadata = get_tokenizer_config(model_path)
-    end_marker = metadata.get("added_tokens_decoder", {}).get("163586", {}).get("content")
-    if metadata.get("tokenizer_class") == "TikTokenTokenizer" and end_marker == "<|end_of_msg|>":
-        from minisgl.tokenizer.kimi import KimiTokenizer
+    markers = {token.get("content") for token in metadata.get("added_tokens_decoder", {}).values()}
+    if (
+        metadata.get("tokenizer_class") == "TikTokenTokenizer"
+        and {"<|end_of_msg|>", "<|open|>", "<|close|>", "<|sep|>"} <= markers
+    ):
+        from minisgl.tokenizer.xtml import XTMLTokenizer
 
         folder = model_path
         if not os.path.isdir(folder):
@@ -41,7 +44,7 @@ def load_tokenizer(model_path: str) -> PreTrainedTokenizerBase:
         if os.path.isfile(generation_file):
             with open(generation_file, encoding="utf-8") as file:
                 generation = json.load(file)
-        return KimiTokenizer(os.path.join(folder, "tiktoken.model"), metadata, generation)
+        return XTMLTokenizer(os.path.join(folder, "tiktoken.model"), metadata, generation)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     # Some Mistral models store chat_template in a separate JSON file

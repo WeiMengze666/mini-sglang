@@ -31,14 +31,23 @@ def create_kvcache_pool(
     dtype: torch.dtype,
     device: torch.device,
     max_running_req: int | None = None,
+    max_cached_states: int = 0,
+    unified_memory: bool = False,
 ) -> BaseKVCachePool:
-    if model_config.is_kimi:
-        from .kimi_pool import KimiHybridCache
+    if model_config.cache_config is not None:
+        from .hybrid_pool import HybridCache
 
         if max_running_req is None:
-            raise ValueError("Kimi cache requires max_running_req for bounded recurrent state")
-        return KimiHybridCache(
-            model_config.kimi, num_pages, page_size, max_running_req, dtype, device
+            raise ValueError("Hybrid cache requires max_running_req for bounded recurrent state")
+        return HybridCache(
+            model_config.cache_config,
+            num_pages,
+            page_size,
+            max_running_req,
+            dtype,
+            device,
+            max_cached_states=max_cached_states,
+            unified_memory=unified_memory,
         )
 
     from .mha_pool import MHAKVCache
@@ -66,6 +75,15 @@ def create_radix_cache(device: torch.device):
     from .radix_cache import RadixPrefixCache
 
     return RadixPrefixCache(device=device)
+
+
+@SUPPORTED_CACHE_MANAGER.register("hybrid")
+def create_hybrid_cache(device: torch.device):
+    from minisgl.core import get_global_ctx
+
+    from .hybrid_cache import HybridPrefixCache
+
+    return HybridPrefixCache(device, get_global_ctx().kv_cache.recurrent)
 
 
 def create_prefix_cache(device: torch.device, type: str) -> BasePrefixCache:

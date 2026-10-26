@@ -16,6 +16,10 @@ class BaseAttnMetadata(ABC):
 
 
 class BaseAttnBackend(ABC):
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+        """Execute a stateful projection layer, when supported by the backend."""
+        raise NotImplementedError("This backend only supports Q/K/V attention")
+
     @abstractmethod
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, layer_id: int, batch: Batch

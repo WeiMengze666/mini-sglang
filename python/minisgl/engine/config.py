@@ -18,6 +18,8 @@ class EngineConfig:
     tp_info: DistributedInfo
     dtype: torch.dtype
     max_running_req: int = 256
+    max_cached_states: int = 8
+    enable_unified_memory: bool = False
     attention_backend: str = "auto"
     moe_backend: str = "auto"
     cuda_graph_bs: List[int] | None = None

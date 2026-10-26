@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.models.kimi_moe import KimiK3MLP, KimiK3MoE, KimiRouter, situ_and_mul
+from minisgl.layers.latent_moe import GatedMLP, GroupedRouter, LatentMoE, situ_and_mul
 
 
 def config(**changes):
@@ -54,7 +54,7 @@ def test_situ_reference_and_saturation():
 
 def test_router_bias_selects_but_does_not_weight():
     c = config(routed_scaling_factor=2.0)
-    router = KimiRouter(c)
+    router = GroupedRouter(c)
     router.weight.zero_()
     router.weight[:, 0] = torch.logit(torch.tensor([0.9, 0.8, 0.1, 0.2]))
     router.e_score_correction_bias.copy_(torch.tensor([0.0, 0.0, 2.0, 2.0]))
@@ -66,7 +66,7 @@ def test_router_bias_selects_but_does_not_weight():
 
 def test_latent_moe_full_manual_reference_and_token_independence():
     c = config()
-    model = KimiK3MoE(c)
+    model = LatentMoE(c)
     initialize(model)
     x = torch.randn(3, 4)
     weights, ids = model.gate.forward(x)
@@ -89,23 +89,23 @@ def test_latent_moe_full_manual_reference_and_token_independence():
 
 
 def test_dense_and_expert_checkpoint_names_are_unfused():
-    mlp = KimiK3MLP(config())
+    mlp = GatedMLP(config())
     assert set(mlp.state_dict()) == {"gate_proj.weight", "up_proj.weight", "down_proj.weight"}
-    model = KimiK3MoE(config())
+    model = LatentMoE(config())
     names = model.state_dict()
     assert "experts.0.w1.weight" in names
     assert "experts.3.w2.weight" in names
     assert "experts.1.w3.weight" in names
     assert names["gate.e_score_correction_bias"].dtype == torch.float32
     assert "routed_expert_norm.weight" in names
-    clone = KimiK3MoE(config())
+    clone = LatentMoE(config())
     clone.load_state_dict({k: torch.zeros_like(v) for k, v in names.items()})
     assert all(torch.count_nonzero(v) == 0 for v in clone.state_dict().values())
 
 
 @pytest.mark.parametrize("latent,shared", [(None, 0), (2, 0), (None, 2)])
 def test_optional_latent_and_shared_branches(latent, shared):
-    model = KimiK3MoE(config(routed_expert_hidden_size=latent, num_shared_experts=shared))
+    model = LatentMoE(config(routed_expert_hidden_size=latent, num_shared_experts=shared))
     initialize(model)
     output = model.forward(torch.randn(2, 3, 4))
     assert output.shape == (2, 3, 4)

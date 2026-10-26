@@ -11,7 +11,7 @@ import torch
 
 pytest.importorskip("tiktoken")
 
-from minisgl.tokenizer.kimi import KimiTokenizer
+from minisgl.tokenizer.xtml import XTMLTokenizer
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def tokenizer(tmp_path):
             for i, text in names.items()
         },
     }
-    return KimiTokenizer(str(path), config, {"eos_token_id": 258})
+    return XTMLTokenizer(str(path), config, {"eos_token_id": 258})
 
 
 @pytest.mark.parametrize("text", ["hello", "你好，世界！", " \n\t🧪", "[EOS]<|open|>", ""])
@@ -184,7 +184,7 @@ def test_official_data_only_smoke():
     )
     config = json.loads((directory / "tokenizer_config.json").read_text())
     generation = json.loads((directory / "generation_config.json").read_text())
-    tokenizer = KimiTokenizer(str(path), config, generation)
+    tokenizer = XTMLTokenizer(str(path), config, generation)
     assert tokenizer.vocab_size == 163840
     assert tokenizer.eos_token_id == 163585
     assert tokenizer.stop_token_ids == {163586}

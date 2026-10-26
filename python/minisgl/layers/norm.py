@@ -36,3 +36,15 @@ class RMSNormFused(BaseOP):
             return self.rmsnorm(x, self.weight, self.eps), x
         self.fused_add_rmsnorm(x, residual, self.weight, self.eps)
         return x, residual
+
+
+class TorchRMSNorm(BaseOP):
+    def __init__(self, size: int, eps: float = 1e-6):
+        self.weight = torch.empty(size)
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        xf = x.float()
+        return (xf * torch.rsqrt(xf.square().mean(-1, keepdim=True) + self.eps)).to(
+            x.dtype
+        ) * self.weight

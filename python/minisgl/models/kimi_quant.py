@@ -10,11 +10,9 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-import torch
-import torch.nn.functional as F
 from minisgl.layers.base import BaseOP, OPList
-
-from .kimi_moe import KimiLinear
+from minisgl.layers.linear import Linear
+from minisgl.quantization.mxfp4 import MXFP4Linear
 
 # These projections are explicitly unquantized in the pinned K3 reference,
 # despite using our small KimiLinear class for the dense computation.
@@ -102,55 +100,6 @@ def _matches(pattern: str, name: str) -> bool:
     return pattern in names
 
 
-class KimiPackedLinear(BaseOP):
-    """Inference-only linear with U8 E2M1 pairs and U8 E8M0 block scales."""
-
-    def __init__(
-        self,
-        input_size: int,
-        output_size: int,
-        has_bias: bool = False,
-        *,
-        device=None,
-        dtype=None,
-        chunk_rows: int = 128,
-        max_decode_elements: int = 1 << 20,
-    ):
-        if input_size <= 0 or input_size % 32 or output_size <= 0:
-            raise ValueError("Packed Kimi linear input width must be positive and divisible by 32")
-        if chunk_rows <= 0 or max_decode_elements <= 0:
-            raise ValueError("Packed Kimi decode chunk limits must be positive")
-        self.weight_packed = torch.empty(
-            output_size, input_size // 2, dtype=torch.uint8, device=device
-        )
-        self.weight_scale = torch.empty(
-            output_size, input_size // 32, dtype=torch.uint8, device=device
-        )
-        self.bias = torch.empty(output_size, dtype=dtype, device=device) if has_bias else None
-        self._input_size = input_size
-        self._output_size = output_size
-        self._chunk_rows = min(chunk_rows, max(1, max_decode_elements // input_size))
-
-    @torch.no_grad()
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        from .kimi_weight import decode_mxfp4
-
-        if not x.is_floating_point() or x.shape[-1] != self._input_size:
-            raise ValueError(
-                f"Packed Kimi linear expects floating inputs of width {self._input_size}"
-            )
-        result = x.new_empty((*x.shape[:-1], self._output_size))
-        for start in range(0, self._output_size, self._chunk_rows):
-            stop = min(start + self._chunk_rows, self._output_size)
-            weight = decode_mxfp4(
-                self.weight_packed[start:stop], self.weight_scale[start:stop], dtype=x.dtype
-            )
-            bias = self.bias[start:stop] if self.bias is not None else None
-            result[..., start:stop] = F.linear(x, weight, bias)
-            del weight
-        return result
-
-
 def replace_quantized_linears(model: BaseOP, config, *, chunk_rows: int = 128) -> int:
     """Replace selected linears, dropping dense storage. Returns replacement count.
 
@@ -172,7 +121,7 @@ def replace_quantized_linears(model: BaseOP, config, *, chunk_rows: int = 128) -
             children = ((key, child) for key, child in vars(op).items() if not key.startswith("_"))
         for key, child in list(children):
             name = f"{prefix}.{key}" if prefix else key
-            if isinstance(child, KimiLinear) and key not in _NATIVE_DENSE:
+            if isinstance(child, Linear) and key not in _NATIVE_DENSE:
                 if any(_matches(p, name) for p in ignore):
                     continue
                 matches = sum(any(_matches(p, name) for p in group) for group in targets)
@@ -186,12 +135,12 @@ def replace_quantized_linears(model: BaseOP, config, *, chunk_rows: int = 128) -
                         )
                     # Preserve custom forward methods (e.g. vocab TP reduction)
                     # rather than silently discarding them during replacement.
-                    if type(child) is not KimiLinear:
+                    if type(child) is not Linear:
                         raise NotImplementedError(
                             f"Packed execution for {type(child).__name__} is unsupported"
                         )
                     weight = child.weight
-                    replacement = KimiPackedLinear(
+                    replacement = MXFP4Linear(
                         weight.shape[1],
                         weight.shape[0],
                         child.bias is not None,

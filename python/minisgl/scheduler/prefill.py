@@ -54,6 +54,17 @@ class PrefillAdder:
             return self.cache_manager.unlock(handle)
 
         table_idx = self.table_manager.allocate()
+        try:
+            self.cache_manager.restore_state(table_idx, req.uid, handle)
+        except MemoryError:
+            self.table_manager.free(table_idx)
+            self.cache_manager.unlock(handle)
+            return None
+        if estimated_len + self.reserved_size > self.cache_manager.available_size:
+            self.cache_manager.release_state(table_idx, req.uid)
+            self.table_manager.free(table_idx)
+            self.cache_manager.unlock(handle)
+            return None
         if cached_len > 0:  # NOTE: set the cached part
             device_ids = self.table_manager.token_pool[table_idx][:cached_len]
             page_entry = self.table_manager.page_table[table_idx][:cached_len]
@@ -71,6 +82,9 @@ class PrefillAdder:
     ) -> Req:
         remain_len = pending_req.input_len - cached_len
         chunk_size = min(self.token_budget, remain_len)
+        replay_until = getattr(cache_handle, "replay_until", 0)
+        if replay_until > cached_len:
+            chunk_size = min(chunk_size, replay_until - cached_len)
         is_chunked = chunk_size < remain_len
         CLS = ChunkedReq if is_chunked else Req
         self.token_budget -= chunk_size

@@ -1,171 +1,159 @@
-# Kimi-K3: text-only correctness baseline
+# Kimi-K3 text support
 
-This is an **experimental eager implementation**. It now retains MXFP4 packed
-weights and supports basic tensor-parallel sharding for capacity. It is not yet
-validated production support for the released checkpoint. GPU serving, real
-distributed collectives and released-weight accuracy remain open gates; EP/DCP,
-fused kernels and performance work have not begun. No model weights were
-downloaded or run on the development machine.
+Development is gated in two phases: establish a reusable, correct hybrid runtime,
+then add distributed layouts and kernel optimizations. The reference runtime has
+passed the gates below on 8×B300. Distributed and performance work follows these
+gates; it has not yet established performance parity.
 
-Packed linears decode bounded row chunks during inference rather than retaining
-the complete dense model. This is a slow, portable correctness/capacity path,
-not a low-bit GEMM optimization. The entire per-rank packed model plus replicated
-weights, request state, cache and temporary buffers must still fit in memory.
+## Runtime structure
 
-## Implemented
+K3 owns its checkpoint configuration, weight-name/shard policies, and decoder
+composition in `models/kimi_*.py`. The reusable mechanisms live with the rest of
+the framework:
 
-- Local data-only `kimi_k3`/nested `kimi_linear` config loading without executing
-  checkpoint Python. K3 architecture is selected explicitly and MoE detection
-  uses expert count, not a name substring.
-- Local data-only TikToken tokenizer with segmented XTML text chat, literal-marker
-  escaping, thinking options and generation stop IDs distinct from tokenizer EOS.
-- KDA causal depthwise convolution, normalized Q/K delta recurrence with FP32
-  state, safe lower-bound decay gate, full/low-rank output gate and gated RMSNorm.
-- Gated MLA with a normalized latent/shared-key cache. K3's NoPE keeps the shared
-  suffix in attention scores without applying RoPE. The readable attention path
-  temporarily expands cached keys/values; it is not an optimized MLA kernel.
-- Block attention residuals, SiTU and Stable LatentMoE with correction-biased
-  grouped routing, shared experts and post-mixture latent normalization.
-- Unfused checkpoint names, text-wrapper / `block_sparse_moe` mapping, KDA A_log
-  normalization and E2M1/E8M0 MXFP4 storage. Checkpoint TP slices are read before
-  materialization; packed weights and scales stay U8 and decode only bounded
-  row chunks. Native dense dtypes are cast only on strict streamed assignment.
-- Basic attention-head / FFN-intermediate tensor parallelism. Routed mixtures
-  reduce before latent normalization; shared experts use the same TP group.
-  Routers/latent projections and MLA caches stay replicated; vocabulary shards
-  only when evenly divisible. KDA recurrent and convolution state are rank-local.
-- Request validation sends terminal errors instead of silently dropping requests;
-  zero-output requests finish without compute. Coalesced detokenizer batches keep
-  per-request token order, and abort/terminal paths clean up request state.
-- Fixed-capacity request-owned convolution/recurrent state, paged latent MLA
-  cache, fixed-state memory reservation, processed-length/ownership validation,
-  abort/release/reset and slot reuse. Only real token rows are processed/written.
+| Mechanism | Implementation |
+| --- | --- |
+| Causal convolution, delta recurrence, gated RMSNorm | `attention/kda.py` |
+| Compressed latent attention and optional RoPE | `attention/mla.py` |
+| Attention projection layouts | `attention/config.py` |
+| KDA and gated MLA projections | `layers/kda.py`, `layers/mla.py` |
+| SiTU, grouped routing, shared experts, LatentMoE | `layers/activation.py`, `layers/latent_moe.py` |
+| Block attention residuals | `layers/attn_residual.py` |
+| Batch metadata and real-row/cache addressing | `attention/recurrent.py` |
+| Compressed MLA pages and request-owned recurrent state | `kvcache/mla_pool.py`, `kvcache/recurrent_pool.py` |
+| Hybrid cache composition and layout | `kvcache/hybrid_pool.py`, `kvcache/config.py` |
+| Sparse state checkpoints over the existing radix tree | `kvcache/hybrid_cache.py` |
+| Opt-in compact byte arena | `kvcache/unified.py` |
+| Streamed, aligned weight arenas | `layers/weight.py` |
+| E2M1/E8M0 decoding and bounded-row linear execution | `quantization/mxfp4.py` |
+| Local BPE vocabulary and segmented XTML text formatting | `tokenizer/tiktoken.py`, `tokenizer/xtml.py` |
 
-The existing scheduler/engine remain in charge of batching, token pages and
-request lifetime. K3 uses a small model-specific pool and metadata backend;
-existing MHA models retain their original cache/backend path. No production
-SGLang execution framework was imported.
+The engine selects cache/attention behavior from a cache layout and recurrent-state
+capability. The scheduler retains ownership of admission, batches, token pages,
+request completion and cancellation. K3 does not have a separate scheduler or
+its own token/page allocator. The serving model calls the selected attention
+backend; explicit-context numerical tests use the same reference layer runner.
 
-## Deliberate restrictions
+## Mutable state and prefix reuse
 
-K3 selects its eager backend and disables CUDA graphs, cross-request prefix
-reuse and overlap scheduling with a startup warning. Invalid TP divisibility, packed-column block alignment and incompatible
-attention backends fail explicitly. Native collectives are used; custom PyNCCL
-execution remains disabled for this correctness path. Vision and prediction heads
-are excluded; the server remains text-only. Tied embeddings, all-KDA schedules,
-tool/image chat formatting, unsupported quantization formats and unsupported config shapes fail rather
-than silently following another model path.
+A radix hit is usable only up to a checkpoint whose KDA state describes exactly
+that token prefix. KV alone cannot restore an overwritten recurrent state.
 
-Request state is not a reusable token-prefix snapshot. A failed forward discards
-state for the requests it began; restarting them must start from token zero.
-It does not rewind a partly evaluated recurrent state. Slots cannot be resumed
-at a mismatched processed length.
+1. Admission locks the matched token prefix and copies its checkpoint into the
+   request's private working slot. This is copy-on-write, including convolution
+   history and every recurrent layer.
+2. The complete model forward commits the processed length only after all
+   layers succeed. A failed forward discards its partial working state.
+3. Aligned prefill chunk boundaries and decode intervals create independent
+   snapshots. Donation transfers a snapshot handle to the radix node without
+   copying state again. A later request cannot mutate a donated snapshot.
+4. A mid-edge divergence replays from the nearest checkpoint, stops at the
+   aligned fork, and places a checkpoint there. Continuing page tables adopt
+   the existing shared KV pages before duplicate pages can be reused.
+5. Checkpoints have a global capacity, per-path cap and LRU selection that
+   prefers retaining branch nodes. KV eviction drops the associated checkpoint.
+   Under unified-memory pressure, optional snapshots give bytes back to working
+   state and token pages.
 
-See [capacity layout and loading evidence](kimi-k3-capacity.md) for the packed
-format, sharding boundaries and memory-preflight limitations.
+All state copies, compaction and forward operations run on the serial forward
+stream. CUDA graphs and overlap remain disabled for this reference backend.
+The overlapped two-slot donation protocol is **not implemented or accepted**.
 
-## CPU checks
+`--enable-unified-memory` replaces separately sized state/KV storage with one
+byte arena. State grows from one end, MLA pages from the other. A free swaps the
+last block of its kind into the hole and updates logical-to-physical handles.
+Views are acquired after mutations; logical token page IDs and request slots
+stay stable. Admission accounts for a private state slot before admitting KV.
+The default remains separate pools while the opt-in path is validated.
 
-From the repository root, using Python 3.12:
+## Released checkpoint and validation
 
-```sh
-python -m venv .venv
-.venv/bin/pip install 'torch==2.9.1+cpu' --index-url https://download.pytorch.org/whl/cpu
-.venv/bin/pip install 'transformers==4.57.3' safetensors pytest ruff pyzmq msgpack einops fastapi uvicorn prompt_toolkit httpx 'tiktoken>=0.9,<1'
-PYTHONPATH=python .venv/bin/python -m pytest -o addopts='' \
-  tests/core/test_kimi_attention.py tests/core/test_kimi_model.py \
-  tests/test_kimi_cache.py tests/models/test_kimi_moe.py tests/models/test_kimi_weight.py \
-  tests/models/test_kimi_headers.py tests/models/test_kimi_tokenizer.py \
-  tests/models/test_tokenizer_integration.py tests/models/test_kimi_packed.py \
-  tests/models/test_kimi_parallel.py tests/models/test_kimi_loading_integration.py \
-  tests/models/test_kimi_request_lifecycle.py tests/models/test_kimi_runtime_gate.py \
-  tests/core/test_cache_allocate.py
-PYTHONPATH=python .venv/bin/python tests/misc/test_serialize.py
-```
+The current reference path keeps packed MXFP4 bytes/scales resident and decodes
+bounded output-row chunks. This is a capacity/correctness implementation, not a
+fused low-bit GEMM. Dense weights, scores, norms, attention and routing still use
+their explicit reference operations.
 
-These checks do not install CUDA kernels or download model weights. Optional
-[official-source CPU comparisons](kimi-k3-official-cpu-reference.md) and a
-[bounded checkpoint-header audit](kimi-k3-checkpoint-audit.md) add independent
-reference and actual-shape evidence. [Tokenizer checks](kimi-k3-tokenizer.md)
-cover the data-only text-chat path. They test
-independent scalar/matrix operator formulas, MXFP4 byte patterns and synthetic
-shard loading; whole-model tests check streaming equivalence and isolation on a
-tiny random network. They **do not compare full-model logits to an independently
-executed SGLang model**.
+The released model has hundreds of thousands of tensors. Loading them into
+individual GPU allocations exhausted allocation/mapping resources with roughly
+123 GiB still free per B300. The engine now streams CPU checkpoint slices into
+256-byte-aligned views of one GPU arena per dtype. Full TP8 loading then
+succeeded, with about 190.97 GiB of weight data per rank.
 
-[The runtime gate](kimi-k3-runtime-gate.md) generates deterministic local tiny
-dense/packed checkpoints and runs prefill, chunking, decode, greedy generation,
-reset/reuse and failure recovery. It also provides opt-in CUDA and real Engine
-commands; neither CUDA nor Engine GPU smoke has been executed here.
+Evidence collected on 2026-10-26:
 
-The two-rank numerical tests use test-only in-memory collectives to validate
-shards and reduction placement. Real Gloo initialization was attempted but the
-cloud environment denied its sockets (`Operation not permitted`); it is not a
-passed distributed gate. On a socket-enabled host run:
+| Gate | Result |
+| --- | --- |
+| Original selected CPU baseline | 103 passed, 2 skipped |
+| Refactored CPU tests, real two-process Gloo, actual tokenizer data, pinned HF/FLA oracle | 333 passed, 2 skipped, 2 expected semantic disagreements |
+| Unified allocation/compaction and restored-prefix model checks | Passed on CPU |
+| Synthetic CUDA, packed weights, real Engine, greedy sampling, release/reuse/reset | Passed, gpuq job 6 |
+| Full released checkpoint TP8 loading and eight-token generation | Executed, gpuq job 8; generated `你好。` followed by XTML closing markers |
+| Full checkpoint BF16 chunked-prefill pointwise logits | **Failed**: max absolute difference 1.3691, 45.4% outside rtol=0.05/atol=0.1; tracked separately |
+| Full checkpoint FP32, 93-layer full/chunked prefill | **Passed**, gpuq job 18: max absolute difference 1.2040e-5, relative L2 9.5633e-7, same greedy token |
+| Independent SGLang GPU comparison | gpuq job 13: all 8 generated token IDs match mini job 8; first-token logprob -0.0063424 versus mini -0.0067352 |
+| HTTP scheduler/prefix/cancellation tests | **Passed**, gpuq job 14: static and unified pools, aligned forks, concurrent clients, stream close and request reuse |
+| DCP, EP, fused kernels, graphs, overlap, performance parity | Not implemented/accepted in this phase |
 
-```sh
-KIMI_RUN_GLOO_TESTS=1 PYTHONPATH=python .venv/bin/python -m pytest -o addopts='' \
-  tests/models/test_kimi_parallel.py -q
-```
+The short generation is not an accuracy benchmark. The FP32 full-model comparison
+isolates state/chunk behavior from BF16 shape-sensitive rounding and downstream
+route changes; the BF16 pointwise failure remains visible. Per-layer traces and
+full-vocabulary diagnostics are saved before numerical assertions. No throughput
+comparison is accepted. Logs and compact reports are under the remote experiment
+directory (`released-fp32-trace`, `serving-lifecycle`, `short-reference-comparison.json`).
 
-Do not use the full remote model ID as a lightweight smoke test: even packed
-weight loading can download roughly 1.56 TB. Engine preflight rejects a rank
-whose declared weights/state/minimum cache exceed its memory budget, before
-weight download. The estimate is a lower bound, not a peak-memory guarantee.
+## Running the gates
 
-## Validation gates
-
-| Gate | Status |
-|---|---|
-| Primitive KDA, convolution, decay, gated norm, MLA, SiTU, MoE and MXFP4 formulas | CPU tests pass |
-| Prefill/chunk/decode equivalence, heterogeneous batch vs isolated, real-row padding, reset/reuse/failure | Tiny CPU model passes (FP32 and selected BF16 paths) |
-| Local synthetic checkpoint through strict model loader | CPU test passes |
-| Public checkpoint names/shapes/dtypes/packing | All 96 headers audited; zero errors, no tensor payload requested |
-| Independent unchanged official CPU formulas / MLA-only stack | 27 pass, 2 explicit HF/SGLang semantic disagreements |
-| Hybrid CPU math oracle with explicit kernel adapters | 8 cases pass: layer/bank/logit/greedy comparisons; not unchanged GPU-kernel parity |
-| Packed-persistent synthetic runtime | FP32/BF16 dense/packed fixtures pass |
-| Basic TP sharding and collective placement | Two-rank in-memory numerical simulation passes; real Gloo blocked by environment sockets |
-| Scheduler/tokenizer/frontend lifecycle | CPU tests with real scheduling managers and fake compute pass |
-| Local tokenizer and serving stop/chat integration | CPU tests pass; optional pinned official BPE-data check passes |
-| Existing CPU cache allocation | 6 CPU regression tests pass |
-| Existing serialization script | Direct script smoke check passes (not a collected pytest test) |
-| GPU serving scheduler, cancellation races, sampling and CUDA memory behavior | Not run |
-| Released-checkpoint loading, per-layer/logit parity, deterministic generation | Not run |
-| Real TP runtime, EP, DCP, prefix reuse, graphs, overlap and kernel performance | Unvalidated / deferred |
-
-Before optimization: establish GPU parity on reduced configurations and a
-feasible full-checkpoint execution plan; independently compare layer outputs,
-logits and short deterministic generations with dtype-aware tolerances. Capacity-oriented TP and packed storage now exist, but are not evidence of
-full-model runtime correctness. Only after that gate should EP/DCP and performance work begin.
-
-## Semantic sources
-
-- Development target: [WeiMengze666/mini-sglang](https://github.com/WeiMengze666/mini-sglang), with [sgl-project/mini-sglang](https://github.com/sgl-project/mini-sglang) retained as upstream. Both main branches were verified at `9a91cfafe754aa85daee49998176275667eb58f2` on 2026-10-10.
-- SGLang reference: `ff19159e162595f26e6d01eabcbbd4638b3bd228`,
-  [K3 model](https://github.com/sgl-project/sglang/blob/ff19159e162595f26e6d01eabcbbd4638b3bd228/python/sglang/srt/models/kimi_k3.py),
-  [attention residuals](https://github.com/sgl-project/sglang/blob/ff19159e162595f26e6d01eabcbbd4638b3bd228/python/sglang/srt/layers/attn_residual.py).
-- [Released config](https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json)
-  and public safetensors index inspected on 2026-10-10. References establish
-  implementation semantics, not independently verified cookbook accuracy.
-
-The implementation preserves the upstream correctness lessons: KDA head size
-comes from `linear_attn_config`, not MLA's value head; padded rows cannot write
-cache; future shared-expert sharding must match its actual reduction group.
-
-### Metadata audit fingerprint
-
-The public index contains 497,220 raw keys. Filtering vision/auxiliary scale
-keys and normalizing text names gives 249,756 keys, exactly matching the full
-model constructed on PyTorch's meta device (zero missing/unexpected keys).
-The initial key-only audit validates names. The later [header audit](kimi-k3-checkpoint-audit.md) additionally validates actual shapes, dtypes, packing and offsets; neither validates tensor values or actual full-model loading.
-
-- Config SHA256: `9710e121a58d03ac92c8d6da287a19541994319afbbe6d6202af001ffd379213`
-- Index SHA256: `a1c5210650ce71d2d3ae9ec5a101ac4afd3cf4b10091be589853437eb967febd`
-- Index bytes: 59,764,096. The large public index and weights are not bundled.
-
-To repeat this audit on locally supplied metadata (no weight reads):
+GPU work on the shared B300 machine must run through `gpuq`. Keep each complete
+experiment, including cleanup, inside one queued task. The development checkout
+is `/home/axis/mengze/mini-sglang-k3/mini-sglang`; logs and source snapshots live
+in its sibling `experiment` directory. No checkpoint payload is committed.
 
 ```sh
-PYTHONPATH=python .venv/bin/python tests/models/audit_kimi_index.py \
-  /path/to/config.json /path/to/model.safetensors.index.json
+# Pinned independent source checks, CPU only.
+python tests/models/fetch_kimi_reference.py /tmp/k3-reference
+KIMI_OFFICIAL_REFERENCE_PATH=/tmp/k3-reference/modeling_kimi_linear.py \
+KIMI_FLA_REFERENCE_PATH=/tmp/k3-reference/fla_kda_naive.py \
+KIMI_RUN_GLOO_TESTS=1 OMP_NUM_THREADS=1 PYTHONPATH=python \
+python -m pytest -o addopts='' tests/models tests/core/test_kimi_attention.py \
+  tests/core/test_kimi_model.py tests/core/test_hybrid_components.py \
+  tests/core/test_hybrid_prefix.py tests/core/test_unified_memory.py \
+  tests/core/test_weight_arena.py tests/core/test_cache_allocate.py tests/test_kimi_cache.py
+
+# Synthetic CUDA and actual Engine.
+gpuq env PYTHONPATH=python OMP_NUM_THREADS=1 python \
+  tests/models/run_kimi_runtime_gate.py --device cuda --dtype bfloat16 --engine-smoke
+
+# Full released checkpoint, explicitly expensive; serial independent reference follows.
+gpuq env PYTHONPATH=python OMP_NUM_THREADS=1 python -m torch.distributed.run \
+  --standalone --nproc-per-node=8 tests/validation/released_k3.py \
+  --model /data/models/Kimi-K3 --output /path/to/run --trace
+
+# Synthetic HTTP scheduler, prefix forks, cancellation and both pool modes.
+gpuq env PYTHONPATH=python OMP_NUM_THREADS=1 python \
+  tests/validation/serving_lifecycle.py --output /path/to/http-run
 ```
+
+The independent SGLang harness uses SGLang's own environment, with a writable
+`HF_MODULES_CACHE` if the shared default is read-only. It reads the saved
+`prefill.pt` token IDs and returns generation logprobs for comparison. Reference
+processes must finish and clean up before another engine occupies the GPUs.
+
+## Source boundaries
+
+- Development starts at `WeiMengze666/mini-sglang` branch
+  `kimi-k3-eager-text`, commit `d477af124de2b64a4709654c6144ffcac92e2079`.
+- Installed official SGLang checkout: `release/v0.5.22`,
+  `baa9befa381511cd4d56f83980951e5a45fffc6d` (checked 2026-10-26).
+- CPU formula oracles retain their hash-pinned sources:
+  HF `f831ab66814297da540d832a5235f8e904f29d06` and
+  FLA `14bef3d9ec98ee359c9a9c7860795d91675dd091`.
+- Cache/parallelism design reference:
+  [SGLang K3 day-0 support](https://www.lmsys.org/blog/2026-07-27-kimi-k3-day0-support).
+  The next phase follows its interleaved MLA token-position sharding and
+  LSE-weighted attention merge, while KDA remains sharded by head. It must pass
+  independent correctness gates before DCP/EP and kernel performance are accepted.
+
+The older [checkpoint audit](kimi-k3-checkpoint-audit.md),
+[CPU oracle notes](kimi-k3-official-cpu-reference.md), and
+[tokenizer audit](kimi-k3-tokenizer.md) retain evidence from their stated source
+snapshots; they do not establish full released-model accuracy.

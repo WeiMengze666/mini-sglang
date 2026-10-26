@@ -65,6 +65,15 @@ class MatchResult(NamedTuple):
 
 
 class BasePrefixCache(ABC):
+    def restore_state(self, table_idx: int, uid: int, handle: BaseCacheHandle) -> None:
+        """Restore mutable state after locking a matched handle, if applicable."""
+
+    def cache_state(self, req, handle: BaseCacheHandle) -> None:
+        """Attach a committed recurrent checkpoint to an inserted token prefix."""
+
+    def release_checkpoint_memory(self, required_bytes: int) -> None:
+        """Give optional snapshots back to a unified byte pool under pressure."""
+
     @abstractmethod
     def lock_handle(self, handle: BaseCacheHandle, unlock: bool = False) -> None:
         """

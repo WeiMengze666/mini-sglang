@@ -27,13 +27,15 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.kvcache.kimi_pool import KimiHybridCache
+from minisgl.attention.kda import kda_recurrence
+from minisgl.kvcache.hybrid_pool import HybridCache
+from minisgl.layers.latent_moe import GroupedRouter, LatentMoE
+from minisgl.layers.linear import Linear
+from minisgl.layers.mla import MLALayer
+from minisgl.layers.norm import TorchRMSNorm
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_attention import kda_recurrence
-from minisgl.models.kimi_attention_ops import KimiMLA
-from minisgl.models.kimi_config import KimiTextConfig
+from minisgl.models.kimi_config import KimiTextConfig, cache_config, mla_config
 from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM, attention_residual
-from minisgl.models.kimi_moe import KimiK3MoE, KimiLinear, KimiRMSNorm, KimiRouter
 
 REVISION = "f831ab66814297da540d832a5235f8e904f29d06"
 SOURCE_SHA256 = "9e3564c70ac21854ce5a090cc946c5dc76b70d1050ef50840449181a20fff44a"
@@ -161,7 +163,7 @@ def causal_mask(start, end, dtype):
 @pytest.mark.parametrize("renormalize", [False, True])
 def test_official_grouped_router(official, top_k, renormalize, request):
     c = config(num_experts_per_token=top_k, moe_renormalize=renormalize)
-    actual = KimiRouter(c)
+    actual = GroupedRouter(c)
     initialize(actual)
     reference = official.KimiMoEGate(official_config(c))
     load_official(reference, actual)
@@ -183,7 +185,7 @@ def test_official_latent_moe(official, latent, shared, dtype):
     old = torch.get_default_dtype()
     torch.set_default_dtype(dtype)
     try:
-        actual = KimiK3MoE(c)
+        actual = LatentMoE(c)
     finally:
         torch.set_default_dtype(old)
     initialize(actual)
@@ -200,7 +202,7 @@ def test_official_mla_prefill_and_cached_decode(official, output_gate, dtype):
     old = torch.get_default_dtype()
     torch.set_default_dtype(dtype)
     try:
-        actual = KimiMLA(c)
+        actual = MLALayer(mla_config(c))
     finally:
         torch.set_default_dtype(old)
     initialize(actual)
@@ -225,7 +227,7 @@ def test_official_mla_prefill_and_cached_decode(official, output_gate, dtype):
 
 @pytest.mark.parametrize("bank_size", [0, 1, 3])
 def test_official_attention_residual(official, bank_size):
-    norm, proj = KimiRMSNorm(8, 1e-5), KimiLinear(8, 1)
+    norm, proj = TorchRMSNorm(8, 1e-5), Linear(8, 1)
     initialize(norm)
     initialize(proj, seed=73)
     reference_norm = official.KimiRMSNorm(8, eps=1e-5)
@@ -241,7 +243,7 @@ def test_official_attention_residual(official, bank_size):
 @pytest.mark.xfail(strict=True, reason="HF MLA low-rank eps=1e-6 vs mini-sglang config eps=1e-5")
 def test_official_mla_released_config_epsilon_discrepancy(official):
     c = config(rms_norm_eps=1e-5)
-    actual = KimiMLA(c)
+    actual = MLALayer(mla_config(c))
     initialize(actual)
     reference = official.KimiMLAAttention(official_config(c), 0)
     load_official(reference, actual)
@@ -270,7 +272,7 @@ def test_official_mla_only_decoder_stack(official, block_size):
         }
         reference.load_state_dict(weights, strict=True)
         references.append(reference.eval())
-    cache = KimiHybridCache(c, 64, 1, 1, torch.float32, torch.device("cpu"))
+    cache = HybridCache(cache_config(c), 64, 1, 1, torch.float32, torch.device("cpu"))
     reference_cache = official.KimiDynamicCache(ref_config)
     for start, end in [(0, 3), (3, 5), (5, 6)]:
         tokens = torch.tensor([2, 4, 8, 3, 9, 1])[start:end]

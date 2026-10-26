@@ -5,15 +5,11 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.models.kimi_attention import (
-    apply_rotary,
-    causal_conv1d,
-    gated_rms_norm,
-    kda_log_decay,
-    kda_recurrence,
-    mla_attention,
-)
-from minisgl.models.kimi_attention_ops import KimiKDA, KimiMLA
+from minisgl.attention.kda import causal_conv1d, gated_rms_norm, kda_log_decay, kda_recurrence
+from minisgl.attention.mla import apply_rotary, mla_attention
+from minisgl.layers.kda import KDALayer
+from minisgl.layers.mla import MLALayer
+from minisgl.models.kimi_config import kda_config, mla_config
 
 
 def config(**kwargs):
@@ -149,10 +145,10 @@ def test_rotary_pair_layout(interleaved):
     )
 
 
-@pytest.mark.parametrize("cls", [KimiKDA, KimiMLA])
+@pytest.mark.parametrize("cls", [KDALayer, MLALayer])
 def test_attention_prefill_equals_chunk_and_decode(cls):
     torch.manual_seed(10)
-    op = initialize(cls(config()))
+    op = initialize(cls(kda_config(config()) if cls is KDALayer else mla_config(config())))
     x, positions = torch.randn(8, 12), torch.arange(8)
     expected, full_state = op.forward(x, positions)
     state, outputs = None, []
@@ -166,7 +162,7 @@ def test_attention_prefill_equals_chunk_and_decode(cls):
 
 def test_k3_nope_keeps_shared_suffix_and_ignores_rotary_positions():
     torch.manual_seed(5)
-    op = initialize(KimiMLA(config()))
+    op = initialize(MLALayer(mla_config(config())))
     x = torch.randn(4, 12)
     q, latent, key = op.project(x, torch.arange(4))
     q2, latent2, key2 = op.project(x, torch.arange(4) + 100)
@@ -185,7 +181,7 @@ def test_kda_gate_variants_and_unit_kernel(full_gate, width):
     torch.manual_seed(11)
     cfg = config()
     cfg.linear_attn_config.update(use_full_rank_gate=full_gate, short_conv_kernel_size=width)
-    op = initialize(KimiKDA(cfg))
+    op = initialize(KDALayer(kda_config(cfg)))
     x = torch.randn(3, 12)
     full, _ = op.forward(x)
     first, state = op.forward(x[:1])
@@ -196,7 +192,9 @@ def test_kda_gate_variants_and_unit_kernel(full_gate, width):
 def test_standard_rotary_mla_without_q_lora_or_output_gate():
     torch.manual_seed(12)
     op = initialize(
-        KimiMLA(config(mla_use_nope=False, q_lora_rank=None, mla_use_output_gate=False))
+        MLALayer(
+            mla_config(config(mla_use_nope=False, q_lora_rank=None, mla_use_output_gate=False))
+        )
     )
     x, positions = torch.randn(4, 12), torch.arange(4)
     full, _ = op.forward(x, positions)

@@ -42,19 +42,21 @@ class Engine:
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
-        # Kimi rank capacities must agree with the least-free TP device.
-        init_free_memory = self._sync_get_memory()[0 if config.model_config.is_kimi else 1]
-        if config.model_config.is_kimi:
-            self._kimi_initial_free_memory = self._local_free_memory
+        # Hybrid rank capacities must agree with the least-free TP device.
+        init_free_memory = self._sync_get_memory()[
+            0 if (config.model_config.cache_config is not None) else 1
+        ]
+        if config.model_config.cache_config is not None:
+            self._initial_free_memory = self._local_free_memory
         logger.info_rank0(f"Free memory before loading model: {mem_GB(init_free_memory)}")
 
         # ======================= Model initialization ========================
         set_rope_device(self.device)
         with torch.device("meta"), torch_dtype(config.dtype):
             self.model = create_model(config.model_config)
-        if config.model_config.is_kimi:
-            self._check_kimi_capacity(init_free_memory, config)
-            self.model.load_weights(self._iter_kimi_weights(config))
+        if config.model_config.cache_config is not None:
+            self._check_capacity(init_free_memory, config)
+            self.model.load_weights(self._iter_weights(config), device=self.device)
         else:
             self.model.load_state_dict(self._load_weight_state_dict(config))
 
@@ -68,6 +70,10 @@ class Engine:
             device=self.device,
             dtype=self.dtype,
             max_running_req=config.max_running_req,
+            max_cached_states=getattr(config, "max_cached_states", 0)
+            if getattr(config, "cache_type", "hybrid") != "naive"
+            else 0,
+            unified_memory=config.enable_unified_memory,
         )
 
         # ======================= Page table initialization ========================
@@ -84,7 +90,7 @@ class Engine:
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
             config.attention_backend, config.model_config
         )
-        if config.model_config.is_moe and not config.model_config.is_kimi:
+        if config.model_config.is_moe and not (config.model_config.cache_config is not None):
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
 
         # ======================= Sampler initialization ========================
@@ -144,40 +150,40 @@ class Engine:
             assert tp_cpu_group is not None
         return tp_cpu_group
 
-    def _check_kimi_capacity(self, free_memory: int, config: EngineConfig) -> None:
+    def _check_capacity(self, free_memory: int, config: EngineConfig) -> None:
         """Reject an impossible rank before downloading or materializing weights.
 
         This is a lower bound, not a peak-memory guarantee: forward temporaries,
         communication buffers and allocator overhead still need headroom.
         """
-        from minisgl.kvcache.kimi_pool import (
-            kimi_cache_bytes_per_token,
-            kimi_state_bytes_per_request,
-        )
-
-        text = config.model_config.kimi
+        layout = config.model_config.cache_config
         weights = sum(t.numel() * t.element_size() for t in self.model.state_dict().values())
-        fixed = config.max_running_req * kimi_state_bytes_per_request(
-            text, self.dtype, tp_size=config.tp_info.size
+        state_slots = config.max_running_req + (
+            getattr(config, "max_cached_states", 0)
+            if getattr(config, "cache_type", "hybrid") != "naive"
+            else 0
+        )
+        fixed = state_slots * layout.state_bytes_per_request(
+            self.dtype, tp_size=config.tp_info.size
         )
         # Two usable pages plus the dummy page are the minimum engine allocation.
         pages = (config.num_page_override or 2) + 1
-        cache = pages * config.page_size * kimi_cache_bytes_per_token(text, self.dtype)
+        cache = pages * config.page_size * layout.cache_bytes_per_token(self.dtype)
         minimum = weights + fixed + cache
         budget = int(config.memory_ratio * free_memory)
         if minimum >= budget:
             raise MemoryError(
-                f"Kimi rank {config.tp_info.rank} needs at least {mem_GB(minimum)} "
+                f"Hybrid rank {config.tp_info.rank} needs at least {mem_GB(minimum)} "
                 f"for weights/state/cache, but its memory budget is {mem_GB(budget)}. "
                 "Increase valid TP size or reduce request/cache capacity. "
                 "This estimate excludes forward temporaries."
             )
         logger.info_rank0(
-            f"Kimi per-rank weight storage: {mem_GB(weights)}; "
+            f"Hybrid per-rank weight storage: {mem_GB(weights)}; "
             f"fixed request state: {mem_GB(fixed)} (peak forward memory not included)."
         )
 
-    def _iter_kimi_weights(self, config: EngineConfig) -> Iterator[tuple[str, torch.Tensor]]:
+    def _iter_weights(self, config: EngineConfig) -> Iterator[tuple[str, torch.Tensor]]:
         expected = self.model.state_dict()
         if config.use_dummy_weight:
             for name, tensor in expected.items():
@@ -188,7 +194,7 @@ class Engine:
                 else:
                     yield name, torch.randn_like(tensor, device=self.device)
             return
-        for name, tensor in load_weight(config.model_path, self.device):
+        for name, tensor in load_weight(config.model_path, torch.device("cpu")):
             target = expected.get(name)
             if target is not None and target.is_floating_point() and tensor.is_floating_point():
                 tensor = tensor.to(target.dtype)
@@ -208,7 +214,9 @@ class Engine:
             }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
-        new_free_memory = self._sync_get_memory()[0 if config.model_config.is_kimi else 1]
+        new_free_memory = self._sync_get_memory()[
+            0 if (config.model_config.cache_config is not None) else 1
+        ]
         cache_per_page = (
             2  # key + value
             * config.model_config.head_dim
@@ -218,23 +226,27 @@ class Engine:
             * config.model_config.num_layers
         )
         fixed_state = 0
-        if config.model_config.is_kimi:
-            from minisgl.kvcache.kimi_pool import (
-                kimi_cache_bytes_per_token,
-                kimi_state_bytes_per_request,
+        if config.model_config.cache_config is not None:
+            layout = config.model_config.cache_config
+            cache_per_page = config.page_size * layout.cache_bytes_per_token(self.dtype)
+            state_slots = config.max_running_req + (
+                getattr(config, "max_cached_states", 0)
+                if getattr(config, "cache_type", "hybrid") != "naive"
+                else 0
             )
+            fixed_state = state_slots * layout.state_bytes_per_request(
+                self.dtype, tp_size=config.tp_info.size
+            )
+            if getattr(config, "enable_unified_memory", False):
+                from minisgl.kvcache.unified import align_bytes
 
-            cache_per_page = config.page_size * kimi_cache_bytes_per_token(
-                config.model_config.kimi, self.dtype
-            )
-            fixed_state = config.max_running_req * kimi_state_bytes_per_request(
-                config.model_config.kimi, self.dtype, tp_size=config.tp_info.size
-            )
+                cache_per_page = align_bytes(cache_per_page)
+                fixed_state = 0  # states and token pages draw from the same bytes
         num_pages = config.num_page_override
-        if config.model_config.is_kimi:
+        if config.model_config.cache_config is not None:
             # Preserve each rank's before/after pairing. Subtracting separately
             # reduced minima can spend another rank's reserved ratio headroom.
-            before = self._kimi_initial_free_memory
+            before = self._initial_free_memory
             available_memory = (
                 int(config.memory_ratio * before) - (before - self._local_free_memory) - fixed_state
             )
@@ -247,7 +259,7 @@ class Engine:
                 num_pages = max_pages
             elif num_pages > max_pages:
                 raise MemoryError(
-                    f"Kimi requested {num_pages} cache pages, but the least-safe TP "
+                    f"Hybrid requested {num_pages} cache pages, but the least-safe TP "
                     f"rank permits {max_pages} within its post-load memory budget"
                 )
         elif num_pages is None:
@@ -316,23 +328,29 @@ def _adjust_config(config: EngineConfig):
     def override(attr: str, value: Any):  # this is dangerous, use with caution
         object.__setattr__(config, attr, value)
 
-    if config.model_config.is_kimi:
-        from minisgl.models.kimi_parallel import validate_tp_config
+    if config.max_cached_states < 0:
+        raise ValueError("max_cached_states cannot be negative")
+    if config.enable_unified_memory and not config.model_config.has_recurrent_state:
+        raise ValueError("Unified memory requires a hybrid recurrent/token cache")
 
-        validate_tp_config(config.model_config.kimi, config.tp_info.size)
+    if config.model_config.cache_config is not None:
+        config.model_config.cache_config.state_bytes_per_request(config.dtype, config.tp_info.size)
+        if config.model_config.num_qo_heads % config.tp_info.size:
+            raise ValueError("MLA heads must be divisible by TP size")
         # Correctness-first TP uses native collectives; custom capture/buffer
         # assumptions have not been validated for K3's FP32 mixtures/vocab gather.
         override("use_pynccl", False)
-        if config.attention_backend not in ("auto", "kimi"):
-            raise ValueError("Kimi-K3 requires its eager KDA/MLA attention backend")
-        override("attention_backend", "kimi")
+        if config.attention_backend not in ("auto", "recurrent"):
+            raise ValueError("Hybrid state requires the recurrent attention backend")
+        override("attention_backend", "recurrent")
         override("cuda_graph_bs", [])
         override("cuda_graph_max_bs", 0)
         if hasattr(config, "cache_type"):
-            override("cache_type", "naive")
+            if config.cache_type != "naive":
+                override("cache_type", "hybrid" if config.max_cached_states > 0 else "naive")
         logger.warning_rank0(
-            "Kimi-K3 experimental text-only baseline: eager TP, no prefix reuse, "
-            "no overlap. Released checkpoint/GPU parity is not validated."
+            "Hybrid attention reference backend: eager TP, sparse recurrent checkpoints; "
+            "CUDA graphs and overlap are disabled."
         )
         return
 

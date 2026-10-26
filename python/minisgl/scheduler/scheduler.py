@@ -48,7 +48,7 @@ class Scheduler(SchedulerIOMixin):
         from minisgl.engine import Engine
 
         self.engine = Engine(config)
-        self._is_kimi = config.model_config.is_kimi
+        self._has_recurrent_state = config.model_config.has_recurrent_state
         self.vocab_size = config.model_config.vocab_size
 
         # use another stream to overlap metadata processing with computation
@@ -60,7 +60,11 @@ class Scheduler(SchedulerIOMixin):
         # initialize other managers
         self.table_manager = TableManager(config.max_running_req, self.engine.page_table)
         self.cache_manager = CacheManager(
-            self.engine.num_pages, config.page_size, self.engine.page_table, config.cache_type
+            self.engine.num_pages,
+            config.page_size,
+            self.engine.page_table,
+            config.cache_type,
+            pool=self.engine.kv_cache,
         )
         self.decode_manager = DecodeManager(config.page_size)
         self.prefill_manager = PrefillManager(
@@ -124,7 +128,7 @@ class Scheduler(SchedulerIOMixin):
 
     @torch.inference_mode()
     def run_forever(self) -> NoReturn:
-        if ENV.DISABLE_OVERLAP_SCHEDULING or self._is_kimi:
+        if ENV.DISABLE_OVERLAP_SCHEDULING or self._has_recurrent_state:
             with self.engine_stream_ctx:
                 self.engine.stream.wait_stream(self.stream)
                 while True:
@@ -151,7 +155,10 @@ class Scheduler(SchedulerIOMixin):
         new_finished_reqs: Set[Req] = set()
         with self.cache_manager.lazy_free_region():
             for i, req in enumerate(batch.reqs):
-                if isinstance(req, ChunkedReq) or req in self.aborted_reqs:
+                if req in self.aborted_reqs:
+                    continue
+                if isinstance(req, ChunkedReq):
+                    self.cache_manager.cache_req(req, finished=False)
                     continue
                 next_token = next_tokens_cpu[i]
                 req.append_host(next_token.unsqueeze(0))
@@ -166,7 +173,7 @@ class Scheduler(SchedulerIOMixin):
                     self.decode_manager.remove_req(req)
                     self._free_req_resources(req)
                     new_finished_reqs.add(req)
-                elif batch.is_prefill:  # for prefill, non-chunk req, cache the prefix
+                elif batch.is_prefill or (self._has_recurrent_state and req.cached_len % 64 == 0):
                     self.cache_manager.cache_req(req, finished=False)
 
         self.finished_reqs = new_finished_reqs
@@ -237,10 +244,10 @@ class Scheduler(SchedulerIOMixin):
             raise NotImplementedError
 
     def _free_req_resources(self, req: Req) -> None:
-        if self._is_kimi:
+        self.cache_manager.cache_req(req, finished=True)
+        if self._has_recurrent_state:
             self.engine.kv_cache.release_request(req.table_idx, req.uid)
         self.table_manager.free(req.table_idx)
-        self.cache_manager.cache_req(req, finished=True)
 
     def _prepare_batch(self, batch: Batch) -> ForwardInput:
         self.engine.graph_runner.pad_batch(batch)

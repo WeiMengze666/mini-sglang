@@ -8,10 +8,11 @@ import pytest
 import torch
 import torch.nn.functional as F
 from minisgl.layers.base import BaseOP, OPList
+from minisgl.layers.latent_moe import LatentMoE
+from minisgl.layers.linear import Linear
 from minisgl.models.kimi_config import KimiTextConfig
-from minisgl.models.kimi_moe import KimiK3MoE, KimiLinear
 from minisgl.models.kimi_quant import (
-    KimiPackedLinear,
+    MXFP4Linear,
     quantization_rules,
     replace_quantized_linears,
 )
@@ -100,7 +101,7 @@ def fixture_weights(rows, cols):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("shape", [(5, 64), (2, 3, 64), (64,), (0, 64)])
 def test_packed_linear_matches_dense_without_dense_state(dtype, shape):
-    op = KimiPackedLinear(64, 19, has_bias=True, dtype=dtype, chunk_rows=5)
+    op = MXFP4Linear(64, 19, has_bias=True, dtype=dtype, chunk_rows=5)
     op.weight_packed, op.weight_scale = fixture_weights(19, 64)
     op.bias.copy_(torch.linspace(-0.1, 0.1, 19).to(dtype))
     x = torch.randn(shape, dtype=dtype)
@@ -112,9 +113,9 @@ def test_packed_linear_matches_dense_without_dense_state(dtype, shape):
 
 
 def test_decode_workspace_is_bounded_and_not_retained(monkeypatch):
-    import minisgl.models.kimi_weight as loader
+    import minisgl.quantization.mxfp4 as loader
 
-    op = KimiPackedLinear(64, 65, chunk_rows=17, max_decode_elements=640)
+    op = MXFP4Linear(64, 65, chunk_rows=17, max_decode_elements=640)
     op.weight_packed, op.weight_scale = fixture_weights(65, 64)
     calls = []
     original = loader.decode_mxfp4
@@ -136,18 +137,18 @@ def test_meta_replacement_honors_targets_ignore_and_native_dense():
     with torch.device("meta"):
         model.layers = OPList([BaseOP()])
         layer = model.layers.op_list[0]
-        layer.mlp = KimiK3MoE(config())
-        layer.self_attention_res_proj = KimiLinear(64, 1)
+        layer.mlp = LatentMoE(config())
+        layer.self_attention_res_proj = Linear(64, 1)
         layer.self_attn = BaseOP()
-        layer.self_attn.q_proj = KimiLinear(64, 64)
-        model.lm_head = KimiLinear(64, 64)
+        layer.self_attn.q_proj = Linear(64, 64)
+        model.lm_head = Linear(64, 64)
     assert replace_quantized_linears(model, config()) == 12
-    assert isinstance(layer.mlp.experts.op_list[0].w1, KimiPackedLinear)
-    assert isinstance(layer.mlp.shared_experts.up_proj, KimiLinear)
-    assert isinstance(layer.mlp.routed_expert_down_proj, KimiLinear)
-    assert isinstance(layer.self_attention_res_proj, KimiLinear)
-    assert isinstance(layer.self_attn.q_proj, KimiLinear)
-    assert isinstance(model.lm_head, KimiLinear)
+    assert isinstance(layer.mlp.experts.op_list[0].w1, MXFP4Linear)
+    assert isinstance(layer.mlp.shared_experts.up_proj, Linear)
+    assert isinstance(layer.mlp.routed_expert_down_proj, Linear)
+    assert isinstance(layer.self_attention_res_proj, Linear)
+    assert isinstance(layer.self_attn.q_proj, Linear)
+    assert isinstance(model.lm_head, Linear)
     assert layer.mlp.gate.weight.dtype == torch.float32
     assert all(t.device.type == "meta" for t in model.state_dict().values())
     assert replace_quantized_linears(model, config()) == 0
@@ -155,19 +156,19 @@ def test_meta_replacement_honors_targets_ignore_and_native_dense():
 
 def test_specific_selectors_and_oplist_direct_children():
     model = BaseOP()
-    model.layers = OPList([KimiLinear(32, 32), KimiLinear(32, 32)])
+    model.layers = OPList([Linear(32, 32), Linear(32, 32)])
     quant = quant_config()
     quant["config_groups"]["group_0"]["targets"] = ["language_model.layers.0"]
     assert replace_quantized_linears(model, SimpleNamespace(quantization_config=quant)) == 1
-    assert isinstance(model.layers.op_list[0], KimiPackedLinear)
-    assert isinstance(model.layers.op_list[1], KimiLinear)
+    assert isinstance(model.layers.op_list[0], MXFP4Linear)
+    assert isinstance(model.layers.op_list[1], Linear)
     assert replace_quantized_linears(model, SimpleNamespace()) == 0
 
 
 def test_tiny_latent_moe_packed_matches_dense():
     c = config()
     model = BaseOP()
-    model.mlp = KimiK3MoE(c)
+    model.mlp = LatentMoE(c)
     torch.manual_seed(8)
     for name, value in model.state_dict().items():
         value.copy_(torch.randn_like(value) * 0.08)
@@ -216,7 +217,7 @@ def test_malformed_quantization_rejected(mutation, error):
 
 def test_overlapping_groups_fail_closed():
     model = BaseOP()
-    model.linear = KimiLinear(32, 32)
+    model.linear = Linear(32, 32)
     quant = quant_config()
     quant["config_groups"]["duplicate"] = copy.deepcopy(quant["config_groups"]["group_0"])
     with pytest.raises(ValueError, match="Multiple"):
@@ -226,7 +227,7 @@ def test_overlapping_groups_fail_closed():
 @pytest.mark.parametrize("rows,cols,chunk", [(1, 31, 4), (1, 0, 4), (0, 32, 4), (1, 32, 0)])
 def test_invalid_linear_dimensions(rows, cols, chunk):
     with pytest.raises(ValueError):
-        KimiPackedLinear(cols, rows, chunk_rows=chunk)
+        MXFP4Linear(cols, rows, chunk_rows=chunk)
 
 
 def write_checkpoint(folder, tensors, c=None):
@@ -396,7 +397,7 @@ def test_remote_index_downloads_only_selected_text_shards_at_pinned_revision(tmp
 def test_selected_mla_kv_b_packing_fails_explicitly():
     model = BaseOP()
     model.self_attn = BaseOP()
-    model.self_attn.kv_b_proj = KimiLinear(32, 64)
+    model.self_attn.kv_b_proj = Linear(32, 64)
     quant = quant_config()
     quant["ignore"] = []
     with pytest.raises(NotImplementedError, match="MLA kv_b_proj"):

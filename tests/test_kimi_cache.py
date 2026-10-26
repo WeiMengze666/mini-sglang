@@ -2,12 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from minisgl.attention.kimi import KimiBackend
-from minisgl.kvcache.kimi_pool import (
-    KimiHybridCache,
-    kimi_cache_bytes_per_token,
-    kimi_state_bytes_per_request,
-)
+from minisgl.attention.recurrent import RecurrentAttentionBackend
+from minisgl.kvcache.hybrid_pool import HybridCache
+from minisgl.models.kimi_config import cache_bytes_per_token, cache_config, state_bytes_per_request
 
 
 def config():
@@ -26,13 +23,13 @@ def config():
 
 
 def pool():
-    return KimiHybridCache(config(), 3, 4, 2, torch.float32, torch.device("cpu"))
+    return HybridCache(cache_config(config()), 3, 4, 2, torch.float32, torch.device("cpu"))
 
 
 def test_fixed_memory_and_mla_page_locations():
     cache = pool()
-    expected = 12 * kimi_cache_bytes_per_token(config(), torch.float32)
-    expected += 2 * kimi_state_bytes_per_request(config(), torch.float32)
+    expected = 12 * cache_bytes_per_token(config(), torch.float32)
+    expected += 2 * state_bytes_per_request(config(), torch.float32)
     assert cache.allocated_bytes == expected
     loc = torch.tensor([7, 2, 9], dtype=torch.int32)
     latent, suffix = torch.randn(3, 5), torch.randn(3, 2)
@@ -73,9 +70,9 @@ def test_request_continuation_isolation_and_reuse():
     cache.release_request(0, 100)  # late release from old owner cannot touch new owner
     cache.finish_request(0, 101, 1)
     cache.release_request(0, 101)
-    assert cache._owners == [None, 200]
+    assert cache.recurrent._owners == [None, 200]
     cache.reset()
-    assert cache._owners == [None, None]
+    assert cache.recurrent._owners == [None, None]
 
 
 def test_state_copy_shape_release_and_bounds():
@@ -99,7 +96,7 @@ def test_state_copy_shape_release_and_bounds():
 
 
 def test_metadata_only_uses_real_requests_and_graphs_rejected():
-    backend = KimiBackend.__new__(KimiBackend)
+    backend = RecurrentAttentionBackend.__new__(RecurrentAttentionBackend)
     backend.kvcache = pool()
     batch = SimpleNamespace(
         reqs=[SimpleNamespace(extend_len=3), SimpleNamespace(extend_len=2)],

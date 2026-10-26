@@ -22,15 +22,15 @@ class NonFiniteStateError(AssertionError):
 
 def _request_state(cache, table, slot, uid):
     """Return only the state belonging to one live, completed request."""
-    if cache._owners[slot] != uid or cache._active[slot]:
+    if cache.recurrent._owners[slot] != uid or cache.recurrent._active[slot]:
         raise AssertionError("Fault gate requires the expected completed request owner")
-    length = cache._processed_lens[slot]
+    length = cache.recurrent._processed_lens[slot]
     if not 0 < length <= table.shape[1]:
         raise AssertionError("Fault gate requires a valid initialized live request prefix")
     locations = table[slot, :length].to(device=cache.device, dtype=torch.long)
     return {
-        "recurrent": cache._recurrent[:, slot],
-        "convolution": cache._conv[:, slot],
+        "recurrent": cache.recurrent._recurrent[:, slot],
+        "convolution": cache.recurrent._conv[:, slot],
         "mla": cache._mla.index_select(1, locations),
     }
 
@@ -43,7 +43,7 @@ def _assert_finite_request(cache, table, slot, uid):
 
 def assert_finite_live_state(cache, table):
     """Harness detector: never scan unowned slots or unwritten MLA capacity."""
-    for slot, uid in enumerate(cache._owners):
+    for slot, uid in enumerate(cache.recurrent._owners):
         if uid is not None:
             _assert_finite_request(cache, table, slot, uid)
 
@@ -88,12 +88,12 @@ def _expect_recurrent_fault(cache, table, slot, uid):
 def _assert_cleared(cache, slots):
     for slot in slots:
         if (
-            cache._owners[slot] is not None
-            or cache._processed_lens[slot] != 0
-            or cache._active[slot]
+            cache.recurrent._owners[slot] is not None
+            or cache.recurrent._processed_lens[slot] != 0
+            or cache.recurrent._active[slot]
         ):
             raise AssertionError("Explicit cleanup did not clear request ownership/liveness")
-        for tensor in (cache._recurrent[:, slot], cache._conv[:, slot]):
+        for tensor in (cache.recurrent._recurrent[:, slot], cache.recurrent._conv[:, slot]):
             if not bool(torch.isfinite(tensor).all()) or bool(torch.count_nonzero(tensor)):
                 raise AssertionError("Explicit cleanup did not zero request-local state")
 
@@ -115,7 +115,7 @@ def run_nonfinite_fault_gate(model, config, dtype, device) -> dict:
         cache = cache_for(config, dtype, device)
         baseline_a = cache_for(config, dtype, device)
         baseline_b = cache_for(config, dtype, device)
-        if not cache._recurrent.numel():
+        if not cache.recurrent._recurrent.numel():
             raise ValueError("Silent recurrent fault gate requires at least one KDA layer")
         for pool in (cache, baseline_a, baseline_b):
             # MLA is normally torch.empty. Sentinel values make it deterministic
@@ -162,15 +162,23 @@ def run_nonfinite_fault_gate(model, config, dtype, device) -> dict:
         assert_finite_live_state(cache, table)
         prior_logits = logits_a.clone()
         unrelated_state = _snapshot(cache, table, 1, uid_b)
-        owners = (list(cache._owners), list(cache._processed_lens), list(cache._active))
+        owners = (
+            list(cache.recurrent._owners),
+            list(cache.recurrent._processed_lens),
+            list(cache.recurrent._active),
+        )
 
         # Silent write occurs AFTER a successful forward returned finite logits.
-        cache._recurrent[0, 0, 0, 0, 0] = value
-        if int((~torch.isfinite(cache._recurrent[:, 0])).sum()) != 1:
+        cache.recurrent._recurrent[0, 0, 0, 0, 0] = value
+        if int((~torch.isfinite(cache.recurrent._recurrent[:, 0])).sum()) != 1:
             raise AssertionError("Fault injection must corrupt exactly one recurrent scalar")
         detection = _expect_recurrent_fault(cache, table, 0, uid_a)
         _close(logits_a, prior_logits, dtype, metrics, "finite_prior_logits", exact=True)
-        if owners != (cache._owners, cache._processed_lens, cache._active):
+        if owners != (
+            cache.recurrent._owners,
+            cache.recurrent._processed_lens,
+            cache.recurrent._active,
+        ):
             raise AssertionError("Injection/detection changed request ownership or liveness")
         _compare_state(
             cache,
@@ -204,10 +212,18 @@ def run_nonfinite_fault_gate(model, config, dtype, device) -> dict:
         # The harness detector and unrelated decode must not silently heal A.
         _expect_recurrent_fault(cache, table, 0, uid_a)
         unrelated_state = _snapshot(cache, table, 1, uid_b)
-        unrelated_metadata = (cache._owners[1], cache._processed_lens[1], cache._active[1])
+        unrelated_metadata = (
+            cache.recurrent._owners[1],
+            cache.recurrent._processed_lens[1],
+            cache.recurrent._active[1],
+        )
         cache.release_request(0, uid_a)
         _assert_cleared(cache, [0])
-        if unrelated_metadata != (cache._owners[1], cache._processed_lens[1], cache._active[1]):
+        if unrelated_metadata != (
+            cache.recurrent._owners[1],
+            cache.recurrent._processed_lens[1],
+            cache.recurrent._active[1],
+        ):
             raise AssertionError("Releasing the contaminated slot changed unrelated metadata")
         _compare_state(
             cache,
@@ -266,7 +282,7 @@ def run_nonfinite_fault_gate(model, config, dtype, device) -> dict:
 
         # Re-contaminate before reset so this checks cleanup of bad state, not
         # merely repeatability after an already successful per-request release.
-        cache._recurrent[0, 0, 0, 0, 0] = value
+        cache.recurrent._recurrent[0, 0, 0, 0, 0] = value
         _expect_recurrent_fault(cache, table, 0, uid_successor)
         cache.reset()
         _assert_cleared(cache, range(cache.max_running_req))

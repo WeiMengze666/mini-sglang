@@ -4,11 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from minisgl.kvcache.kimi_pool import KimiHybridCache
+from minisgl.kvcache.hybrid_pool import HybridCache
+from minisgl.layers.linear import Linear
+from minisgl.layers.norm import TorchRMSNorm
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import KimiK3Config, KimiTextConfig
+from minisgl.models.kimi_config import KimiK3Config, KimiTextConfig, cache_config
 from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM, attention_residual
-from minisgl.models.kimi_moe import KimiLinear, KimiRMSNorm
 
 
 def tiny_config():
@@ -62,7 +63,7 @@ def setup_model(dtype=torch.float32):
 
 
 def cache_for(config, dtype=torch.float32):
-    return KimiHybridCache(config.kimi, 128, 1, 3, dtype, torch.device("cpu"))
+    return HybridCache(cache_config(config.kimi), 128, 1, 3, dtype, torch.device("cpu"))
 
 
 def batch_for(tokens, *, uid=10, slot=0, start=0, padding=0):
@@ -132,7 +133,7 @@ def test_batch_isolation_padding_release_and_slot_reuse():
 
 def test_attnres_independent_scalar_reference():
     torch.manual_seed(5)
-    norm, proj = KimiRMSNorm(4, 1e-5), KimiLinear(4, 1)
+    norm, proj = TorchRMSNorm(4, 1e-5), Linear(4, 1)
     norm.weight.normal_()
     proj.weight.normal_()
     head = torch.randn(2, 4)
@@ -215,11 +216,11 @@ def test_engine_guards_and_existing_model_config(tmp_path, monkeypatch):
     model_config = ModelConfig.from_hf(clone)
     engine = SchedulerConfig(str(tmp_path), DistributedInfo(0, 1), torch.bfloat16)
     _adjust_config(engine)
-    assert engine.attention_backend == "kimi"
-    assert engine.cuda_graph_bs == [] and engine.cache_type == "naive"
+    assert engine.attention_backend == "recurrent"
+    assert engine.cuda_graph_bs == [] and engine.cache_type == "hybrid"
     engine_tp = SchedulerConfig(str(tmp_path), DistributedInfo(0, 2), torch.bfloat16)
     _adjust_config(engine_tp)
-    assert engine_tp.attention_backend == "kimi" and not engine_tp.use_pynccl
+    assert engine_tp.attention_backend == "recurrent" and not engine_tp.use_pynccl
     engine_bad = SchedulerConfig(str(tmp_path), DistributedInfo(0, 3), torch.bfloat16)
     with pytest.raises(ValueError, match="divisible"):
         _adjust_config(engine_bad)

@@ -90,3 +90,64 @@ class KimiK3Config(PretrainedConfig):
             if isinstance(text_config, KimiTextConfig)
             else KimiTextConfig(**(text_config or {}))
         )
+
+
+def kda_config(config):
+    from minisgl.attention.config import KDAConfig
+
+    c = config.linear_attn_config
+    return KDAConfig(
+        config.hidden_size,
+        c["num_heads"],
+        c["head_dim"],
+        c["short_conv_kernel_size"],
+        config.rms_norm_eps,
+        c.get("use_full_rank_gate", False),
+        c.get("gate_lower_bound"),
+    )
+
+
+def mla_config(config):
+    from minisgl.attention.config import MLAConfig
+
+    if not getattr(config, "mla_use_nope", True) and getattr(config, "rope_scaling", None):
+        raise ValueError("MLA supports NoPE or unscaled RoPE only")
+    return MLAConfig(
+        config.hidden_size,
+        config.num_attention_heads,
+        config.qk_nope_head_dim,
+        config.qk_rope_head_dim,
+        config.v_head_dim,
+        config.kv_lora_rank,
+        config.q_lora_rank,
+        config.max_position_embeddings,
+        config.rms_norm_eps,
+        not getattr(config, "mla_use_nope", True),
+        getattr(config, "mla_use_output_gate", False),
+        getattr(config, "rope_theta", 10000.0),
+        getattr(config, "rope_interleave", True),
+    )
+
+
+def cache_config(config):
+    from minisgl.kvcache.config import HybridCacheConfig
+
+    c = config.linear_attn_config
+    return HybridCacheConfig(
+        config.num_hidden_layers,
+        tuple(i - 1 for i in c["full_attn_layers"]),
+        tuple(i - 1 for i in c["kda_layers"]),
+        config.kv_lora_rank,
+        config.qk_rope_head_dim,
+        c["num_heads"],
+        c["head_dim"],
+        c["short_conv_kernel_size"],
+    )
+
+
+def cache_bytes_per_token(config, dtype):
+    return cache_config(config).cache_bytes_per_token(dtype)
+
+
+def state_bytes_per_request(config, dtype, tp_size=None):
+    return cache_config(config).state_bytes_per_request(dtype, tp_size)

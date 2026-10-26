@@ -1,53 +1,14 @@
-"""Readable tensor-parallel Kimi-K3 feed-forward operations.
-
-Checkpoint names deliberately remain unfused. This eager implementation favors
-correctness over throughput; it is not a fused or quantized MoE kernel.
-"""
+"""Grouped routing, shared experts and an optional normalized latent mixture."""
 
 from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
+from minisgl.distributed.parallel import TensorParallel, local_size
+from minisgl.layers.activation import situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
-
-from .kimi_parallel import KimiTP, local_size
-
-
-class KimiLinear(BaseOP):
-    def __init__(self, input_size: int, output_size: int, has_bias: bool = False):
-        self.weight = torch.empty(output_size, input_size)
-        self.bias = torch.empty(output_size) if has_bias else None
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.linear(x, self.weight, self.bias)
-
-
-class KimiRMSNorm(BaseOP):
-    def __init__(self, size: int, eps: float = 1e-6):
-        self.weight = torch.empty(size)
-        self.eps = eps
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        xf = x.float()
-        return (xf * torch.rsqrt(xf.square().mean(-1, keepdim=True) + self.eps)).to(
-            x.dtype
-        ) * self.weight
-
-
-def situ_and_mul(
-    gate: torch.Tensor,
-    up: torch.Tensor,
-    beta: float = 1.0,
-    linear_beta: float | None = None,
-) -> torch.Tensor:
-    """K3 SiTU: beta*tanh(gate/beta)*sigmoid(gate), optionally clip up."""
-    if beta <= 0 or (linear_beta is not None and linear_beta <= 0):
-        raise ValueError("SiTU beta and linear_beta must be positive")
-    g, u = gate.float(), up.float()
-    g = beta * torch.tanh(g / beta) * torch.sigmoid(g)
-    if linear_beta is not None:
-        u = linear_beta * torch.tanh(u / linear_beta)
-    return (g * u).to(gate.dtype)
+from minisgl.layers.linear import Linear
+from minisgl.layers.norm import TorchRMSNorm
 
 
 def _activation(gate: torch.Tensor, up: torch.Tensor, config) -> torch.Tensor:
@@ -60,20 +21,20 @@ def _activation(gate: torch.Tensor, up: torch.Tensor, config) -> torch.Tensor:
         )
     if config.hidden_act == "silu":
         return F.silu(gate) * up
-    raise ValueError(f"Unsupported Kimi activation: {config.hidden_act}")
+    raise ValueError(f"Unsupported activation: {config.hidden_act}")
 
 
-class KimiK3MLP(BaseOP):
+class GatedMLP(BaseOP):
     """Dense/shared MLP: HF gate_proj, up_proj, down_proj names."""
 
     def __init__(self, config, intermediate_size: int | None = None):
         self._config = config
-        self._tp = KimiTP()
+        self._tp = TensorParallel()
         width = intermediate_size if intermediate_size is not None else config.intermediate_size
         width = local_size(width, self._tp.size, "MLP intermediate_size")
-        self.gate_proj = KimiLinear(config.hidden_size, width)
-        self.up_proj = KimiLinear(config.hidden_size, width)
-        self.down_proj = KimiLinear(width, config.hidden_size)
+        self.gate_proj = Linear(config.hidden_size, width)
+        self.up_proj = Linear(config.hidden_size, width)
+        self.down_proj = Linear(width, config.hidden_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._tp.all_reduce(
@@ -88,16 +49,18 @@ class _Expert(BaseOP):
 
     def __init__(self, hidden_size: int, intermediate_size: int, config):
         self._config = config
-        intermediate_size = local_size(intermediate_size, KimiTP().size, "expert intermediate_size")
-        self.w1 = KimiLinear(hidden_size, intermediate_size)
-        self.w2 = KimiLinear(intermediate_size, hidden_size)
-        self.w3 = KimiLinear(hidden_size, intermediate_size)
+        intermediate_size = local_size(
+            intermediate_size, TensorParallel().size, "expert intermediate_size"
+        )
+        self.w1 = Linear(hidden_size, intermediate_size)
+        self.w2 = Linear(intermediate_size, hidden_size)
+        self.w3 = Linear(hidden_size, intermediate_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.w2.forward(_activation(self.w1.forward(x), self.w3.forward(x), self._config))
 
 
-class KimiRouter(BaseOP):
+class GroupedRouter(BaseOP):
     def __init__(self, config):
         self._config = config
         self.weight = torch.empty(config.num_experts, config.hidden_size)
@@ -128,7 +91,7 @@ class KimiRouter(BaseOP):
         elif c.moe_router_activation_func == "softmax" and self.e_score_correction_bias is None:
             scores = logits.softmax(-1)
         else:
-            raise ValueError("Kimi bias-corrected routing requires sigmoid scores")
+            raise ValueError("Bias-corrected routing requires sigmoid scores")
         choices = scores
         if self.e_score_correction_bias is not None:
             choices = choices + self.e_score_correction_bias.float()
@@ -153,11 +116,11 @@ class KimiRouter(BaseOP):
         return weights * c.routed_scaling_factor, ids
 
 
-class KimiK3MoE(BaseOP):
+class LatentMoE(BaseOP):
     def __init__(self, config):
         self._config = config
-        self._tp = KimiTP()
-        self.gate = KimiRouter(config)
+        self._tp = TensorParallel()
+        self.gate = GroupedRouter(config)
         latent = getattr(config, "routed_expert_hidden_size", None)
         width = latent or config.hidden_size
         self.experts = OPList(
@@ -168,12 +131,12 @@ class KimiK3MoE(BaseOP):
         )
         shared = getattr(config, "num_shared_experts", None) or 0
         self.shared_experts = (
-            KimiK3MLP(config, config.moe_intermediate_size * shared) if shared else None
+            GatedMLP(config, config.moe_intermediate_size * shared) if shared else None
         )
-        self.routed_expert_down_proj = KimiLinear(config.hidden_size, width) if latent else None
-        self.routed_expert_up_proj = KimiLinear(width, config.hidden_size) if latent else None
+        self.routed_expert_down_proj = Linear(config.hidden_size, width) if latent else None
+        self.routed_expert_up_proj = Linear(width, config.hidden_size) if latent else None
         self.routed_expert_norm = (
-            KimiRMSNorm(width, config.rms_norm_eps)
+            TorchRMSNorm(width, config.rms_norm_eps)
             if latent and config.latent_moe_use_norm
             else None
         )

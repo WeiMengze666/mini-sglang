@@ -22,12 +22,13 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
   - **Optimized Kernels**: Integrates **FlashAttention** and **FlashInfer** for maximum efficiency.
   - ...
 
-## Experimental Kimi-K3 text baseline
+## Experimental hybrid attention and Kimi-K3 text support
 
-An eager KDA/MLA correctness baseline with capacity-oriented tensor parallelism
-and persistent MXFP4 storage is available. CPU checks pass, but real distributed
-execution, released-checkpoint/GPU parity and performance remain unvalidated.
-See [scope, tests and validation gates](docs/kimi-k3.md) before using it.
+Reusable KDA, gated MLA, LatentMoE, hybrid prefix checkpoints and an opt-in
+unified state/KV pool are implemented. The packed released K3 checkpoint loads
+and generates on 8×B300. Full-model numerical validation is still in progress;
+DCP, EP and performance parity are not accepted. See the
+[architecture, validation results and remaining gates](docs/kimi-k3.md).
 
 ## 🚀 Quick Start
 

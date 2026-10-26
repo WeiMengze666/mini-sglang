@@ -55,7 +55,7 @@ def test_engine_dummy_packed_weights_and_native_float_dtypes():
     engine = object.__new__(Engine)
     engine.model = Model()
     engine.device = torch.device("cpu")
-    values = dict(engine._iter_kimi_weights(SimpleNamespace(use_dummy_weight=True)))
+    values = dict(engine._iter_weights(SimpleNamespace(use_dummy_weight=True)))
     assert values["layers.0.scale"].dtype == torch.uint8
     assert values["layers.0.weight"].dtype == torch.float32
     engine.model.load_weights(values.items())
@@ -72,16 +72,15 @@ def test_engine_stream_only_casts_floating_parameters(monkeypatch):
         ("layers.0.scale", torch.ones(2, 1, dtype=torch.uint8)),
     ]
     monkeypatch.setattr(module, "load_weight", lambda *args: iter(raw))
-    result = dict(
-        engine._iter_kimi_weights(SimpleNamespace(use_dummy_weight=False, model_path="x"))
-    )
+    result = dict(engine._iter_weights(SimpleNamespace(use_dummy_weight=False, model_path="x")))
     assert result["layers.0.weight"].dtype == torch.float32
     assert result["layers.0.scale"] is raw[1][1]
 
 
 def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
     import minisgl.engine.engine as engine_module
-    import minisgl.kvcache.kimi_pool as pool
+
+    pool = SimpleNamespace(cache_bytes_per_token=None, state_bytes_per_request=None)
 
     monkeypatch.setattr(engine_module.logger, "info_rank0", lambda *args: None)
 
@@ -89,12 +88,12 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
     engine.model = Model()
     engine.dtype = torch.bfloat16
     seen = []
-    monkeypatch.setattr(pool, "kimi_cache_bytes_per_token", lambda *args: 4)
+    monkeypatch.setattr(pool, "cache_bytes_per_token", lambda *args: 4)
     monkeypatch.setattr(
-        pool, "kimi_state_bytes_per_request", lambda *args, tp_size: seen.append(tp_size) or 16
+        pool, "state_bytes_per_request", lambda *args, tp_size: seen.append(tp_size) or 16
     )
     config = SimpleNamespace(
-        model_config=SimpleNamespace(kimi=object()),
+        model_config=SimpleNamespace(cache_config=pool),
         max_running_req=2,
         tp_info=SimpleNamespace(rank=0, size=2),
         page_size=2,
@@ -103,8 +102,8 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
     )
     # 52 weight bytes +32 state +24 cache =108, budget90.
     with pytest.raises(MemoryError, match="before|needs at least"):
-        engine._check_kimi_capacity(100, config)
-    engine._check_kimi_capacity(1000, config)
+        engine._check_capacity(100, config)
+    engine._check_capacity(1000, config)
     assert seen == [2, 2]
 
 
@@ -120,7 +119,8 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
 )
 def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, fixed, ratio):
     import minisgl.engine.engine as module
-    import minisgl.kvcache.kimi_pool as pool
+
+    pool = SimpleNamespace(cache_bytes_per_token=None, state_bytes_per_request=None)
 
     unit = 1024**2
     before, after, fixed = [tuple(v * unit for v in values) for values in (before, after, fixed)]
@@ -130,23 +130,21 @@ def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, f
     shared = min(budgets)
     expected_pages = shared // unit - 1
     monkeypatch.setattr(module.logger, "info", lambda *args: None)
-    monkeypatch.setattr(pool, "kimi_cache_bytes_per_token", lambda *args: unit)
+    monkeypatch.setattr(pool, "cache_bytes_per_token", lambda *args: unit)
     group = object()
     calls = []
     for rank in range(len(before)):
         engine = object.__new__(Engine)
         engine.dtype = torch.bfloat16
         engine.tp_cpu_group = group
-        engine._kimi_initial_free_memory = before[rank]
+        engine._initial_free_memory = before[rank]
 
         def snapshot():
             engine._local_free_memory = after[rank]
             return min(after), max(after)
 
         engine._sync_get_memory = snapshot
-        monkeypatch.setattr(
-            pool, "kimi_state_bytes_per_request", lambda *args, **kwargs: fixed[rank]
-        )
+        monkeypatch.setattr(pool, "state_bytes_per_request", lambda *args, **kwargs: fixed[rank])
 
         def reduce_budget(tensor, op, group):
             assert tensor.device.type == "cpu" and tensor.dtype == torch.int64
@@ -158,7 +156,7 @@ def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, f
         monkeypatch.setattr(torch.distributed, "all_reduce", reduce_budget)
         config = SimpleNamespace(
             model_config=SimpleNamespace(
-                is_kimi=True, kimi=object(), head_dim=4, num_kv_heads=1, num_layers=1
+                cache_config=pool, head_dim=4, num_kv_heads=1, num_layers=1
             ),
             tp_info=SimpleNamespace(size=len(before)),
             page_size=1,
@@ -234,7 +232,7 @@ def test_non_kimi_capacity_path_is_unchanged(monkeypatch):
         lambda *args, **kwargs: pytest.fail("Unexpected collective"),
     )
     config = SimpleNamespace(
-        model_config=SimpleNamespace(is_kimi=False, head_dim=4, num_kv_heads=1, num_layers=1),
+        model_config=SimpleNamespace(cache_config=None, head_dim=4, num_kv_heads=1, num_layers=1),
         tp_info=SimpleNamespace(size=2),
         page_size=1,
         num_page_override=None,

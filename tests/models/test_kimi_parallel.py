@@ -11,13 +11,14 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn.functional as F
-from minisgl.kvcache.kimi_pool import (
-    KimiHybridCache,
-    kimi_cache_bytes_per_token,
-    kimi_state_bytes_per_request,
-)
+from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.layers.base import BaseOP, OPList
-from minisgl.models.kimi_config import KimiTextConfig
+from minisgl.models.kimi_config import (
+    KimiTextConfig,
+    cache_bytes_per_token,
+    cache_config,
+    state_bytes_per_request,
+)
 from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
 from minisgl.models.kimi_parallel import shard_spec, validate_tp_config
 
@@ -113,7 +114,7 @@ def _batch(tokens, start=0, slot=0, uid=10):
 
 
 def _cache(config):
-    return KimiHybridCache(config, 64, 1, 2, torch.float32, torch.device("cpu"))
+    return HybridCache(cache_config(config), 64, 1, 2, torch.float32, torch.device("cpu"))
 
 
 def _initialize(model):
@@ -214,12 +215,12 @@ def _run_two_ranks(rank, init_file):
             parallel.load_state_dict(local_state)
             assert not local_state
             cache = _cache(c)
-            assert cache._recurrent.shape[2] == c.linear_attn_config["num_heads"] // 2
+            assert cache.recurrent._recurrent.shape[2] == c.linear_attn_config["num_heads"] // 2
             assert cache._mla.shape == expected_cache._mla.shape
-            state_bytes = kimi_state_bytes_per_request(c, torch.float32)
-            assert state_bytes * 2 == kimi_state_bytes_per_request(c, torch.float32, tp_size=1)
+            state_bytes = state_bytes_per_request(c, torch.float32)
+            assert state_bytes * 2 == state_bytes_per_request(c, torch.float32, tp_size=1)
             assert cache.allocated_bytes == (
-                64 * kimi_cache_bytes_per_token(c, torch.float32) + 2 * state_bytes
+                64 * cache_bytes_per_token(c, torch.float32) + 2 * state_bytes
             )
             actual = parallel.forward_batch(_batch(tokens), cache, table, all_logits=True)
             torch.testing.assert_close(actual, expected, rtol=2e-5, atol=2e-6)
@@ -229,8 +230,8 @@ def _run_two_ranks(rank, init_file):
             )
             heads = c.linear_attn_config["num_heads"] // 2
             torch.testing.assert_close(
-                cache._recurrent[:, 0],
-                expected_cache._recurrent[:, 0, rank * heads : (rank + 1) * heads],
+                cache.recurrent._recurrent[:, 0],
+                expected_cache.recurrent._recurrent[:, 0, rank * heads : (rank + 1) * heads],
                 rtol=2e-5,
                 atol=2e-6,
             )
@@ -334,11 +335,11 @@ def test_simulated_collectives_model_and_independent_moe(monkeypatch, odd_vocab)
         _attach_simulated_comm(model, _SimulatedComm(rank, group))
         models.append(model)
         caches.append(_cache(c))
-        assert caches[-1]._recurrent.shape[2] == c.linear_attn_config["num_heads"] // 2
-        state_bytes = kimi_state_bytes_per_request(c, torch.float32)
-        assert 2 * state_bytes == kimi_state_bytes_per_request(c, torch.float32, tp_size=1)
+        assert caches[-1].recurrent._recurrent.shape[2] == c.linear_attn_config["num_heads"] // 2
+        state_bytes = state_bytes_per_request(c, torch.float32)
+        assert 2 * state_bytes == state_bytes_per_request(c, torch.float32, tp_size=1)
         assert caches[-1].allocated_bytes == (
-            64 * kimi_cache_bytes_per_token(c, torch.float32) + 2 * state_bytes
+            64 * cache_bytes_per_token(c, torch.float32) + 2 * state_bytes
         )
     monkeypatch.setattr(info, "_TP_INFO", None)
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -360,8 +361,8 @@ def test_simulated_collectives_model_and_independent_moe(monkeypatch, odd_vocab)
             )
             heads = c.linear_attn_config["num_heads"] // 2
             torch.testing.assert_close(
-                cache._recurrent[:, 0],
-                expected_cache._recurrent[:, 0, rank * heads : (rank + 1) * heads],
+                cache.recurrent._recurrent[:, 0],
+                expected_cache.recurrent._recurrent[:, 0, rank * heads : (rank + 1) * heads],
                 rtol=2e-5,
                 atol=2e-6,
             )
@@ -480,8 +481,8 @@ def test_simulated_collectives_packed_checkpoint_tp2_vs_dense_tp1(tmp_path, monk
             heads = config.linear_attn_config["num_heads"] // 2
             for rank, cache in enumerate(caches):
                 torch.testing.assert_close(
-                    cache._recurrent[:, 0],
-                    expected_cache._recurrent[:, 0, rank * heads : (rank + 1) * heads],
+                    cache.recurrent._recurrent[:, 0],
+                    expected_cache.recurrent._recurrent[:, 0, rank * heads : (rank + 1) * heads],
                     rtol=rtol,
                     atol=atol,
                 )

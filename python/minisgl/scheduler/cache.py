@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 
 
 class CacheManager:
-    def __init__(self, num_pages: int, page_size: int, page_table: torch.Tensor, type: str):
+    def __init__(
+        self, num_pages: int, page_size: int, page_table: torch.Tensor, type: str, pool=None
+    ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
         device = page_table.device
@@ -23,15 +25,33 @@ class CacheManager:
         self.num_pages = num_pages
         self.page_table = page_table
         self.page_size = page_size
+        self.pool = pool
+        self.arena = getattr(pool, "arena", None)
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
         assert input_len > 0, "Input length must be greater than 0."
         return self.prefix_cache.match_prefix(req.input_ids[: input_len - 1])
 
+    def restore_state(self, table_idx: int, uid: int, handle: BaseCacheHandle) -> None:
+        self.prefix_cache.restore_state(table_idx, uid, handle)
+        if self.arena is not None and handle.cached_len == 0:
+            self.prefix_cache.release_checkpoint_memory(self.arena.state_bytes)
+            self.pool.recurrent.reserve_request(table_idx, uid)
+
+    def release_state(self, table_idx, uid):
+        if self.pool is not None and hasattr(self.pool, "release_request"):
+            self.pool.release_request(table_idx, uid)
+
     @property
     def available_size(self) -> int:
-        return self.prefix_cache.size_info.evictable_size + len(self.free_slots) * self.page_size
+        free_pages = len(self.free_slots)
+        if self.arena is not None:
+            snapshots = len(self.pool.recurrent._checkpoints) * self.arena.state_bytes
+            free_pages = min(
+                free_pages, (self.arena.free_bytes + snapshots) // self.arena.page_bytes
+            )
+        return self.prefix_cache.size_info.evictable_size + free_pages * self.page_size
 
     def lock(self, handle: BaseCacheHandle) -> None:
         self.prefix_cache.lock_handle(handle, unlock=False)
@@ -68,13 +88,18 @@ class CacheManager:
         page_indices = self.page_table[req.table_idx, : req.cached_len]
         old_handle = req.cache_handle
         cached_len, new_handle = self.prefix_cache.insert_prefix(insert_ids, page_indices)
+        self.prefix_cache.cache_state(req, new_handle)
         # unlock until all operations on handle is done
         self.unlock(old_handle)
         # this part is already in the prefix cache, free it
-        self._free(page_indices[old_handle.cached_len : cached_len])
+        self._free(page_indices[old_handle.cached_len : cached_len].clone())
         if finished:  # this tail part should be freed
             self._free(page_indices[new_handle.cached_len :])
         else:  # keep the tail part, update the handle
+            if new_handle.cached_len:
+                # Replay may join an existing radix edge. Point the continuing
+                # request at its shared KV pages before freed duplicates are reused.
+                page_indices[: new_handle.cached_len].copy_(new_handle.get_matched_indices())
             req.cache_handle = new_handle
             self.lock(new_handle)
 
@@ -101,19 +126,32 @@ class CacheManager:
             yield
         finally:
             del self._free
+            if self.arena is not None:
+                for pages in lazy_free_list:
+                    self.arena.free_pages_by_id((pages // self.page_size).tolist())
             self.free_slots = torch.cat([self.free_slots] + lazy_free_list)
 
     def _allocate(self, needed_pages: int) -> torch.Tensor:
-        if needed_pages > (free_pages := len(self.free_slots)):
+        free_pages = len(self.free_slots)
+        if self.arena is not None:
+            self.prefix_cache.release_checkpoint_memory(needed_pages * self.arena.page_bytes)
+            free_pages = min(free_pages, self.arena.free_pages)
+        if needed_pages > free_pages:
             evicted = self.prefix_cache.evict((needed_pages - free_pages) * self.page_size)
+            if self.arena is not None:
+                self.arena.free_pages_by_id((evicted[:: self.page_size] // self.page_size).tolist())
             self.free_slots = torch.cat([self.free_slots, evicted[:: self.page_size]])
             assert len(self.free_slots) >= needed_pages, "Eviction did not free enough space."
         allocated = self.free_slots[:needed_pages]
         self.free_slots = self.free_slots[needed_pages:]
+        if self.arena is not None:
+            self.arena.allocate_pages((allocated // self.page_size).tolist())
         return allocated
 
     def _free(self, indices: torch.Tensor) -> None:
         if len(indices) > 0:
+            if self.arena is not None:
+                self.arena.free_pages_by_id((indices[:: self.page_size] // self.page_size).tolist())
             self.free_slots = torch.cat([self.free_slots, indices[:: self.page_size]])
 
     def _page_to_token(self, pages: torch.Tensor) -> torch.Tensor:

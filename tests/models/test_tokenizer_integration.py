@@ -37,6 +37,7 @@ def test_generation_stops_are_distinct_from_tokenizer_identity():
 @pytest.mark.parametrize("ignore_eos", [False, True])
 def test_scheduler_obeys_generation_stop_ids(ignore_eos):
     scheduler = object.__new__(Scheduler)
+    scheduler._has_recurrent_state = False
     scheduler.stop_token_ids = get_stop_token_ids(tokenizer())
     scheduler.eos_token_id = 163585
     scheduler.finished_reqs = set()
@@ -119,7 +120,12 @@ def test_kimi_loader_uses_only_pinned_data_files(tmp_path, monkeypatch, remote):
     metadata = {
         "tokenizer_class": "TikTokenTokenizer",
         "_commit_hash": "a" * 40,
-        "added_tokens_decoder": {"163586": {"content": "<|end_of_msg|>"}},
+        "added_tokens_decoder": {
+            str(i): {"content": token}
+            for i, token in enumerate(
+                ("<|end_of_msg|>", "<|open|>", "<|close|>", "<|sep|>"), 163586
+            )
+        },
     }
     monkeypatch.setattr(hf, "get_tokenizer_config", lambda _: metadata)
     (tmp_path / "generation_config.json").write_text(json.dumps({"eos_token_id": 163586}))
@@ -129,7 +135,7 @@ def test_kimi_loader_uses_only_pinned_data_files(tmp_path, monkeypatch, remote):
         constructor.append(args)
         return "local tokenizer"
 
-    monkeypatch.setitem(sys.modules, "minisgl.tokenizer.kimi", SimpleNamespace(KimiTokenizer=make))
+    monkeypatch.setitem(sys.modules, "minisgl.tokenizer.xtml", SimpleNamespace(XTMLTokenizer=make))
 
     def download(*args, **kwargs):
         downloads.append((args, kwargs))

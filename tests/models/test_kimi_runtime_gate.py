@@ -203,8 +203,8 @@ def test_finite_detector_rejects_each_live_component(fixtures, component, value)
         model.forward_batch(batch_for(PROMPT, device), cache, table)
     assert_finite_live_state(cache, table)
     tensor = {
-        "recurrent": cache._recurrent[:, 0],
-        "convolution": cache._conv[:, 0],
+        "recurrent": cache.recurrent._recurrent[:, 0],
+        "convolution": cache.recurrent._conv[:, 0],
         "mla": cache._mla[:, 0],
     }[component]
     tensor[(0,) * tensor.ndim] = value

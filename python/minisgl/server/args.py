@@ -100,6 +100,18 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--max-cached-states",
+        type=int,
+        default=ServerArgs.max_cached_states,
+        help="Maximum sparse recurrent checkpoints retained by the hybrid prefix cache.",
+    )
+    parser.add_argument(
+        "--enable-unified-memory",
+        action="store_true",
+        help="Share hybrid recurrent state and MLA token pages in one compact byte pool.",
+    )
+
+    parser.add_argument(
         "--max-seq-len-override",
         type=int,
         default=ServerArgs.max_seq_len_override,

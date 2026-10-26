@@ -29,7 +29,9 @@ class BaseOP:
 
         return result
 
-    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> None:
+    def load_weights(
+        self, weights: Iterable[tuple[str, torch.Tensor]], *, device: torch.device | None = None
+    ) -> None:
         """Assign a checkpoint stream without staging a second full state dictionary.
 
         Expected tensors may be on meta. Each item is validated before assignment;
@@ -38,6 +40,12 @@ class BaseOP:
         mutate a caller-owned dictionary.
         """
         remaining = self.state_dict()
+        if device is not None:
+            from .weight import allocate_weight_views
+
+            storage = allocate_weight_views(remaining, device)
+        else:
+            storage = None
         for name, item in weights:
             expected = remaining.pop(name, None)
             if expected is None:
@@ -47,6 +55,10 @@ class BaseOP:
                     f"Checkpoint tensor {name}: {tuple(item.shape)}/{item.dtype} != "
                     f"{tuple(expected.shape)}/{expected.dtype}"
                 )
+            if storage is not None:
+                target = storage.pop(name)
+                target.copy_(item)
+                item = target
             parent = self
             parts = name.split(".")
             for part in parts[:-1]:

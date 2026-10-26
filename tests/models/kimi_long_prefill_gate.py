@@ -12,14 +12,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import torch
-from minisgl.kvcache.kimi_pool import KimiHybridCache
+from minisgl.kvcache.hybrid_pool import HybridCache
+from minisgl.models.kimi_config import cache_config
 from run_kimi_runtime_gate import _close, load_fixture, verify_fixtures
 
 DECODE_STEPS = 3
 
 
 def _cache_and_table(config, dtype, device, capacity, slots):
-    cache = KimiHybridCache(config.kimi, capacity * slots, 1, slots, dtype, device)
+    cache = HybridCache(cache_config(config.kimi), capacity * slots, 1, slots, dtype, device)
     table = torch.arange(capacity * slots, device=device).reshape(slots, capacity)
     return cache, table
 
@@ -56,8 +57,8 @@ def _batch(pieces, starts, slots, uids, table, device):
 def _live_state(cache, table, slot, length):
     # MLA allocation uses torch.empty, so never inspect unwritten spare capacity.
     return {
-        "convolution": cache._conv[:, slot].clone(),
-        "recurrent": cache._recurrent[:, slot].clone(),
+        "convolution": cache.recurrent._conv[:, slot].clone(),
+        "recurrent": cache.recurrent._recurrent[:, slot].clone(),
         "mla": cache._mla.index_select(1, table[slot, :length]).clone(),
     }
 

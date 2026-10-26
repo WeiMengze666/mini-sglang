@@ -139,7 +139,7 @@ def audit_rank(config, tensors, rank, size):
     try:
         torch.set_default_dtype(dtype)
         with (
-            patch("minisgl.models.kimi_parallel.tp_info", return_value=(rank, size)),
+            patch("minisgl.distributed.parallel.tp_info", return_value=(rank, size)),
             torch.device("meta"),
         ):
             model = KimiK3LinearForCausalLM(config)

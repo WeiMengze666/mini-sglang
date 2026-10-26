@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 from minisgl.core import get_global_ctx
 from minisgl.distributed import DistributedCommunicator, get_tp_info
+from minisgl.distributed.parallel import TensorParallel
 from minisgl.utils import div_ceil, nvtx_annotate
 
 from .base import BaseOP
@@ -108,3 +109,24 @@ class ParallelLMHead(VocabParallelEmbedding):
         output_tensor = output_tensor.permute(1, 0, 2).contiguous()
         output_tensor = output_tensor.reshape(input_shape[:1] + (self.tp_size * input_shape[1],))
         return output_tensor[:, : self.num_embeddings]
+
+
+class Embedding(BaseOP):
+    def __init__(self, vocab_size, hidden_size):
+        self._tp = TensorParallel()
+        self._vocab_size = vocab_size
+        self._sharded = self._tp.size > 1 and vocab_size % self._tp.size == 0
+        width = vocab_size // self._tp.size if self._sharded else vocab_size
+        self._start = self._tp.rank * width if self._sharded else 0
+        self.weight = torch.empty(width, hidden_size)
+
+    def forward(self, input_ids):
+        if not self._sharded:
+            return F.embedding(input_ids.long(), self.weight)
+        if ((input_ids < 0) | (input_ids >= self._vocab_size)).any():
+            raise IndexError("Token ID is outside the vocabulary")
+        local = input_ids.long() - self._start
+        mask = (local >= 0) & (local < self.weight.shape[0])
+        output = F.embedding(local.masked_fill(~mask, 0), self.weight)
+        output = output * mask.unsqueeze(-1).to(output.dtype)
+        return self._tp.all_reduce(output)

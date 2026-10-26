@@ -109,7 +109,7 @@ def scheduler(monkeypatch):
     monkeypatch.setattr(torch, "tensor", cpu_tensor)
     monkeypatch.setattr(torch.Tensor, "pin_memory", lambda self: self)
     scheduler = object.__new__(Scheduler)
-    scheduler._is_kimi = True
+    scheduler._has_recurrent_state = True
     scheduler.vocab_size = 100
     scheduler.device = torch.device("cpu")
     scheduler.finished_reqs = set()

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
+
+if TYPE_CHECKING:
+    from minisgl.kvcache.config import HybridCacheConfig
 
 from transformers import PretrainedConfig
 
@@ -35,6 +38,7 @@ class ModelConfig:
     model_type: str
     architectures: list[str]
     kimi: Any | None = None
+    cache_config: HybridCacheConfig | None = None
 
     @property
     def is_moe(self) -> bool:
@@ -43,6 +47,10 @@ class ModelConfig:
     @property
     def is_kimi(self) -> bool:
         return self.kimi is not None
+
+    @property
+    def has_recurrent_state(self) -> bool:
+        return self.cache_config is not None and bool(self.cache_config.recurrent_layers)
 
     @classmethod
     def from_hf(cls, config: PretrainedConfig) -> ModelConfig:
@@ -54,7 +62,7 @@ class ModelConfig:
                     setattr(config, attr, getattr(top, attr))
 
         if getattr(config, "model_type", None) == "kimi_linear":
-            from .kimi_config import KimiTextConfig
+            from .kimi_config import KimiTextConfig, cache_config
 
             kimi = KimiTextConfig(**config.to_dict())
             kimi.validate_text()
@@ -83,6 +91,7 @@ class ModelConfig:
                 model_type="kimi_linear",
                 architectures=["KimiK3LinearForCausalLM"],
                 kimi=kimi,
+                cache_config=cache_config(kimi),
             )
 
         num_kv_heads = getattr(config, "num_key_value_heads", config.num_attention_heads)

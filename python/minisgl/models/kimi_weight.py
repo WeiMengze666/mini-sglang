@@ -13,6 +13,7 @@ from typing import Iterator
 
 import safetensors
 import torch
+from minisgl.quantization.mxfp4 import decode_mxfp4
 
 _LAYER = re.compile(r"(?:^|\.)layers\.(\d+)\.")
 
@@ -43,47 +44,6 @@ def normalize_kimi_name(name: str, num_layers: int | None = None) -> str | None:
     if layer is not None and num_layers is not None and int(layer.group(1)) >= num_layers:
         return None
     return name
-
-
-def decode_mxfp4(
-    packed: torch.Tensor,
-    scales: torch.Tensor,
-    *,
-    dtype: torch.dtype = torch.bfloat16,
-    block_size: int = 32,
-) -> torch.Tensor:
-    """Decode uint8 low-nibble-first E2M1 and E8M0 block exponents.
-
-    E2M1 magnitudes are [0,.5,1,1.5,2,3,4,6]; bit 3 is sign.
-    E8M0 exponent zero denotes 2**-127 (not zero); 255 denotes NaN.
-    Scales cover consecutive groups of 32 columns, independently per row.
-    """
-    if packed.dtype != torch.uint8 or packed.ndim != 2:
-        raise ValueError("MXFP4 packed weights must be a 2-D uint8 tensor")
-    if scales.dtype != torch.uint8:
-        raise ValueError("MXFP4 scales must be uint8 E8M0 exponents")
-    if block_size != 32:
-        raise ValueError("MXFP4 requires 32-element scale blocks")
-    if not dtype.is_floating_point:
-        raise ValueError("Decoded MXFP4 weights require a floating-point dtype")
-    rows, half_cols = packed.shape
-    cols = half_cols * 2
-    # Some exporters serialize group scales as [out, 1, groups, 1].
-    if scales.ndim == 4 and scales.shape[1] == scales.shape[3] == 1:
-        scales = scales[:, 0, :, 0]
-    expected = (rows, (cols + block_size - 1) // block_size)
-    if tuple(scales.shape) != expected:
-        raise ValueError(f"MXFP4 scale shape {tuple(scales.shape)} != {expected}")
-    codes = torch.stack((packed & 15, packed >> 4), dim=-1).reshape(rows, cols).long()
-    table = torch.tensor(
-        [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0], dtype=torch.float32, device=packed.device
-    )
-    values = table[codes & 7] * torch.where((codes & 8) != 0, -1.0, 1.0)
-    scales = scales.to(packed.device)
-    factors = torch.exp2(scales.float() - 127)
-    factors = factors.masked_fill(scales == 255, torch.nan)
-    values *= factors.repeat_interleave(block_size, dim=-1)[:, :cols]
-    return values.to(dtype)
 
 
 def _index_entries(folder: Path) -> dict[str, str] | None:
