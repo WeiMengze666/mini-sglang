@@ -7,6 +7,7 @@ import base64
 import concurrent.futures
 import json
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -63,18 +64,27 @@ def fixture(root, args):
     return model
 
 
-def run(model, output, unified, args):
-    for _ in range(20):
+def _free_port_pair():
+    # Outgoing readiness/store connections can claim a probed ephemeral port
+    # before a worker binds it. Keep both listeners outside that kernel range.
+    ephemeral = Path("/proc/sys/net/ipv4/ip_local_port_range")
+    lower, upper = map(int, ephemeral.read_text().split()) if ephemeral.exists() else (32768, 65535)
+    for _ in range(100):
+        port = 1024 + secrets.randbelow(65535 - 1024)
+        if lower - 1 <= port <= upper:
+            continue
         with socket.socket() as first, socket.socket() as second:
-            first.bind(("127.0.0.1", 0))
-            port = first.getsockname()[1]
             try:
+                first.bind(("127.0.0.1", port))
                 second.bind(("127.0.0.1", port + 1))
             except OSError:
                 continue
-            break
-    else:
-        raise RuntimeError("No free pair of validation ports")
+            return port
+    raise RuntimeError("No free pair of validation ports outside the ephemeral range")
+
+
+def run(model, output, unified, args):
+    port = _free_port_pair()
     command = [
         sys.executable,
         "-m",
