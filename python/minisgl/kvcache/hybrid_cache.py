@@ -99,18 +99,21 @@ class HybridPrefixCache(RadixPrefixCache):
         node = handle.node
         if node.uuid in self.checkpoints:
             return
+        # KV readers already own a private restored state. Only an outstanding
+        # restore must keep its tree checkpoint alive until the copy is queued.
+        pinned = {node_id for node_id, _ in self._pending_restores.values()}
         path, parent = [], node
         while not parent.is_root():
             if parent.uuid in self.checkpoints:
                 path.append(parent)
             parent = parent.parent
         if len(path) >= self.max_states_per_path:
-            candidates = [n for n in path if n.ref_count == 0]
+            candidates = [n for n in path if n.uuid not in pinned]
             if not candidates:
                 return
             self._drop(min(candidates, key=lambda n: (len(n.children) > 1, n.timestamp)))
         if len(self.checkpoints) >= self.states.max_cached_states:
-            candidates = [n for n, _ in self.checkpoints.values() if n.ref_count == 0]
+            candidates = [n for n, _ in self.checkpoints.values() if n.uuid not in pinned]
             if not candidates:
                 return
             # Preserve branching points before equivalent single-child nodes.
