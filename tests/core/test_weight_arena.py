@@ -40,3 +40,30 @@ def test_streamed_assignment_copies_before_a_reused_source_buffer_changes():
     first, second = model.layers.op_list
     assert first.weight.eq(1).all() and second.weight.eq(2).all()
     assert first.weight.untyped_storage().data_ptr() == second.weight.untyped_storage().data_ptr()
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_after_load_runs_bottom_up_once_and_rebuilds_on_reload(streamed):
+    events = []
+
+    class Derived(Linear):
+        def after_load(self):
+            self._derived = self.weight.sum().item()
+            events.append(self._derived)
+
+    class Root(OPList):
+        def after_load(self):
+            assert all(hasattr(child, "_derived") for child in self.op_list)
+            events.append("root")
+
+    model = Root([Derived(2, 2), Derived(2, 2)])
+    for value in (1.0, 3.0):
+        state = {
+            name: torch.full_like(tensor, value) for name, tensor in model.state_dict().items()
+        }
+        if streamed:
+            model.load_weights(state.items(), device=torch.device("cpu"))
+        else:
+            model.load_state_dict(state)
+        assert events[-3:] == [4 * value, 4 * value, "root"]
+    assert len(events) == 6

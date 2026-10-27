@@ -4,7 +4,7 @@ import os
 
 import pytest
 import torch
-from minisgl.attention.mla import mla_attention
+from minisgl.attention.mla import CausalLayout, mla_attention
 from minisgl.attention.mla_fi import FlashInferMLA
 
 pytestmark = pytest.mark.skipif(
@@ -25,7 +25,8 @@ pytestmark = pytest.mark.skipif(
         (12, 17, 1, 0, 1),
     ],
 )
-def test_absorbed_decode_values_and_natural_lse(heads, length, tokens, start, offset):
+@pytest.mark.parametrize("layout_known", [False, True])
+def test_absorbed_decode_values_and_natural_lse(heads, length, tokens, start, offset, layout_known):
     torch.manual_seed(107)
     q = torch.randn(tokens, heads, 256, dtype=torch.bfloat16, device="cuda") * 0.1
     latent = torch.randn(length, 512, dtype=torch.bfloat16, device="cuda") * 0.1
@@ -48,6 +49,7 @@ def test_absorbed_decode_values_and_natural_lse(heads, length, tokens, start, of
             nope_dim=192,
             value_dim=128,
             return_lse=True,
+            causal_layout=CausalLayout(start, offset, 2) if layout_known else None,
         )
         torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.002)
         torch.testing.assert_close(lse, expected_lse, rtol=0.001, atol=0.001)

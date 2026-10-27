@@ -375,14 +375,14 @@ def test_simulated_collectives_model_and_independent_moe(monkeypatch, odd_vocab)
             )
             for output in outputs:
                 torch.testing.assert_close(output, expected[start:stop], rtol=2e-5, atol=2e-6)
+        before = len(group.sequence)
         outputs = run(lambda rank: models[rank].model.layers.op_list[1].mlp.forward(x))
         for output in outputs:
             torch.testing.assert_close(output, expected_moe, rtol=1e-5, atol=1e-6)
-        # One full routed-mixture reduction, then one shared-MLP reduction.
+        # Routed and shared values share one reduction before latent norm/up.
         width = c.routed_expert_hidden_size or c.hidden_size
-        assert group.sequence[-2:] == [
-            ("sum", (len(x), width), torch.float32),
-            ("sum", (len(x), c.hidden_size), torch.float32),
+        assert group.sequence[before:] == [
+            ("sum", (len(x), width + c.hidden_size), torch.float32),
         ]
 
 

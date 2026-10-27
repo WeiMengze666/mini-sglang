@@ -28,6 +28,9 @@ class BaseOP:
             child.apply(fn)
         fn(self)
 
+    def after_load(self) -> None:
+        """Rebuild optional inference metadata after all checkpoint tensors exist."""
+
     def state_dict(self, *, prefix: str = "", result: _STATE_DICT | None = None) -> _STATE_DICT:
         result = result if result is not None else {}
 
@@ -81,6 +84,7 @@ class BaseOP:
         if remaining:
             sample = list(remaining)[:5]
             raise ValueError(f"Missing {len(remaining)} checkpoint tensors, including {sample}")
+        self.apply(lambda op: op.after_load())
 
     def load_state_dict(
         self,
@@ -104,6 +108,8 @@ class BaseOP:
 
         if not _internal and state_dict:
             raise RuntimeError(f"Unexpected keys in state_dict: {list(state_dict.keys())}")
+        if not _internal:
+            self.apply(lambda op: op.after_load())
 
 
 class StateLessOP(BaseOP):
@@ -169,3 +175,5 @@ class OPList(BaseOP, Generic[T]):
 
         if not _internal and state_dict:
             raise RuntimeError(f"Unexpected keys in state_dict: {list(state_dict.keys())}")
+        if not _internal:
+            self.apply(lambda op: op.after_load())

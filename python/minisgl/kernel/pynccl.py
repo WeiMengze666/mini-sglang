@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import functools
+import importlib.util
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from minisgl.env import ENV
@@ -27,7 +29,18 @@ else:
 
 @functools.cache
 def _load_nccl_module() -> Module:
-    return load_aot("pynccl", cuda_files=["pynccl.cu"], extra_ldflags=["-lnccl"])
+    flags = ["-lnccl"]
+    try:
+        spec = importlib.util.find_spec("nvidia.nccl")
+    except ModuleNotFoundError:
+        spec = None
+    # Wheels ship the versioned soname without the linker-name symlink.
+    for root in (spec.submodule_search_locations or []) if spec else []:
+        library = Path(root) / "lib/libnccl.so.2"
+        if library.is_file():
+            flags = [str(library), f"-Wl,-rpath,{library.parent}"]
+            break
+    return load_aot("pynccl", cuda_files=["pynccl.cu"], extra_ldflags=flags)
 
 
 @functools.cache

@@ -53,14 +53,14 @@ def _gemv(
     tl.store(Y + token * N + rows, acc, rows < N)
 
 
-@tr.jit
+@tr.jit(do_not_specialize=["M"])
 def _gemm(
     X,
     W,
     S,
     B,
     Y,
-    M: tl.constexpr,
+    M,
     N: tl.constexpr,
     K: tl.constexpr,
     BIAS: tl.constexpr,

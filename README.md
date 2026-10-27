@@ -26,10 +26,10 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
 
 Reusable KDA, gated MLA, LatentMoE, hybrid prefix checkpoints and an opt-in
 unified state/KV pool are implemented. The packed released K3 checkpoint loads
-and generates on 8×B300. Full-model numerical validation is still in progress;
-DCP and EP have passed distributed and released-weight FP32 checks. Optional
-MXFP4/KDA/MLA kernels are available; broader accuracy and performance parity
-remain under validation. See the
+and generates on 8×B300. DCP/EP, released-weight FP32 consistency and actual
+FP32/BF16 HTTP lifecycle checks have passed. Optional MXFP4/KDA/MLA kernels and
+grouped expert execution are available. Strict BF16 alignment, broader task
+accuracy and performance parity remain unaccepted. See the
 [architecture, validation results and remaining gates](docs/kimi-k3.md).
 
 ## 🚀 Quick Start

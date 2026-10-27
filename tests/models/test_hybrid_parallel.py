@@ -125,6 +125,10 @@ def _worker(rank, world, init_file, device_type):
         batch = _batch(tokens)
         batch.out_loc = table[0, : len(tokens)]
         expected = reference.forward_batch(batch, reference_cache, table, all_logits=True)
+        other_tokens = [13, 7, 22]
+        other = _batch(other_tokens, slot=1, uid=30)
+        other.out_loc = table[1, : len(other_tokens)]
+        expected_other = reference.forward_batch(other, reference_cache, table, all_logits=True)
         info._TP_INFO = DistributedInfo(rank, world)
         for dcp, ep in ((2, 1), (1, 2), (2, 2), (4, 4)):
             configure_parallel(dcp_size=dcp, ep_size=ep)
@@ -164,7 +168,7 @@ def _worker(rank, world, init_file, device_type):
                     cache.arena.allocate_pages(list(range(16)))
                 else:
                     assert cache._mla.shape[1] == 512 // dcp
-                gpu_table = table.to(device)
+                gpu_table = table.to(device).clone()
 
                 def run(start, stop, *, slot=0, uid=10):
                     batch = _batch(tokens[start:stop], start, slot=slot, uid=uid)
@@ -195,6 +199,25 @@ def _worker(rank, world, init_file, device_type):
                 assert (chunked - expected).norm() / expected.norm() < 1e-5
                 cache.release_request(1, 20)
                 cache.recurrent.drop_checkpoint(checkpoint)
+                # Heterogeneous requests share projections and collectives,
+                # while retaining separate recurrent state and KV histories.
+                gpu_table.copy_(table.to(device))
+                left = _batch(tokens, slot=0, uid=40)
+                right = _batch(other_tokens, slot=1, uid=41)
+                combined = SimpleNamespace(
+                    reqs=left.reqs + right.reqs,
+                    input_ids=torch.cat((left.input_ids, right.input_ids)).to(device),
+                    positions=torch.cat((left.positions, right.positions)).to(device),
+                    out_loc=torch.cat(
+                        (gpu_table[0, : len(tokens)], gpu_table[1, : len(other_tokens)])
+                    ),
+                )
+                actual = model.forward_batch(combined, cache, gpu_table, all_logits=True).cpu()
+                expected_batch = torch.cat((expected, expected_other))
+                torch.testing.assert_close(actual, expected_batch, rtol=4e-5, atol=2e-5)
+                assert (actual - expected_batch).norm() / expected_batch.norm() < 1e-5
+                cache.release_request(0, 40)
+                cache.release_request(1, 41)
                 if unified:
                     cache.arena.check_integrity()
     finally:

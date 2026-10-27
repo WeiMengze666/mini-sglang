@@ -8,7 +8,7 @@ from .layout import get_parallel_layout
 _DCP_GROUP = None
 
 
-def init_context_parallel():
+def init_context_parallel(*, backend=None):
     """Every TP rank creates subgroups in the same order, once at startup."""
     global _DCP_GROUP
     layout = get_parallel_layout()
@@ -17,7 +17,7 @@ def init_context_parallel():
         return
     for start in range(0, layout.size, layout.dcp_size):
         ranks = list(range(start, start + layout.dcp_size))
-        group = dist.new_group(ranks)
+        group = dist.new_group(ranks, backend=backend)
         if layout.rank in ranks:
             _DCP_GROUP = group
 

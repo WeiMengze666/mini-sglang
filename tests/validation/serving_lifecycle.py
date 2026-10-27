@@ -84,15 +84,15 @@ def run(model, output, unified, args):
         "--port",
         str(port),
         "--dtype",
-        "float32",
+        args.dtype,
         "--max-running-requests",
         "2",
         "--num-pages",
-        "128",
+        str(args.num_pages),
         "--page-size",
-        "2",
+        str(args.page_size),
         "--max-extend-length",
-        "4",
+        str(args.max_extend_tokens),
         "--max-cached-states",
         "8",
         "--tp-size",
@@ -106,6 +106,8 @@ def run(model, output, unified, args):
         "--attention-backend",
         args.attention_backend,
     ]
+    if args.max_seq_len is not None:
+        command.extend(("--max-seq-len-override", str(args.max_seq_len)))
     if unified:
         command.append("--enable-unified-memory")
     log = output / ("http-unified.log" if unified else "http-static.log")
@@ -115,7 +117,7 @@ def run(model, output, unified, args):
         )
         try:
             url = f"http://127.0.0.1:{port}"
-            deadline = time.monotonic() + 180
+            deadline = time.monotonic() + args.readiness_timeout
             while time.monotonic() < deadline:
                 if server.poll() is not None:
                     raise RuntimeError(f"Server exited; see {log}")
@@ -128,11 +130,11 @@ def run(model, output, unified, args):
             else:
                 raise TimeoutError(f"Server did not become ready; see {log}")
 
-            def complete(prompt="hello", tokens=8, timeout=60):
+            def complete(prompt=args.prompt, tokens=8, timeout=60):
                 response = httpx.post(
                     url + "/v1/chat/completions",
                     json={
-                        "model": "synthetic",
+                        "model": str(model),
                         "prompt": prompt,
                         "temperature": 0,
                         "max_tokens": tokens,
@@ -146,15 +148,15 @@ def run(model, output, unified, args):
             baseline = complete(timeout=180)  # first-use CUDA compilation is outside latency gates
             for _ in range(3):
                 assert complete() == baseline, "Prefix restore or slot reuse changed the generation"
-            complete("help")  # aligned radix fork and recurrent replay
+            complete(args.prompt[:-2] + "different ending")  # radix fork and recurrent replay
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                 assert all(value == baseline for value in pool.map(lambda _: complete(), range(4)))
             with httpx.stream(
                 "POST",
                 url + "/v1/chat/completions",
                 json={
-                    "model": "synthetic",
-                    "prompt": "cancel",
+                    "model": str(model),
+                    "prompt": args.prompt + " cancellation",
                     "temperature": 0,
                     "max_tokens": 30,
                     "ignore_eos": True,
@@ -172,7 +174,7 @@ def run(model, output, unified, args):
             assert complete(tokens=0) == "", "Zero-token request did not complete"
             bad = httpx.post(
                 url + "/v1/chat/completions",
-                json={"model": "synthetic", "prompt": "hi", "max_tokens": -1},
+                json={"model": str(model), "prompt": "hi", "max_tokens": -1},
                 timeout=10,
             )
             assert bad.status_code == 400
@@ -183,7 +185,11 @@ def run(model, output, unified, args):
                 "dcp_size": args.dcp_size,
                 "ep_size": args.ep_size,
                 "packed": args.packed,
-                "scope": "synthetic_http_scheduler_prefix_reuse_and_cancellation",
+                "prompt_tokens": args.prompt_tokens,
+                "page_size": args.page_size,
+                "scope": "synthetic_http_scheduler_prefix_reuse_and_cancellation"
+                if args.model is None
+                else "released_checkpoint_http_scheduler_prefix_reuse_and_cancellation",
             }
         finally:
             if server.poll() is None:
@@ -198,6 +204,18 @@ def run(model, output, unified, args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--model",
+        type=Path,
+        help="Use an existing local checkpoint instead of generating a fixture",
+    )
+    parser.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
+    parser.add_argument("--num-pages", type=int, default=128)
+    parser.add_argument("--page-size", type=int, default=2)
+    parser.add_argument("--max-extend-tokens", type=int, default=4)
+    parser.add_argument("--max-seq-len", type=int)
+    parser.add_argument("--readiness-timeout", type=float, default=180)
+    parser.add_argument("--prompt", default="hello")
     parser.add_argument("--tp-size", type=int, default=1)
     parser.add_argument("--dcp-size", type=int, default=1)
     parser.add_argument("--ep-size", type=int, default=1)
@@ -206,7 +224,16 @@ def main():
     parser.add_argument("--attention-backend", default="recurrent")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    model = fixture(args.output / "fixture", args)
+    model = (
+        args.model.resolve() if args.model is not None else fixture(args.output / "fixture", args)
+    )
+    if not model.is_dir():
+        raise ValueError("The serving gate requires an existing local checkpoint")
+    from minisgl.utils import load_tokenizer
+
+    args.prompt_tokens = len(load_tokenizer(str(model)).encode(args.prompt))
+    if args.prompt_tokens < 2 * args.page_size:
+        raise ValueError("Prompt must span at least two pages to exercise prefix reuse")
     report = [run(model, args.output, unified, args) for unified in (False, True)]
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report), flush=True)

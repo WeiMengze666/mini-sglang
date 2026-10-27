@@ -5,7 +5,7 @@ from collections import OrderedDict
 import torch
 import torch.nn.functional as F
 
-from .mla import causal_query_groups, mla_attention
+from .mla import CausalLayout, causal_query_groups, mla_attention
 
 
 class FlashInferMLA:
@@ -26,6 +26,7 @@ class FlashInferMLA:
         value_dim,
         scale=None,
         return_lse=False,
+        causal_layout: CausalLayout | None = None,
     ):
         if (
             not q.is_cuda
@@ -48,18 +49,9 @@ class FlashInferMLA:
             )
         tokens = q.shape[0]
         heads, dim = q.shape[1:]
-        if tokens == 1 and not (kv_positions > q_positions[0]).any():
-            groups, order = [([0], len(latent))], None
-            pattern = (1,)
-        else:
-            from minisgl.distributed.context import ContextParallel
-
+        if causal_layout is None:
             start, first_key = int(q_positions[0]), int(kv_positions[0])
-            stride = (
-                int(kv_positions[1] - kv_positions[0])
-                if len(latent) > 1
-                else ContextParallel().size
-            )
+            stride = int(kv_positions[1] - kv_positions[0]) if len(latent) > 1 else 1
             regular = (
                 stride > 0
                 and torch.equal(q_positions, torch.arange(start, start + tokens, device=q.device))
@@ -67,9 +59,17 @@ class FlashInferMLA:
                     kv_positions, torch.arange(len(latent), device=q.device) * stride + first_key
                 )
             )
-            complete = (
-                tokens == 1 or first_key + (len(latent) - 1) * stride >= start + tokens - stride
-            )
+        else:
+            start, first_key, stride = causal_layout
+            if stride < 1:
+                raise ValueError("Causal key stride must be positive")
+            regular = True
+        last_key = first_key + (len(latent) - 1) * stride
+        if tokens == 1 and regular and last_key <= start:
+            groups, order = [([0], len(latent))], None
+            pattern = (1,)
+        else:
+            complete = tokens == 1 or last_key >= start + tokens - stride
             if not regular or not complete:
                 return mla_attention(
                     q,

@@ -220,7 +220,12 @@ def test_engine_guards_and_existing_model_config(tmp_path, monkeypatch):
     assert engine.cuda_graph_bs == [] and engine.cache_type == "hybrid"
     engine_tp = SchedulerConfig(str(tmp_path), DistributedInfo(0, 2), torch.bfloat16)
     _adjust_config(engine_tp)
-    assert engine_tp.attention_backend == "recurrent" and not engine_tp.use_pynccl
+    assert engine_tp.attention_backend == "recurrent" and engine_tp.use_pynccl
+    engine_torch = SchedulerConfig(
+        str(tmp_path), DistributedInfo(0, 2), torch.bfloat16, use_pynccl=False
+    )
+    _adjust_config(engine_torch)
+    assert not engine_torch.use_pynccl
     engine_bad = SchedulerConfig(str(tmp_path), DistributedInfo(0, 3), torch.bfloat16)
     with pytest.raises(ValueError, match="divisible"):
         _adjust_config(engine_bad)

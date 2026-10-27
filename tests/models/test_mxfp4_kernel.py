@@ -14,7 +14,16 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
 @pytest.mark.parametrize(
-    "m,n,k", [(1, 17, 32), (2, 67, 96), (7, 83, 512), (27, 128, 7168), (1, 129, 12288)]
+    "m,n,k",
+    [
+        (1, 17, 32),
+        (2, 67, 96),
+        (7, 83, 512),
+        (65, 83, 512),
+        (33, 67, 96),
+        (27, 128, 7168),
+        (1, 129, 12288),
+    ],
 )
 def test_fused_weight_only_linear(dtype, m, n, k):
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -33,8 +42,11 @@ def test_fused_weight_only_linear(dtype, m, n, k):
     layer.bias.normal_(std=0.1)
     layer.set_backend("triton")
     # A noncontiguous leading dimension exercises flattening without changing K.
-    x = torch.randn(2 * m, k, device="cuda", dtype=dtype)[::2] * 0.08
-    expected = F.linear(x, expected_weight, layer.bias)
+    x = (torch.randn(2 * m, k, device="cuda", dtype=dtype) * 0.08)[::2]
+    if m > 1:
+        assert not x.is_contiguous()
+    # The kernel accumulates in FP32; default BF16 cuBLAS may truncate split-K partials.
+    expected = F.linear(x.float(), expected_weight.float(), layer.bias.float()).to(dtype)
     actual = layer.forward(x)
     tolerance = (3e-5, 3e-5) if dtype == torch.float32 else (0.015, 0.015)
     torch.testing.assert_close(actual, expected, rtol=tolerance[0], atol=tolerance[1])

@@ -42,7 +42,6 @@ def main():
         mamba_ssm_dtype="float32",
         chunked_prefill_size=args.chunk_size,
         page_size=64,
-        cuda_graph_max_bs=4,
         log_level="info",
     )
     try:

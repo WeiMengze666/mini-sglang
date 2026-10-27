@@ -37,12 +37,13 @@ class GatedMLP(BaseOP):
         self.up_proj = Linear(config.hidden_size, width)
         self.down_proj = Linear(width, config.hidden_size)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._tp.all_reduce(
-            self.down_proj.forward(
-                _activation(self.gate_proj.forward(x), self.up_proj.forward(x), self._config)
-            )
+    def forward_local(self, x: torch.Tensor) -> torch.Tensor:
+        return self.down_proj.forward(
+            _activation(self.gate_proj.forward(x), self.up_proj.forward(x), self._config)
         )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self._tp.all_reduce(self.forward_local(x))
 
 
 class _Expert(BaseOP):
@@ -140,6 +141,28 @@ class LatentMoE(BaseOP):
             if latent and config.latent_moe_use_norm
             else None
         )
+        self._packed_experts = None
+
+    def after_load(self):
+        from minisgl.quantization.mxfp4 import MXFP4Linear
+
+        self._packed_experts = None
+        if all(
+            isinstance(op, MXFP4Linear)
+            and op._backend == "triton"
+            and op.weight_packed.is_cuda
+            and op.bias is None
+            for _, expert in self.experts.items()
+            for op in (expert.w1, expert.w3, expert.w2)
+        ):
+            from minisgl.quantization.mxfp4_moe import MXFP4Experts
+
+            self._packed_experts = MXFP4Experts(
+                self.experts.items(),
+                activation=self._config.hidden_act,
+                beta=getattr(self._config, "activation_situ_beta", None) or 1.0,
+                linear_beta=getattr(self._config, "activation_situ_linear_beta", None),
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         shape = x.shape
@@ -149,24 +172,34 @@ class LatentMoE(BaseOP):
         weights, ids = self.gate.forward(x)
         routed = self.routed_expert_down_proj.forward(x) if self.routed_expert_down_proj else x
         # Accumulate mixture in FP32. RMSNorm is AFTER expert reduction, per token.
-        mixed = torch.zeros_like(routed, dtype=torch.float32)
-        # Materialize only active IDs once rather than synchronizing once for
-        # every expert in the model. All ranks see the same replicated tokens.
-        for expert_id in ids.unique(sorted=True).tolist():
-            if expert_id not in self.experts:
-                continue
-            expert = self.experts.get_op(expert_id)
-            rows, slots = torch.where(ids == expert_id)
-            if rows.numel():
-                values = expert.forward(routed[rows]).float() * weights[rows, slots, None]
-                mixed.index_add_(0, rows, values)
-        # Reduce the full routed mixture once, before nonlinear latent norm/up.
-        # Individual experts must never issue collectives: routing is sparse.
-        output = self._tp.all_reduce(mixed).to(x.dtype)
+        if self._packed_experts is not None:
+            mixed = self._packed_experts.forward(routed, weights, ids)
+        else:
+            mixed = torch.zeros_like(routed, dtype=torch.float32)
+            # The portable path visits only active, locally owned expert IDs.
+            for expert_id in ids.unique(sorted=True).tolist():
+                if expert_id not in self.experts:
+                    continue
+                expert = self.experts.get_op(expert_id)
+                rows, slots = torch.where(ids == expert_id)
+                if rows.numel():
+                    values = expert.forward(routed[rows]).float() * weights[rows, slots, None]
+                    mixed.index_add_(0, rows, values)
+        # Routed and shared partials use the same rank world and token rows.
+        # Pack one FP32 reduction before applying the nonlinear latent norm/up.
+        shared = self.shared_experts.forward_local(x) if self.shared_experts else None
+        if shared is not None:
+            widths = (mixed.shape[-1], shared.shape[-1])
+            mixed, shared = self._tp.all_reduce(torch.cat((mixed, shared.float()), -1)).split(
+                widths, -1
+            )
+        else:
+            mixed = self._tp.all_reduce(mixed)
+        output = mixed.to(x.dtype)
         if self.routed_expert_norm is not None:
             output = self.routed_expert_norm.forward(output)
         if self.routed_expert_up_proj is not None:
             output = self.routed_expert_up_proj.forward(output)
-        if self.shared_experts is not None:
-            output = output + self.shared_experts.forward(x)
+        if shared is not None:
+            output = output + shared.to(x.dtype)
         return output.reshape(shape)

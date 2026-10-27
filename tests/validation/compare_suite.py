@@ -12,7 +12,16 @@ def main():
     parser.add_argument("--mini", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--stop-token-ids", type=int, nargs="*", default=[])
     args = parser.parse_args()
+    stops = set(args.stop_token_ids)
+
+    def through_stop(tokens):
+        for i, token in enumerate(tokens):
+            if token in stops:
+                return tokens[: i + 1]
+        return tokens
+
     mini = json.loads((args.mini / "report.json").read_text())
     official = {
         case["name"]: case for case in json.loads((args.reference / "report.json").read_text())
@@ -48,6 +57,8 @@ def main():
                 "first_token_match": int(logp.argmax()) == int(ref.argmax()),
                 "generation_common_prefix": prefix,
                 "generation_exact_match": case["token_ids"] == tokens,
+                "generation_through_stop_match": through_stop(case["token_ids"])
+                == through_stop(tokens),
                 "kl_reference_to_mini": float((ref.exp() * (ref - logp)).sum()),
                 "max_logprob_difference": float((ref - logp).abs().max()),
                 "top20_overlap": len(
@@ -60,8 +71,10 @@ def main():
     report = {
         "scope": "greedy generation and full-vocabulary numerical comparison; not a benchmark accuracy score",
         "cases": results,
+        "configured_stop_ids": sorted(stops),
         "first_token_matches": sum(r["first_token_match"] for r in results),
         "generation_exact_matches": sum(r["generation_exact_match"] for r in results),
+        "generation_through_stop_matches": sum(r["generation_through_stop_match"] for r in results),
         "case_count": len(results),
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n")

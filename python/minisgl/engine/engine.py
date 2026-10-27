@@ -45,7 +45,7 @@ class Engine:
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
-        init_context_parallel()
+        init_context_parallel(backend="nccl")
         # Hybrid rank capacities must agree with the least-free TP device.
         init_free_memory = self._sync_get_memory()[
             0 if (config.model_config.cache_config is not None) else 1
@@ -358,9 +358,6 @@ def _adjust_config(config: EngineConfig):
         config.model_config.cache_config.state_bytes_per_request(config.dtype, config.tp_info.size)
         if config.model_config.num_qo_heads % config.tp_info.size:
             raise ValueError("MLA heads must be divisible by TP size")
-        # Correctness-first TP uses native collectives; custom capture/buffer
-        # assumptions have not been validated for K3's FP32 mixtures/vocab gather.
-        override("use_pynccl", False)
         if config.attention_backend != "auto" and any(
             name not in ("recurrent", "recurrent-fi")
             for name in config.attention_backend.split(",")

@@ -108,14 +108,32 @@ Evidence collected on 2026-10-26/27:
 | Combined native kernel regression | 30 passed, gpuq job 65: MXFP4, FP32-state KDA and absorbed MLA |
 | Hybrid parallel regression after generic checkpoint refactor | 4 passed, gpuq job 65, including four-card NCCL and both pool modes |
 | Generic DCP/EP/checkpoint CPU regression | 345 passed, 36 skipped, 2 expected semantic disagreements; standalone MHA DCP Gloo and ordinary MoE checkpoint shards included |
+| Released BF16 native 11-prompt execution | Mini portion of gpuq job 73 completed: 64 greedy tokens each, 27–1,950 input tokens; subsequent official launch failed on an unsupported parameter |
 | Graphs, overlap and performance parity | Not accepted |
 
 The short generation is not an accuracy benchmark. The FP32 full-model comparison
 isolates state/chunk behavior from BF16 shape-sensitive rounding and downstream
 route changes; the BF16 pointwise failure remains visible. Per-layer traces and
-full-vocabulary diagnostics are saved before numerical assertions. The timings below are single-request latency observations. No throughput
-comparison is accepted. Logs and compact reports are under the remote experiment
+full-vocabulary diagnostics are saved before numerical assertions. The timings
+below do not establish throughput parity with SGLang. Logs and compact reports are under the remote experiment
 directory (`released-fp32-trace`, `serving-lifecycle`, `short-reference-comparison.json`).
+
+Job 73's raw generations deliberately continue past end-of-message for fixed
+length timing. They are not normal stopped responses or an accuracy score.
+Its three long-input full/chunk comparisons retained the same first token, with
+KL(full || chunk) of 0.00030–0.00319. Short inputs were not actually split by the
+old chunk-64 harness; the current harness also splits those inputs. The subsequent
+official comparison in job 89 matched all 11 first tokens, 8/11 generations
+through the configured stop token, and 1/11 raw 64-token generations. Python,
+reasoning and multilingual cases diverged before stopping; the first-token
+full-vocabulary KL(reference || mini) ranged from 0.00028 to 0.02991. This remains
+diagnostic evidence, not an accuracy benchmark result.
+
+The two expected HF-reference disagreements describe explicit semantics: top-1
+renormalization and MLA's low-rank RMS epsilon. Mini honors the configured
+epsilon (1e-5 in the released checkpoint), as pinned SGLang does; the pinned HF
+implementation uses its RMS default 1e-6 for those two projections. Neither
+disagreement is hidden by relaxing the independent numerical gates.
 
 ## Distributed layouts and optional kernels
 
@@ -154,6 +172,99 @@ FlashInfer/Triton API generation; the B300 run used Torch 2.14.1+cu130,
 FlashInfer 0.7.1 and Triton 3.8.0. CPU/reference paths do not import the native
 kernels. CUDA graphs and overlap remain disabled.
 
+## Batch execution and derived weight metadata
+
+Attention layers separate `project`, request-local state updates, and `finish`.
+Projections cover all real token rows together; convolution histories, recurrent
+states and MLA histories remain private to each request. The output projection
+and collective run once per layer and batch. Heterogeneous-batch tests compare
+against independent single-request results across DCP/EP layouts and both pool
+modes. Logical MLA histories use strided indexing instead of boolean selection;
+CUDA cache invariant checks stay on the forward stream. The optional
+`CausalLayout` describes contiguous query positions and strided key positions
+known by the scheduler. Native MLA can plan its causal groups from these host
+integers without synchronizing each layer to read position tensors. Explicit
+position tensors remain available for the reference and irregular-position paths.
+
+The optional MXFP4 grouped-expert executor consumes the router's global expert
+IDs and returns a local FP32 mixture. A six-pointer table per local expert refers
+to existing packed gate/up/down weights and scales. It neither stacks nor
+duplicates checkpoint weights. Two grouped kernels cover gate/up/activation and
+down/mixing, with zero contributions for remote experts. Global routing,
+shared-expert composition, latent normalization and collectives remain in the
+ordinary MoE layer. SiLU and SiTU are supported independently of model family.
+The routed and shared partial results share one FP32 reduction before latent
+normalization. Shared values are cast back before addition.
+
+`BaseOP.after_load` rebuilds derived inference metadata after a successful full
+checkpoint assignment, in child-before-parent order. Both streamed and dictionary
+loads run it, including reloads; pointer tables are private, unserialized state.
+The reference expert loop remains available when packed native execution is not
+selected. GEMM token counts are runtime arguments, avoiding a new Triton binary
+for every prefill or expert token count.
+
+The existing PyNCCL communicator also accepts FP32 tensors. CPU coordination uses
+Gloo; DCP explicitly creates NCCL subgroups even when TP uses PyNCCL. The existing
+`--disable-pynccl` option selects Torch collectives. Symmetric-buffer reductions,
+oversized direct reductions, vocabulary gathers and simultaneous DCP groups have
+a separate eight-rank gate.
+
+Job 134 passed 81 component/distributed checks with normal Torch precision
+settings, including strided linear inputs, full-size grouped experts, both MLA
+position paths, ordinary MoE and hybrid parallel execution. Job 104 passed 71
+earlier component/distributed checks and the
+released 93-layer FP32 comparison: maximum absolute error 1.240e-5 against the
+accepted reference, relative L2 9.781e-7. Full/chunk maximum error was 1.216e-5,
+within the strict 1e-4 gate. Synthetic HTTP lifecycle passed both pool modes.
+
+Job 89's expanded BF16 linear check initially differed from default cuBLAS in
+one of 5,395 values. Job 104 reproduced the case: the native result exactly
+matched FP32 accumulation followed by BF16 rounding. Disabling both cuBLAS
+reduced-precision reduction and split-K also matched exactly. Native linear and
+expert tests now use an independent FP32 accumulation oracle with unchanged
+tolerances; production processes retain their normal Torch settings.
+
+The released BF16 suite completed all eleven cases, then stopped because
+identical batch rows produced different raw greedy continuations. The diagnostic
+rerun records the first differing logits, token prefixes and stop positions;
+job 116 located every first raw-token divergence after the configured stop.
+Its FP32 batch-2/4 runs had identical first logits and eight-token sequences.
+Host-known causal layouts also passed the expanded native gate in job 134.
+The permanent stopped-response harness completed all eleven BF16 cases and
+batch sizes 1/2/4/8. Against the pinned official implementation, all eleven
+first tokens and eight stopped responses match. Three stopped responses differ;
+this is numerical and generation evidence, not a task-accuracy acceptance.
+The official full-versus-chunk64 calibration matches all eleven stopped
+responses; its three long-prompt logprob KL values range from 0.000246 to
+0.012871. Short prompts are not split by that official chunk size. This
+calibration does not explain away mini's three differing responses.
+
+Fixed-length timing explicitly requests `ignore_eos`. The harness keeps every
+batch row's raw tokens, checks duplicate responses through the tokenizer's
+configured stop, and reports raw equality separately. A pre-stop mismatch saves
+its tensors before failing. Completed batch sizes are written immediately with
+a `complete` flag. CPU checks exercise real tiny-model batches plus controlled
+pre-stop and post-stop divergences: the former still fails and preserves earlier
+measurements. The real diagnostic covers the greeting workload; it does not establish
+strict BF16 per-token alignment for arbitrary prompts.
+
+## Reliable scheduler control messages
+
+The released HTTP gate in job 116 exposed a startup race in the existing TP
+control transport. The first PUB/SUB wakeup could be lost while a receiver's
+subscription was still connecting; some ranks then waited in ZMQ while others
+timed out in the Gloo message-count broadcast. A four-rank CPU test reproduces
+the same timeout with a deliberately delayed receiver.
+
+TP now uses one existing PUSH/PULL queue per receiving rank. Raw message bytes
+are forwarded without re-encoding. Idle ranks keep waiting in ZMQ; Gloo still
+coordinates the count after a wakeup. This also preserves idle periods longer
+than the process-group timeout. The reproducer passes after the fix, and the
+combined CPU/Gloo regression passes 350 tests, with 77 skips and two expected
+differences. Job 134 passed actual released-model FP32 HTTP lifecycle tests in
+both cache pools, using a 289-token prompt: repeated and forked prefixes,
+concurrent requests, cancellation, slot reuse, zero-length and invalid requests.
+
 ## Reusing distributed mechanisms
 
 `Partition` defines contiguous logical ranges and checkpoint slices. Both the
@@ -187,6 +298,23 @@ covers model forward, greedy selection and token transfer, with a shorter output
 The measurement boundaries differ; this establishes a substantial remaining gap,
 not a parity result. Broader mini warm measurements and profiling are collected
 by `tests/validation/checkpoint_suite.py` before selecting further optimizations.
+Job 73's three warmed 64-token runs measured a median of 0.24849 s/decode token
+at the mini model boundary. Its four-forward profile attributed 57.2% of GPU
+time to 1,116 all-reduces; that includes waiting for rank arrival and must not be
+interpreted as pure interconnect time. Per-expert launch and synchronization
+costs motivated the grouped-expert executor and combined reductions.
+The corresponding grouped implementation in job 134 measures 0.15031 s/token
+at batch 1, approximately 1.65 times the previous decode rate. Batches 2/4/8
+measure 11.32/18.17/26.51 tokens/s in aggregate. These use the same 27-token
+greeting, 64 raw output tokens, three warmed repeats and mini model boundary.
+All stopped duplicate responses pass. A five-layout sweep found DCP1/EP8
+fastest on the short prompt (0.14092 s/token; its broader rerun measured
+0.14383), while DCP2/EP1 had the highest batch-8 rate (28.03 tokens/s).
+DCP1/EP8 passed the full FP32 check and both released-model BF16 HTTP pool
+modes, but only 6/11 stopped responses matched official SGLang, compared with
+8/11 for DCP2/EP8. This is not a task-accuracy score; we retain DCP2/EP8 as the
+baseline for further optimizations. The remaining gap to graph-enabled SGLang
+is substantial.
 
 ## Running the gates
 
@@ -200,11 +328,15 @@ in its sibling `experiment` directory. No checkpoint payload is committed.
 python tests/models/fetch_kimi_reference.py /tmp/k3-reference
 KIMI_OFFICIAL_REFERENCE_PATH=/tmp/k3-reference/modeling_kimi_linear.py \
 KIMI_FLA_REFERENCE_PATH=/tmp/k3-reference/fla_kda_naive.py \
-KIMI_RUN_GLOO_TESTS=1 OMP_NUM_THREADS=1 PYTHONPATH=python \
+KIMI_RUN_GLOO_TESTS=1 MINISGL_RUN_GLOO_TESTS=1 \
+KIMI_TOKENIZER_DATA=/data/models/Kimi-K3 OMP_NUM_THREADS=1 PYTHONPATH=python \
 python -m pytest -o addopts='' tests/models tests/core/test_kimi_attention.py \
   tests/core/test_kimi_model.py tests/core/test_hybrid_components.py \
   tests/core/test_hybrid_prefix.py tests/core/test_unified_memory.py \
-  tests/core/test_weight_arena.py tests/core/test_cache_allocate.py tests/test_kimi_cache.py
+  tests/core/test_weight_arena.py tests/core/test_cache_allocate.py \
+  tests/core/test_parallel_partition.py tests/core/test_context_parallel.py \
+  tests/core/test_interleaved_attention.py tests/core/test_compressed_tensors.py \
+  tests/core/test_pynccl.py tests/core/test_scheduler_io.py tests/test_kimi_cache.py
 
 # Synthetic CUDA and actual Engine.
 gpuq env PYTHONPATH=python OMP_NUM_THREADS=1 python \

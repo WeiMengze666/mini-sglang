@@ -75,6 +75,181 @@
       "gate": "hybrid layouts and four-rank NCCL after generic checkpoint refactor",
       "passed": true,
       "tests": 4
+    },
+    {
+      "job": 73,
+      "source_snapshot": "phase2-suite-v4-source",
+      "gate": "released BF16 native suite execution and warm profiling",
+      "passed": true,
+      "case_count": 11,
+      "output_tokens_per_case": 64,
+      "prompt_token_range": [
+        27,
+        1950
+      ],
+      "job_exit": 1,
+      "job_failure_scope": "subsequent official runner rejected unsupported cuda_graph_max_bs; mini suite completed",
+      "accuracy_acceptance": false,
+      "short_case_chunking": "prompts <= 64 tokens were not split; corrected in the phase3 harness"
+    },
+    {
+      "job": 89,
+      "source_snapshot": "official-suite-v5-source versus phase2-suite-v4-source",
+      "gate": "independent released 11-case BF16 comparison",
+      "passed": null,
+      "case_count": 11,
+      "first_token_matches": 11,
+      "generation_through_stop_matches": 8,
+      "raw_64_token_exact_matches": 1,
+      "kl_reference_to_mini_range": [
+        0.0002840054,
+        0.029905923
+      ],
+      "scope": "diagnostics; no benchmark accuracy acceptance"
+    },
+    {
+      "job": 89,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "PyNCCL FP32/BF16/FP16 collectives and independent DCP groups",
+      "passed": true,
+      "tests": 3,
+      "gpu_ranks": 8
+    },
+    {
+      "job": 89,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "native component regression using default cuBLAS BF16 reference",
+      "passed": false,
+      "tests_before_failure": 10,
+      "mismatched_elements": 1,
+      "element_count": 5395,
+      "max_abs": 0.0263671875,
+      "shape": [
+        65,
+        83,
+        512
+      ],
+      "resolution": "Job 104: native exactly matches independent FP32 accumulation rounded to BF16; cuBLAS tuple(False,False) also exact. Tolerances unchanged."
+    },
+    {
+      "job": 104,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "native components and distributed execution with independent FP32 accumulation oracle",
+      "passed": true,
+      "tests": 71,
+      "report": "native-diagnose-kernels-v2.log",
+      "scope": "includes CPU cases; not 71 GPU tests"
+    },
+    {
+      "job": 104,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "released FP32 native versus accepted reference",
+      "passed": true,
+      "max_abs": 1.2397766113e-05,
+      "relative_l2": 9.78122557e-07,
+      "full_chunk_max_abs": 1.2159347534e-05,
+      "atol_rtol": 0.0001
+    },
+    {
+      "job": 104,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "synthetic HTTP lifecycle both cache pools and tiny checkpoint batch 1/2/4/8",
+      "passed": true
+    },
+    {
+      "job": 104,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "released BF16 identical batch raw greedy continuations",
+      "passed": false,
+      "scope": "all eleven cases completed; raw batch assertion failed before timing; job 116 later located all first row divergences after the configured stop for this greeting"
+    },
+    {
+      "job": 116,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "greeting duplicate batch diagnosis",
+      "passed": true,
+      "batch_sizes": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "all_first_divergences_after_stop": true,
+      "fp32_batch_sizes": [
+        2,
+        4
+      ],
+      "fp32_token_count": 8,
+      "fp32_duplicate_first_logits_max_abs": 0.0,
+      "scope": "greeting only; raw after-stop continuations differ in BF16"
+    },
+    {
+      "job": 116,
+      "source_snapshot": "phase3-grouped-v3-source",
+      "gate": "released FP32 HTTP lifecycle",
+      "passed": false,
+      "failure": "first request lost by PUB/SUB startup race; mixed ZMQ wait and Gloo broadcast timeout",
+      "report": "phase3-http-released-fp32-v4/http-static.log",
+      "later_stages_executed": false
+    },
+    {
+      "job": 134,
+      "source_snapshot": "phase3-reliable-io-v1-source",
+      "gate": "synthetic and released FP32 HTTP scheduler lifecycle, both cache pools",
+      "passed": true,
+      "released_prompt_tokens": 289,
+      "report": "phase3-http-released-fp32-v5/report.json"
+    },
+    {
+      "job": 134,
+      "source_snapshot": "phase3-reliable-io-v1-source",
+      "gate": "PyNCCL buffers/direct collectives and independent DCP groups",
+      "passed": true,
+      "tests": 3,
+      "report": "phase3-io-pynccl-v1.log"
+    },
+    {
+      "job": 134,
+      "source_snapshot": "phase3-reliable-io-v1-source",
+      "gate": "native components and ordinary MoE/hybrid distributed regression",
+      "passed": true,
+      "tests": 81,
+      "report": "phase3-io-native-v1.log",
+      "scope": "includes CPU cases; default production Torch precision settings, independent FP32 accumulation oracle"
+    },
+    {
+      "job": 134,
+      "source_snapshot": "phase3-reliable-io-v1-source",
+      "gate": "released FP32 versus accepted reference and chunked prefill",
+      "passed": true,
+      "max_abs": 1.239776611328125e-05,
+      "relative_l2": 9.781225571714458e-07,
+      "full_chunk_max_abs": 1.2159347534e-05,
+      "atol_rtol": 0.0001,
+      "report": "phase3-io-fp32-v1/layout-comparison.json"
+    },
+    {
+      "job": 134,
+      "source_snapshot": "phase3-reliable-io-v1-source",
+      "gate": "released BF16 eleven cases and batch 1/2/4/8 stopped-response consistency",
+      "passed": true,
+      "first_token_matches_official": 11,
+      "generation_through_stop_matches_official": 8,
+      "raw_64_token_matches_official": 1,
+      "case_count": 11,
+      "accuracy_acceptance": false,
+      "report": "phase3-io-comparison-v1.json"
+    },
+    {
+      "job": 134,
+      "source_snapshot": "phase3-reliable-io-v1-source",
+      "gate": "released BF16 HTTP lifecycle, both cache pools",
+      "passed": true,
+      "tp_size": 8,
+      "dcp_size": 1,
+      "ep_size": 8,
+      "prompt_tokens": 314,
+      "report": "phase3-http-released-bf16-v3/report.json"
     }
   ],
   "official_latency": {
@@ -102,5 +277,205 @@
     "result": "345 passed, 36 skipped, 2 xfailed",
     "report": "phase2-generic-cpu-accepted.log",
     "scope": "selected core/model suite, real Gloo, pinned HF/FLA and tokenizer data"
+  },
+  "mini_latency": {
+    "job": 73,
+    "source_snapshot": "phase2-suite-v4-source",
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "prompt_tokens": 27,
+    "output_tokens": 64,
+    "warm_repeats": 3,
+    "median_decode_seconds": 0.24849487899336964,
+    "boundary": "batch construction, model.forward, greedy selection and token transfer; excludes scheduler",
+    "performance_parity": false
+  },
+  "phase3_cpu": {
+    "result": "349 passed, 67 skipped, 2 xfailed",
+    "report": "phase3-grouped-cpu-v4.log",
+    "source_snapshot": "phase3-grouped-v3-source",
+    "gpu_acceptance": "job 134 completed successfully; native components, full FP32, BF16 batches, layout sweep and released HTTP passed",
+    "scope": "batched attention, packed routed/shared reduction, after-load lifecycle; actual Gloo and pinned source/tokenizer data"
+  },
+  "phase3_causal_cpu": {
+    "result": "349 passed, 77 skipped, 2 xfailed",
+    "report": "phase3-causal-cpu-v3.log",
+    "source_snapshot": "phase3-causal-v1-source",
+    "scope": "host-known regular causal layout with explicit-position fallback; no router storage dtype change",
+    "gpu_acceptance": "81 component/distributed checks and released FP32 passed job 134"
+  },
+  "phase3_harness_cpu": {
+    "source_snapshot": "phase3-final-v1-source",
+    "runtime_identical_to": "phase3-causal-v1-source",
+    "gates": [
+      "actual tiny model batch 1/2/4/8",
+      "controlled divergence after stop recorded without failing stopped-response gate",
+      "controlled divergence before stop rejected with failure tensor and incomplete prior benchmark retained"
+    ],
+    "reports": [
+      "suite-harness-actual-v3.log",
+      "suite-harness-after-stop-v3.log",
+      "suite-harness-before-stop-v3.log"
+    ],
+    "gpu_acceptance": "released eleven-case BF16 and complete batch 1/2/4/8 gate passed job 134"
+  },
+  "phase3_warm_latency": {
+    "job": 116,
+    "source_snapshot": "phase3-grouped-v3-source",
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "prompt_tokens": 27,
+    "raw_output_tokens": 64,
+    "warm_repeats": 3,
+    "boundary": "batch construction, model.forward, argmax and token transfer; excludes scheduler",
+    "batches": [
+      {
+        "batch_size": 1,
+        "median_decode_seconds": 0.1501984290080145,
+        "decode_tokens_per_second": 6.657859250622659
+      },
+      {
+        "batch_size": 2,
+        "median_decode_seconds": 0.17696894297841936,
+        "decode_tokens_per_second": 11.301418013464044
+      },
+      {
+        "batch_size": 4,
+        "median_decode_seconds": 0.22165599605068564,
+        "decode_tokens_per_second": 18.04598148152657
+      },
+      {
+        "batch_size": 8,
+        "median_decode_seconds": 0.3068250239593908,
+        "decode_tokens_per_second": 26.07349262705125
+      }
+    ],
+    "scope": "greeting microbenchmark; no SGLang performance parity acceptance"
+  },
+  "reliable_io_cpu": {
+    "source_snapshot": "phase3-reliable-io-v1-source",
+    "before_fix": "four-rank Gloo timeout reproduced in phase3-io-before-fix-v1.log",
+    "after_fix": "phase3-io-after-fix-v1.log passed",
+    "regression": "350 passed, 77 skipped, 2 xfailed",
+    "report": "phase3-io-cpu-v1.log",
+    "gpu_acceptance": "released FP32 HTTP passed both pools in job 134"
+  },
+  "phase3_reliable_io_warm_latency": {
+    "job": 134,
+    "source_snapshot": "phase3-reliable-io-v1-source",
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "prompt_tokens": 27,
+    "raw_output_tokens": 64,
+    "warm_repeats": 3,
+    "boundary": "batch construction, model.forward, argmax and token transfer; excludes scheduler",
+    "complete": true,
+    "batches": [
+      {
+        "batch_size": 1,
+        "median_decode_seconds": 0.15030694101005793,
+        "decode_tokens_per_second": 6.6530527018914185
+      },
+      {
+        "batch_size": 2,
+        "median_decode_seconds": 0.17662562790792435,
+        "decode_tokens_per_second": 11.323385081142403
+      },
+      {
+        "batch_size": 4,
+        "median_decode_seconds": 0.22016703302506357,
+        "decode_tokens_per_second": 18.168024272483358
+      },
+      {
+        "batch_size": 8,
+        "median_decode_seconds": 0.30173364595975727,
+        "decode_tokens_per_second": 26.513450213858395
+      }
+    ],
+    "scope": "greeting microbenchmark; no SGLang performance parity acceptance"
+  },
+  "official_chunk_calibration": {
+    "job": 134,
+    "commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "report": "phase3-official-chunk-calibration-v1.json",
+    "full_vs_chunk64_first_token_matches": 11,
+    "full_vs_chunk64_through_stop_matches": 11,
+    "full_vs_chunk64_raw_64_matches": 8,
+    "case_count": 11,
+    "long_case_kl_range": [
+      0.0002463001001160592,
+      0.012870961800217628
+    ],
+    "short_cases_not_split_by_official_chunk64": true,
+    "scope": "Official chunking does not explain all mini-versus-official response differences"
+  },
+  "phase3_layout_sweep": {
+    "scope": "short prompt, raw 64-token model-forward boundary; no SGLang performance parity acceptance",
+    "selection_criterion": "lowest median batch-1 decode latency",
+    "layouts": [
+      {
+        "folder": "phase3-io-suite-v1",
+        "dcp": 2,
+        "ep": 8,
+        "prompt_tokens": 27,
+        "b1_seconds": 0.15030694101005793,
+        "b8_tokens_per_second": 26.513450213858395
+      },
+      {
+        "folder": "phase3-io-d1-e1-v1",
+        "dcp": 1,
+        "ep": 1,
+        "prompt_tokens": 27,
+        "b1_seconds": 0.14473602699581534,
+        "b8_tokens_per_second": 27.287785135214186
+      },
+      {
+        "folder": "phase3-io-d1-e8-v1",
+        "dcp": 1,
+        "ep": 8,
+        "prompt_tokens": 27,
+        "b1_seconds": 0.14091536297928542,
+        "b8_tokens_per_second": 27.980060986362297
+      },
+      {
+        "folder": "phase3-io-d2-e1-v1",
+        "dcp": 2,
+        "ep": 1,
+        "prompt_tokens": 27,
+        "b1_seconds": 0.1435759129235521,
+        "b8_tokens_per_second": 28.033269795258605
+      },
+      {
+        "folder": "phase3-io-d2-e4-v1",
+        "dcp": 2,
+        "ep": 4,
+        "prompt_tokens": 27,
+        "b1_seconds": 0.1483638440258801,
+        "b8_tokens_per_second": 26.876748410574063
+      }
+    ],
+    "selected_batch1": {
+      "folder": "phase3-io-d1-e8-v1",
+      "dcp": 1,
+      "ep": 8,
+      "prompt_tokens": 27,
+      "b1_seconds": 0.14091536297928542,
+      "b8_tokens_per_second": 27.980060986362297
+    },
+    "best_batch8": {
+      "folder": "phase3-io-d2-e1-v1",
+      "dcp": 2,
+      "ep": 1,
+      "prompt_tokens": 27,
+      "b1_seconds": 0.1435759129235521,
+      "b8_tokens_per_second": 28.033269795258605
+    },
+    "selected_fp32_full_model_gate": "passed job 134: reference max_abs 1.329183578491211e-5, relative_l2 1.0002488579630153e-6, full/chunk max_abs 1.2218952178955078e-5",
+    "recommendation": "Retain DCP2/EP8 for subsequent work: DCP1/EP8 was faster on the greeting but matched only 6/11 official stopped responses versus 8/11 for DCP2/EP8; neither count is an accuracy score",
+    "selected_full_suite_official_through_stop_matches": 6,
+    "selected_full_suite_report": "phase3-io-selected-comparison-v1.json"
   }
 }

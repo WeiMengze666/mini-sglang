@@ -193,7 +193,10 @@ def main():
             }
             (args.output / "diagnostics.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
             print(json.dumps(diagnostics), flush=True)
-        torch.testing.assert_close(last.cpu(), reference_logits, rtol=0.05, atol=0.1)
+        tolerance = (1e-4, 1e-4) if args.dtype == "float32" else (0.05, 0.1)
+        torch.testing.assert_close(
+            last.cpu(), reference_logits, rtol=tolerance[0], atol=tolerance[1]
+        )
         if int(last.argmax(-1).item()) != int(reference_logits.argmax(-1).item()):
             raise AssertionError("Released-checkpoint chunked prefill changed the greedy token")
         report = {

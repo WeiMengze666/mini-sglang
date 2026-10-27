@@ -9,6 +9,7 @@ from minisgl.core import get_global_ctx
 from minisgl.distributed.context import ContextParallel
 
 from .base import BaseAttnBackend, BaseAttnMetadata
+from .mla import CausalLayout
 
 
 @dataclass
@@ -76,24 +77,44 @@ def forward_layer(
     Prefix lengths, token-page addressing, and request state stay out of model
     definitions. This reference path deliberately does not process padding.
     """
+    recurrent = layer.state_kind == "recurrent"
+    positions = batch.positions[: len(x)]
+    cp = ContextParallel()
+    if recurrent:
+        projected = layer.project(x)
+    else:
+        queries, latent, key = layer.project(x, positions)
+        cache.store_mla(layer_id, latent, key, batch.out_loc[: len(x)])
+    kwargs = {} if mla_attention is None else {"attention": mla_attention}
     outputs, offset = [], 0
     for req in batch.reqs:
         rows = slice(offset, offset + req.extend_len)
-        current, positions = x[rows], batch.positions[rows]
-        if layer.state_kind == "recurrent":
+        if recurrent:
             state = cache.get_kda_state(layer_id, req.table_idx)
-            out, state = layer.forward(current, positions, state, implementation=kda_implementation)
+            out, state = layer.update(
+                *(part[rows] for part in projected),
+                state,
+                implementation=kda_implementation,
+            )
             cache.set_kda_state(layer_id, req.table_idx, state)
         else:
-            q, latent, key = layer.project(current, positions)
-            cache.store_mla(layer_id, latent, key, batch.out_loc[rows])
-            history = torch.arange(req.device_len, device=x.device)
-            owned = ContextParallel().owns(history)
-            locations = page_table[req.table_idx, : req.device_len][owned]
+            history = torch.arange(cp.rank, max(cp.rank, req.device_len), cp.size, device=x.device)
+            locations = page_table[req.table_idx, cp.rank : req.device_len : cp.size]
             latent, key = cache.gather_mla(layer_id, locations)
-            history = history[owned]
-            kwargs = {} if mla_attention is None else {"attention": mla_attention}
-            out = layer.attend(current, q, latent, key, positions, history, **kwargs)
+            out = layer.attend_partial(
+                queries[rows],
+                latent,
+                key,
+                positions[rows],
+                history,
+                causal_layout=CausalLayout(req.cached_len, cp.rank, cp.size),
+                **kwargs,
+            )
         outputs.append(out)
         offset += req.extend_len
-    return torch.cat(outputs)
+    partial = (
+        torch.cat(outputs)
+        if recurrent or cp.size == 1
+        else tuple(torch.cat(parts) for parts in zip(*outputs))
+    )
+    return layer.finish(x, partial)

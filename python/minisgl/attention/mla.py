@@ -14,6 +14,14 @@ class MLAState(NamedTuple):
     positions: torch.Tensor
 
 
+class CausalLayout(NamedTuple):
+    """Host-known geometry of contiguous queries and regularly strided keys."""
+
+    query_start: int
+    key_start: int = 0
+    key_stride: int = 1
+
+
 def causal_query_groups(query_start, query_count, key_start, key_count, stride):
     """Express an interleaved causal mask as ordinary causal subsequences.
 
@@ -63,11 +71,13 @@ def mla_attention(
     value_dim,
     scale=None,
     return_lse=False,
+    causal_layout: CausalLayout | None = None,
 ):
     """Causal expanded MLA over low-rank cache; key is shared across heads.
 
     The key suffix can be rotated (regular MLA) or unrotated (K3 NoPE).
     Position IDs are used for masking independently of positional encoding.
+    Native backends may use the equivalent host layout to avoid GPU readbacks.
     """
     tokens, heads, qdim = q.shape
     if latent.shape[0] != key.shape[0] or key.shape[1] != qdim - nope_dim:

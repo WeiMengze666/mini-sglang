@@ -37,6 +37,7 @@ def execution_identity(module_name):
         "libraries": libraries,
         "source_sha256": {
             str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in sorted(package.rglob("*.py"))
+            for path in sorted(package.rglob("*"))
+            if path.is_file() and path.suffix in (".py", ".cu", ".cuh", ".h")
         },
     }

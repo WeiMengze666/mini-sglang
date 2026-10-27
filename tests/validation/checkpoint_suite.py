@@ -18,7 +18,7 @@ import torch
 from minisgl.core import Batch, Req, SamplingParams
 from minisgl.distributed import DistributedInfo
 from minisgl.engine import Engine, EngineConfig
-from minisgl.utils import load_tokenizer
+from minisgl.utils import get_stop_token_ids, load_tokenizer
 from provenance import execution_identity
 
 
@@ -68,12 +68,23 @@ def main():
     parser.add_argument("--max-context", type=int, default=4096)
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--batch-sizes", type=int, nargs="+", default=[1])
     args = parser.parse_args()
-    if args.tokens < 1 or args.max_context < 1:
-        raise ValueError("tokens and max-context must be positive")
+    if args.tokens < 1 or args.max_context < 1 or min(args.batch_sizes) < 1:
+        raise ValueError("tokens, max-context and batch sizes must be positive")
+    max_batch = max(args.batch_sizes)
+    stride = (args.max_context + args.dcp_size - 1) // args.dcp_size * args.dcp_size
     rank, world = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
     torch.backends.cuda.matmul.allow_tf32 = False
     tokenizer = load_tokenizer(args.model)
+    stop_ids = get_stop_token_ids(tokenizer)
+
+    def through_stop(tokens):
+        for i, token in enumerate(tokens):
+            if token in stop_ids:
+                return tokens[: i + 1]
+        return tokens
+
     dataset = cases(tokenizer)
     if args.only:
         dataset = [case for case in dataset if case["name"] in args.only]
@@ -99,67 +110,107 @@ def main():
             dcp_size=args.dcp_size,
             ep_size=args.ep_size,
             page_size=args.dcp_size,
-            max_running_req=2,
+            max_running_req=max(2, max_batch),
             max_cached_states=0,
             max_seq_len_override=args.max_context,
-            num_page_override=args.max_context,
+            num_page_override=max(args.max_context, max_batch * stride // args.dcp_size),
             memory_ratio=0.9,
             distributed_timeout=1800,
         )
     )
-    table = torch.arange(args.max_context, dtype=torch.int32, device=engine.device)
-    engine.page_table[0, : args.max_context].copy_(table)
+    table = torch.arange(max_batch * stride, dtype=torch.int32, device=engine.device)
+    table = table.view(max_batch, stride)[:, : args.max_context]
+    engine.page_table[:max_batch, : args.max_context].copy_(table)
     uid = 0
 
-    def run(prompt, tokens, chunk=None):
+    def run(prompt, tokens, chunk=None, batch_size=1):
         nonlocal uid
-        uid += 1
         prompt = torch.tensor(prompt, dtype=torch.int32)
-        req = Req(prompt, 0, 0, tokens, uid, SamplingParams(max_tokens=tokens), None)
-        outputs, seconds, first = [], [], None
+        reqs = [
+            Req(
+                prompt,
+                slot,
+                0,
+                tokens,
+                uid + slot + 1,
+                SamplingParams(max_tokens=tokens, ignore_eos=True),
+                None,
+            )
+            for slot in range(batch_size)
+        ]
+        uid += batch_size
+        outputs, seconds, first = [[] for _ in reqs], [], None
         for step in range(tokens):
             stops = (
                 list(range(chunk, len(prompt), chunk)) + [len(prompt)]
                 if step == 0 and chunk
-                else [req.device_len]
+                else [reqs[0].device_len]
             )
             tick = time.monotonic()
             for stop in stops:
-                part = Req(
-                    req.input_ids[:stop],
-                    0,
-                    req.cached_len,
-                    1,
-                    uid,
-                    SamplingParams(max_tokens=1),
-                    None,
+                parts = [
+                    Req(
+                        req.input_ids[:stop],
+                        req.table_idx,
+                        req.cached_len,
+                        1,
+                        req.uid,
+                        SamplingParams(max_tokens=1, ignore_eos=True),
+                        None,
+                    )
+                    for req in reqs
+                ]
+                batch = Batch(parts, "prefill" if step == 0 else "decode")
+                batch.padded_reqs = parts
+                batch.input_ids = torch.cat([p.input_ids[p.cached_len :] for p in parts]).to(
+                    engine.device
                 )
-                batch = Batch([part], "prefill" if step == 0 else "decode")
-                batch.padded_reqs = [part]
-                batch.input_ids = part.input_ids[part.cached_len :].to(engine.device)
-                batch.positions = torch.arange(part.cached_len, stop, device=engine.device)
-                batch.out_loc = table[part.cached_len : stop]
+                batch.positions = torch.cat(
+                    [torch.arange(p.cached_len, stop, device=engine.device) for p in parts]
+                )
+                batch.out_loc = torch.cat([table[p.table_idx, p.cached_len : stop] for p in parts])
                 engine.attn_backend.prepare_metadata(batch)
                 with engine.ctx.forward_batch(batch):
                     logits = engine.model.forward()
-                req.cached_len = stop
+                for req in reqs:
+                    req.cached_len = stop
             token = logits.argmax(-1).to(torch.int32).cpu()
             seconds.append(time.monotonic() - tick)
             if not torch.isfinite(logits).all():
                 raise AssertionError("Non-finite released-model logits")
             if step == 0:
                 first = logits.cpu()
-            outputs.append(int(token.item()))
-            req.complete_one()
-            req.append_host(token)
-        engine.kv_cache.release_request(0, uid)
-        return {"logits": first, "token_ids": outputs, "step_seconds": seconds}
+            for slot, req in enumerate(reqs):
+                outputs[slot].append(int(token[slot].item()))
+                req.complete_one()
+                req.append_host(token[slot : slot + 1])
+        for req in reqs:
+            engine.kv_cache.release_request(req.table_idx, req.uid)
+        # Fixed-length timing continues past EOS; stopped responses remain the gate.
+        raw_match = all(output == outputs[0] for output in outputs)
+        stopped_match = all(through_stop(output) == through_stop(outputs[0]) for output in outputs)
+        if not stopped_match:
+            if rank == 0:
+                torch.save(
+                    {"logits": first, "token_ids": outputs, "step_seconds": seconds},
+                    args.output / f"batch-mismatch-{uid}.pt",
+                )
+            raise AssertionError("Identical batch requests diverged before the configured stop")
+        return {
+            "logits": first,
+            "token_ids": outputs[0],
+            "all_token_ids": outputs,
+            "step_seconds": seconds,
+            "duplicate_raw_match": raw_match,
+            "duplicate_through_stop_match": stopped_match,
+        }
 
     try:
         results = []
         for case in dataset:
             full = run(case["input_ids"], args.tokens)
-            chunked = run(case["input_ids"], 1, chunk=64)
+            chunk_size = min(64, max(1, len(case["input_ids"]) // 2))
+            chunked = run(case["input_ids"], 1, chunk=chunk_size)
             if rank == 0:
                 torch.save(
                     {"input_ids": case["input_ids"], "full": full, "chunked": chunked},
@@ -180,24 +231,56 @@ def main():
                 )
                 print(json.dumps(results[-1], ensure_ascii=False), flush=True)
         # Warm repetitions use the same prompt, with private state reset each time.
-        warm = []
-        for _ in range(3):
-            sample = run(dataset[0]["input_ids"], args.tokens)
-            warm.append(sample["step_seconds"])
-        if rank == 0:
-            (args.output / "benchmark.json").write_text(
-                json.dumps(
-                    {
-                        "boundary": "model.forward, argmax and token transfer; excludes scheduler",
-                        "warm_step_seconds": warm,
-                        "median_decode_seconds": statistics.median(s for r in warm for s in r[1:])
-                        if args.tokens > 1
-                        else None,
-                    },
-                    indent=2,
-                )
-                + "\n"
+        batches = []
+        for batch_size in dict.fromkeys(args.batch_sizes):
+            run(dataset[0]["input_ids"], args.tokens, batch_size=batch_size)
+            warm = [
+                run(dataset[0]["input_ids"], args.tokens, batch_size=batch_size) for _ in range(3)
+            ]
+            decode = (
+                statistics.median(s for r in warm for s in r["step_seconds"][1:])
+                if args.tokens > 1
+                else None
             )
+            batches.append(
+                {
+                    "batch_size": batch_size,
+                    "warm_step_seconds": [r["step_seconds"] for r in warm],
+                    "warm_token_ids": [r["all_token_ids"] for r in warm],
+                    "duplicate_raw_match": all(r["duplicate_raw_match"] for r in warm),
+                    "duplicate_through_stop_match": all(
+                        r["duplicate_through_stop_match"] for r in warm
+                    ),
+                    "median_decode_seconds": decode,
+                    "decode_tokens_per_second": batch_size / decode if decode else None,
+                    "greedy_matches_first_case": all(
+                        r["token_ids"] == results[0]["token_ids"] for r in warm
+                    )
+                    if rank == 0
+                    else None,
+                    "greedy_through_stop_matches_first_case": all(
+                        through_stop(r["token_ids"]) == through_stop(results[0]["token_ids"])
+                        for r in warm
+                    )
+                    if rank == 0
+                    else None,
+                }
+            )
+            if rank == 0:
+                single = next((r for r in batches if r["batch_size"] == 1), {})
+                (args.output / "benchmark.json").write_text(
+                    json.dumps(
+                        {
+                            "boundary": "batch construction, model.forward, argmax and token transfer; excludes scheduler",
+                            "complete": len(batches) == len(set(args.batch_sizes)),
+                            "warm_step_seconds": single.get("warm_step_seconds"),
+                            "median_decode_seconds": single.get("median_decode_seconds"),
+                            "batches": batches,
+                        },
+                        indent=2,
+                    )
+                    + "\n"
+                )
         if args.profile:
             with torch.profiler.profile(
                 activities=[

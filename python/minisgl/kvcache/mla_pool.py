@@ -6,6 +6,14 @@ import torch
 from minisgl.distributed.context import ContextParallel
 
 
+def _check(condition, message, error=ValueError):
+    if condition.is_cuda:
+        # Keep invariant checks on the forward stream, without a CPU readback.
+        torch._assert_async(condition, message)
+    elif not condition:
+        raise error(message)
+
+
 class MLACache:
     def __init__(
         self, layer_ids, num_tokens, latent_dim, key_dim, dtype, device, arena=None, page_size=1
@@ -34,8 +42,11 @@ class MLACache:
 
     def _paged_locations(self, locations):
         pages = self.arena.page_map[locations // self.page_size]
-        if (pages < 0).any():
-            raise RuntimeError("MLA page must be allocated before attention reads or writes it")
+        _check(
+            (pages >= 0).all(),
+            "MLA page must be allocated before attention reads or writes it",
+            RuntimeError,
+        )
         width = self.latent_dim + self.rope_dim
         # Padding at the end of each physical byte page preserves alignment.
         storage = self.arena.page_storage(self.dtype)
@@ -48,10 +59,11 @@ class MLACache:
     def _locations(self, locations: torch.Tensor) -> torch.Tensor:
         if locations.ndim != 1 or locations.dtype not in (torch.int32, torch.int64):
             raise ValueError("Cache locations must be a one-dimensional integer tensor")
-        if locations.numel() and (
-            locations.min().item() < 0 or locations.max().item() >= self.num_tokens
-        ):
-            raise IndexError("MLA cache location is out of range")
+        _check(
+            ((locations >= 0) & (locations < self.num_tokens)).all(),
+            "MLA cache location is out of range",
+            IndexError,
+        )
         return locations.to(device=self.device, dtype=torch.long)
 
     def store_mla(
@@ -77,8 +89,10 @@ class MLACache:
 
     def gather_mla(self, layer_id: int, locations: torch.Tensor):
         locations = self._locations(locations)
-        if not self._cp.owns(locations).all():
-            raise ValueError("MLA reads must select only this DCP rank's token positions")
+        _check(
+            self._cp.owns(locations).all(),
+            "MLA reads must select only this DCP rank's token positions",
+        )
         if self.arena is not None:
             storage, pages, offsets = self._paged_locations(locations)
             data = storage[pages, self._full_layers[layer_id], offsets]

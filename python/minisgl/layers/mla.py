@@ -67,6 +67,37 @@ class MLALayer(BaseOP):
             key = apply_rotary(key, positions, theta, interleaved=interleaved)
         return q, latent, key
 
+    def attend_partial(
+        self,
+        q,
+        latent_history,
+        key_history,
+        positions,
+        history_positions,
+        *,
+        attention=mla_attention,
+        causal_layout=None,
+    ):
+        return attention(
+            q,
+            latent_history,
+            key_history,
+            self.kv_b_proj.weight,
+            positions,
+            history_positions,
+            nope_dim=self._nope,
+            value_dim=self._value,
+            return_lse=self._cp.size > 1,
+            causal_layout=causal_layout,
+        )
+
+    def finish(self, x, partial):
+        output = self._cp.exchange(*partial).to(x.dtype) if self._cp.size > 1 else partial
+        output = output.flatten(-2)
+        if self._output_gate:
+            output = output * self.g_proj.forward(x).sigmoid()
+        return self._tp.all_reduce(self.o_proj.forward(output))
+
     def attend(
         self,
         x,
@@ -78,22 +109,12 @@ class MLALayer(BaseOP):
         *,
         attention=mla_attention,
     ):
-        partial = attention(
-            q,
-            latent_history,
-            key_history,
-            self.kv_b_proj.weight,
-            positions,
-            history_positions,
-            nope_dim=self._nope,
-            value_dim=self._value,
-            return_lse=self._cp.size > 1,
+        return self.finish(
+            x,
+            self.attend_partial(
+                q, latent_history, key_history, positions, history_positions, attention=attention
+            ),
         )
-        output = self._cp.exchange(*partial).to(q.dtype) if self._cp.size > 1 else partial
-        output = output.flatten(-2)
-        if self._output_gate:
-            output = output * self.g_proj.forward(x).sigmoid()
-        return self._tp.all_reduce(self.o_proj.forward(output))
 
     def forward(self, x, positions, state: MLAState | None = None):
         """Convenience CPU/reference path; serving uses project/attend + pooled cache."""
