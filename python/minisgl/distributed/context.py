@@ -31,7 +31,10 @@ def merge_attention(output, lse):
     maximum = lse.amax(0)
     weights = torch.nan_to_num((lse - maximum).exp(), nan=0.0)
     weights = weights / weights.sum(0).clamp_min(torch.finfo(weights.dtype).tiny)
-    return (output.float() * weights[..., None]).sum(0)
+    # Empty softmax rows may have undefined outputs. Zero weight alone cannot
+    # discard them: IEEE arithmetic keeps NaN * 0 as NaN.
+    partial = output.float().masked_fill(torch.isneginf(lse)[..., None], 0)
+    return (partial * weights[..., None]).sum(0)
 
 
 class ContextParallel:

@@ -7,8 +7,17 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-from minisgl.distributed.context import ContextParallel, init_context_parallel
+from minisgl.distributed.context import ContextParallel, init_context_parallel, merge_attention
 from minisgl.distributed.layout import configure_parallel
+
+
+@pytest.mark.parametrize("all_empty", [False, True])
+def test_empty_shard_may_have_an_undefined_partial_output(all_empty):
+    output = torch.tensor([[[[float("nan"), float("nan")]]], [[[5.0, 7.0]]]])
+    lse = torch.tensor([[[-torch.inf]], [[-torch.inf if all_empty else 0.0]]])
+    expected = torch.tensor([[[0.0, 0.0] if all_empty else [5.0, 7.0]]])
+    torch.testing.assert_close(merge_attention(output, lse), expected, rtol=0, atol=0)
+    assert output[0].isnan().all()  # Merging must not modify a producer's buffer.
 
 
 def _worker(rank, init_file):
