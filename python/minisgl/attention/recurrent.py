@@ -9,6 +9,7 @@ from minisgl.core import get_global_ctx
 from minisgl.distributed.context import ContextParallel
 
 from .base import BaseAttnBackend, BaseAttnMetadata
+from .kda import KDAState
 from .mla import CausalLayout
 
 
@@ -82,6 +83,19 @@ def forward_layer(
     cp = ContextParallel()
     if recurrent:
         projected = layer.project(x)
+        if len(batch.reqs) > 1 and all(req.extend_len == 1 for req in batch.reqs):
+            states = [cache.get_kda_state(layer_id, req.table_idx) for req in batch.reqs]
+            initial = KDAState(*(torch.stack(parts) for parts in zip(*states)))
+            output, final = layer.update(
+                *(part.unsqueeze(1) for part in projected),
+                initial,
+                implementation=kda_implementation,
+            )
+            for index, req in enumerate(batch.reqs):
+                cache.set_kda_state(
+                    layer_id, req.table_idx, KDAState(final.conv[index], final.recurrent[index])
+                )
+            return layer.finish(x, output[:, 0])
     else:
         queries, latent, key = layer.project(x, positions)
         cache.store_mla(layer_id, latent, key, batch.out_loc[: len(x)])

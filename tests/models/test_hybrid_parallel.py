@@ -129,6 +129,14 @@ def _worker(rank, world, init_file, device_type):
         other = _batch(other_tokens, slot=1, uid=30)
         other.out_loc = table[1, : len(other_tokens)]
         expected_other = reference.forward_batch(other, reference_cache, table, all_logits=True)
+        expected_decode = []
+        for token, length, slot, uid in ((3, len(tokens), 0, 10), (9, len(other_tokens), 1, 30)):
+            step = _batch([token], length, slot=slot, uid=uid)
+            step.out_loc = table[slot, length : length + 1]
+            expected_decode.append(
+                reference.forward_batch(step, reference_cache, table, all_logits=True)
+            )
+        expected_decode = torch.cat(expected_decode)
         info._TP_INFO = DistributedInfo(rank, world)
         for dcp, ep in ((2, 1), (1, 2), (2, 2), (4, 4)):
             configure_parallel(dcp_size=dcp, ep_size=ep)
@@ -216,6 +224,24 @@ def _worker(rank, world, init_file, device_type):
                 expected_batch = torch.cat((expected, expected_other))
                 torch.testing.assert_close(actual, expected_batch, rtol=4e-5, atol=2e-5)
                 assert (actual - expected_batch).norm() / expected_batch.norm() < 1e-5
+                # Decode together after different prefill lengths. Batched KDA
+                # must preserve each request's convolution and recurrent history.
+                left = _batch([3], len(tokens), slot=0, uid=40)
+                right = _batch([9], len(other_tokens), slot=1, uid=41)
+                decode = SimpleNamespace(
+                    reqs=left.reqs + right.reqs,
+                    input_ids=torch.cat((left.input_ids, right.input_ids)).to(device),
+                    positions=torch.cat((left.positions, right.positions)).to(device),
+                    out_loc=torch.cat(
+                        (
+                            gpu_table[0, len(tokens) : len(tokens) + 1],
+                            gpu_table[1, len(other_tokens) : len(other_tokens) + 1],
+                        )
+                    ),
+                )
+                decoded = model.forward_batch(decode, cache, gpu_table, all_logits=True).cpu()
+                torch.testing.assert_close(decoded, expected_decode, rtol=4e-5, atol=2e-5)
+                assert (decoded - expected_decode).norm() / expected_decode.norm() < 1e-5
                 cache.release_request(0, 40)
                 cache.release_request(1, 41)
                 if unified:

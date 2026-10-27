@@ -3,6 +3,7 @@
 import pytest
 import torch
 from minisgl.attention.config import KDAConfig, MLAConfig
+from minisgl.attention.kda import KDAState
 from minisgl.kvcache.config import HybridCacheConfig
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.layers.kda import KDALayer
@@ -53,3 +54,38 @@ def test_cache_layout_is_independent_of_checkpoint_schedule_conventions():
     assert not cache.get_kda_state(2, 0).recurrent.any()
     with pytest.raises(ValueError, match="partition"):
         HybridCacheConfig(3, (1,), (0, 1), 5, 2, 2, 2, 4)
+
+
+@pytest.mark.parametrize("tokens", [1, 5])
+@pytest.mark.parametrize("width,bound", [(1, None), (3, -5)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_kda_batched_updates_preserve_independent_histories(tokens, width, bound, dtype):
+    torch.manual_seed(151)
+    layer = KDALayer(KDAConfig(12, 2, 4, width, gate_lower_bound=bound))
+    for tensor in layer.state_dict().values():
+        tensor.normal_(std=0.1)
+    # Distinct, nonsymmetric histories expose request or K/V axis confusion.
+    initial = KDAState(torch.randn(3, 3, 8, width - 1).to(dtype), torch.randn(3, 2, 4, 4))
+    saved = KDAState(*(part.clone() for part in initial))
+    projected = [torch.randn(3, tokens, 8).to(dtype) for _ in range(3)]
+    projected += [torch.randn(3, tokens, 2, 4).to(dtype), torch.randn(3, tokens, 2).to(dtype)]
+    expected = [
+        layer.update(
+            *(part[index] for part in projected),
+            KDAState(*(part[index] for part in initial)),
+        )
+        for index in range(3)
+    ]
+    actual, final = layer.update(*projected, initial)
+    for index, (output, state) in enumerate(expected):
+        torch.testing.assert_close(actual[index], output, rtol=1e-5, atol=1e-6)
+        for batched, independent in zip(final, state):
+            torch.testing.assert_close(batched[index], independent, rtol=1e-5, atol=1e-6)
+    # Reordering a decode batch must follow its states, not the old row order.
+    order = torch.tensor([2, 0, 1])
+    shuffled, _ = layer.update(
+        *(part[order] for part in projected), KDAState(*(part[order] for part in initial))
+    )
+    torch.testing.assert_close(shuffled, actual[order], rtol=1e-5, atol=1e-6)
+    for current, original in zip(initial, saved):
+        torch.testing.assert_close(current, original, rtol=0, atol=0)

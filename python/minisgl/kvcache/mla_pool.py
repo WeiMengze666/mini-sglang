@@ -75,8 +75,9 @@ class MLACache:
             self.rope_dim,
         ):
             raise ValueError("MLA token/cache shapes differ; do not write padded tokens")
-        owned = self._cp.owns(locations)
-        locations, latent, key_suffix = locations[owned], latent[owned], key_suffix[owned]
+        if self._cp.size > 1:
+            owned = self._cp.owns(locations)
+            locations, latent, key_suffix = locations[owned], latent[owned], key_suffix[owned]
         if self.arena is not None:
             storage, pages, offsets = self._paged_locations(locations)
             storage[pages, self._full_layers[layer_id], offsets] = torch.cat(

@@ -29,6 +29,12 @@ the framework:
 | Packed output/LSE exchange and stable merge | `distributed/context.py` |
 | E2M1/E8M0 decoding, selection and fused linear execution | `quantization/mxfp4.py`, `quantization/compressed_tensors.py`, `quantization/mxfp4_kernel.py` |
 | Safetensors index validation and shard iteration | `models/checkpoint.py` |
+
+XTML support currently covers text-message formatting and exact token decoding.
+Decoded generations retain channel and closing markers. Tools, multimodal
+inputs and a structured response/reasoning parser are not implemented. To use
+the non-thinking text channel, render the prompt with
+`tokenizer.apply_chat_template(..., thinking=False)` and submit it as `prompt`.
 | Local BPE vocabulary and segmented XTML text formatting | `tokenizer/tiktoken.py`, `tokenizer/xtml.py` |
 
 The engine selects cache/attention behavior from a cache layout and recurrent-state
@@ -186,6 +192,21 @@ known by the scheduler. Native MLA can plan its causal groups from these host
 integers without synchronizing each layer to read position tensors. Explicit
 position tensors remain available for the reference and irregular-position paths.
 
+`KDALayer.update` also accepts equal-length independent sequences as `[B,T,C]`.
+Convolution keeps explicit request histories; the recurrence folds the request
+axis into independent heads and uses the same portable or native implementation.
+The backend batches updates when every real request contributes one token,
+then commits each result to its private state slot. Heterogeneous prefill keeps
+the ordinary request loop. No model-family flag or second recurrence kernel is
+needed. Independent histories, reordered batches and four-rank decode after
+different prefill lengths pass CPU checks. The combined regression passes 362
+tests (81 skips, two expected differences). Job 143 passed 85 component and
+distributed checks, including native batch-2/8 state isolation and four-rank
+decode after heterogeneous prefill. Released FP32 batch-1/2/4 eight-token
+generations match their independent single-request result. All eleven BF16
+single-request stopped generations remain unchanged from the prior mini
+baseline; official agreement remains 11 first tokens and eight stopped replies.
+
 The optional MXFP4 grouped-expert executor consumes the router's global expert
 IDs and returns a local FP32 mixture. A six-pointer table per local expert refers
 to existing packed gate/up/down weights and scales. It neither stacks nor
@@ -265,6 +286,17 @@ differences. Job 134 passed actual released-model FP32 HTTP lifecycle tests in
 both cache pools, using a 289-token prompt: repeated and forked prefixes,
 concurrent requests, cancellation, slot reuse, zero-length and invalid requests.
 
+Checkpoint recency is independent of KV locks. Once a request has restored its
+private working state, its shared checkpoint may be recycled; only a pending
+restore pins that checkpoint until its copy is enqueued. This allows the path
+cap to retain recent boundaries during an active long prefill. Four new static
+and unified cases reproduce the old path/global-capacity failure, protect a
+pending restore and verify an existing reader's private state. The fix passes
+354 CPU/Gloo checks (77 skips, two expected differences). The combined batching
+regression passes 362 checks. Actual released-model HTTP tests pass with both
+pool modes: FP32 uses 433 prompt tokens (job 143), BF16 uses 460 (job 149),
+each spanning more than four 64-token checkpoint boundaries.
+
 ## Reusing distributed mechanisms
 
 `Partition` defines contiguous logical ranges and checkpoint slices. Both the
@@ -315,6 +347,22 @@ modes, but only 6/11 stopped responses matched official SGLang, compared with
 8/11 for DCP2/EP8. This is not a task-accuracy score; we retain DCP2/EP8 as the
 baseline for further optimizations. The remaining gap to graph-enabled SGLang
 is substantial.
+
+Generic recurrent batching in job 143 improves DCP2/EP8 batch-8 throughput from
+26.51 to 37.02 tokens/s (1.40 times), while batch-1 latency is effectively
+unchanged at 0.15185 s/token versus 0.15031. Batches 2/4 reach 11.86/21.56
+tokens/s. The DCP1/EP8 greeting-only rerun measures 0.13655 s/token at batch 1
+and 1.46 times its previous batch-8 decode rate. These measurements retain the
+same fixed-length timing boundary and stopped-response gates. Long-prefix HTTP
+verification also passes in both pool modes and dtypes.
+
+Job 143's final BF16 HTTP startup encountered `TCPStore` port contention before
+loading weights. The validation harness now chooses its HTTP/rendezvous pair
+outside the kernel's ephemeral port range, then probes both ports. One hundred
+CPU port checks and a forced occupied-port retry pass. Job 149 reran both BF16
+HTTP pool modes successfully. Its computational runtime is byte-identical to
+job 143; only the validation port selection changed. Numerical thresholds and
+client/readiness timeouts were retained.
 
 ## Running the gates
 

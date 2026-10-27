@@ -250,6 +250,83 @@
       "ep_size": 8,
       "prompt_tokens": 314,
       "report": "phase3-http-released-bf16-v3/report.json"
+    },
+    {
+      "job": 143,
+      "source_snapshot": "phase4-batched-kda-v2-source",
+      "gate": "native components and ordinary MoE/hybrid parallel execution with batched KDA",
+      "passed": true,
+      "tests": 85,
+      "report": "phase4-batched-kda-native-v3.log",
+      "scope": "includes CPU cases; new native batch-2/8 state-isolation cases and real four-rank decode after heterogeneous prefill"
+    },
+    {
+      "job": 143,
+      "source_snapshot": "phase4-batched-kda-v2-source",
+      "gate": "released FP32 reference and full/chunk consistency",
+      "passed": true,
+      "max_abs": 1.239776611328125e-05,
+      "relative_l2": 9.781225571714458e-07,
+      "full_chunk_max_abs": 1.2159347534179688e-05,
+      "atol_rtol": 0.0001,
+      "report": "phase4-batched-kda-fp32-v3/layout-comparison.json"
+    },
+    {
+      "job": 143,
+      "source_snapshot": "phase4-batched-kda-v2-source",
+      "gate": "released FP32 batch 1/2/4 duplicate and independent single-request greedy agreement",
+      "passed": true,
+      "raw_output_tokens": 8,
+      "all_warm_runs_match_first_case": true,
+      "report": "phase4-batched-kda-fp32-batch-v3/benchmark.json"
+    },
+    {
+      "job": 143,
+      "source_snapshot": "phase4-batched-kda-v2-source",
+      "gate": "released BF16 eleven-case regression against prior mini baseline",
+      "passed": true,
+      "stopped_generation_matches_prior_mini": 11,
+      "first_token_matches_official": 11,
+      "stopped_generation_matches_official": 8,
+      "raw_64_token_matches_official": 1,
+      "case_count": 11,
+      "accuracy_acceptance": false,
+      "report": "phase4-batched-kda-accept-v3.json"
+    },
+    {
+      "job": 143,
+      "source_snapshot": "phase4-batched-kda-v2-source",
+      "gate": "released FP32 long-prefix HTTP lifecycle, both pools",
+      "passed": true,
+      "prompt_tokens": 433,
+      "page_size": 64,
+      "tp_size": 8,
+      "dcp_size": 2,
+      "ep_size": 8,
+      "report": "phase4-http-checkpoint-lru-fp32-v3/report.json"
+    },
+    {
+      "job": 143,
+      "source_snapshot": "phase4-batched-kda-v2-source",
+      "gate": "released BF16 long-prefix HTTP startup",
+      "passed": false,
+      "failure": "TCPStore EADDRINUSE on probed port 39984 before weight loading; owned failed-startup server group stopped after verifying pid, parent, command and cwd",
+      "job_exit": 1,
+      "report": "phase4-http-checkpoint-lru-bf16-v3/http-static.log"
+    },
+    {
+      "job": 149,
+      "source_snapshot": "phase4-http-ports-v1-source",
+      "gate": "released BF16 long-prefix HTTP lifecycle, both pools",
+      "passed": true,
+      "prompt_tokens": 460,
+      "page_size": 64,
+      "tp_size": 8,
+      "dcp_size": 2,
+      "ep_size": 8,
+      "report": "phase4-http-checkpoint-lru-bf16-v4/report.json",
+      "job_exit": 0,
+      "computational_runtime_identical_to": "phase4-batched-kda-v2-source"
     }
   ],
   "official_latency": {
@@ -361,6 +438,15 @@
     "regression": "350 passed, 77 skipped, 2 xfailed",
     "report": "phase3-io-cpu-v1.log",
     "gpu_acceptance": "released FP32 HTTP passed both pools in job 134"
+  },
+  "checkpoint_recycling_cpu": {
+    "source_snapshot": "phase3-checkpoint-lru-v1-source",
+    "policy": "Only pending restores pin shared state checkpoints; KV readers retain private restored state",
+    "before_fix": "four static/unified path/global capacity cases failed",
+    "after_fix": "13 passed, 1 skipped",
+    "regression": "354 passed, 77 skipped, 2 xfailed",
+    "report": "phase3-checkpoint-lru-cpu-v1.log",
+    "gpu_acceptance": "released long-prefix FP32 (433 tokens) and BF16 (460 tokens) HTTP passed both pools, jobs 143 and 149"
   },
   "phase3_reliable_io_warm_latency": {
     "job": 134,
@@ -477,5 +563,162 @@
     "recommendation": "Retain DCP2/EP8 for subsequent work: DCP1/EP8 was faster on the greeting but matched only 6/11 official stopped responses versus 8/11 for DCP2/EP8; neither count is an accuracy score",
     "selected_full_suite_official_through_stop_matches": 6,
     "selected_full_suite_report": "phase3-io-selected-comparison-v1.json"
+  },
+  "phase4_batched_kda_cpu": {
+    "source_snapshot": "phase4-batched-kda-v2-source",
+    "result": "362 passed, 81 skipped, 2 xfailed",
+    "report": "phase4-batched-kda-cpu-v4.log",
+    "scope": "Independent convolution/recurrent histories, batch reordering and real four-rank heterogeneous-history decode; includes checkpoint recycling fix; nonsharded MLA writes avoid an identity boolean selection",
+    "gpu_acceptance": "85 component/distributed checks, released FP32 and BF16 batch/regression gates, and actual FP32/BF16 HTTP both pools passed, jobs 143 and 149"
+  },
+  "phase3_delivery": {
+    "control_transport_commit": "4db7da1759b61c9c7be4b6ce99bbf464d3d80b56",
+    "hybrid_execution_commit": "d86fa2b7f5d17493cac6d791d4193d035ca2c1c7",
+    "branch": "kimi-k3-eager-text",
+    "source_snapshot": "phase3-reliable-io-v1-source",
+    "runtime_and_test_sources_matched_snapshot_before_commit": true
+  },
+  "text_interface_scope": "XTML text serialization and exact raw token decoding; generated channel/closing markers are retained; tools, multimodal inputs and structured output parsing are not implemented",
+  "phase4_performance": {
+    "scope": "fixed eleven-case stopped-generation regression and raw eight-token FP32 duplicate batches; not a task accuracy score",
+    "single_request_baseline_matches": [
+      {
+        "name": "greeting",
+        "through_stop_match": true
+      },
+      {
+        "name": "arithmetic",
+        "through_stop_match": true
+      },
+      {
+        "name": "translation",
+        "through_stop_match": true
+      },
+      {
+        "name": "python",
+        "through_stop_match": true
+      },
+      {
+        "name": "reasoning",
+        "through_stop_match": true
+      },
+      {
+        "name": "explanation",
+        "through_stop_match": true
+      },
+      {
+        "name": "json",
+        "through_stop_match": true
+      },
+      {
+        "name": "unicode",
+        "through_stop_match": true
+      },
+      {
+        "name": "retrieval_16",
+        "through_stop_match": true
+      },
+      {
+        "name": "retrieval_64",
+        "through_stop_match": true
+      },
+      {
+        "name": "retrieval_128",
+        "through_stop_match": true
+      }
+    ],
+    "fp32_duplicate_raw_match": true,
+    "performance": [
+      {
+        "baseline": "phase3-io-suite-v1",
+        "candidate": "phase4-batched-kda-suite-v3",
+        "batch_size": 1,
+        "baseline_seconds": 0.15030694101005793,
+        "candidate_seconds": 0.15185482299420983,
+        "decode_rate_ratio": 0.9898068302762375
+      },
+      {
+        "baseline": "phase3-io-suite-v1",
+        "candidate": "phase4-batched-kda-suite-v3",
+        "batch_size": 8,
+        "baseline_seconds": 0.30173364595975727,
+        "candidate_seconds": 0.21608781802933663,
+        "decode_rate_ratio": 1.3963473217115512
+      },
+      {
+        "baseline": "phase3-io-d1-e8-v1",
+        "candidate": "phase4-batched-kda-d1-e8-v3",
+        "batch_size": 1,
+        "baseline_seconds": 0.14091536297928542,
+        "candidate_seconds": 0.1365503800334409,
+        "decode_rate_ratio": 1.0319660988477335
+      },
+      {
+        "baseline": "phase3-io-d1-e8-v1",
+        "candidate": "phase4-batched-kda-d1-e8-v3",
+        "batch_size": 8,
+        "baseline_seconds": 0.28591789002530277,
+        "candidate_seconds": 0.19588572694920003,
+        "decode_rate_ratio": 1.4596157386160717
+      }
+    ],
+    "job": 143,
+    "source_snapshot": "phase4-batched-kda-v2-source",
+    "batch_sizes": [
+      {
+        "batch_size": 1,
+        "median_decode_seconds": 0.15185482299420983,
+        "decode_tokens_per_second": 6.585237006519903
+      },
+      {
+        "batch_size": 2,
+        "median_decode_seconds": 0.1686170749599114,
+        "decode_tokens_per_second": 11.861194961871439
+      },
+      {
+        "batch_size": 4,
+        "median_decode_seconds": 0.18548788805492222,
+        "decode_tokens_per_second": 21.564750356182913
+      },
+      {
+        "batch_size": 8,
+        "median_decode_seconds": 0.21608781802933663,
+        "decode_tokens_per_second": 37.02198519545373
+      }
+    ],
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "prompt_tokens": 27,
+    "raw_output_tokens": 64,
+    "warm_repeats": 3,
+    "boundary": "batch construction, model.forward, argmax and token transfer; excludes scheduler"
+  },
+  "validation_port_selection": {
+    "scope": "validation harness only; computational runtime unchanged from phase4-batched-kda-v2-source",
+    "snapshot": "phase4-http-ports-v1-source",
+    "reason": "preflight-selected port was inside Linux ephemeral range; exclude both listeners from that range to avoid outgoing-connection competition",
+    "cpu_check": "100 pairs plus deliberately occupied first candidate and retry passed",
+    "report": "phase4-port-selection-v1.log",
+    "timeouts_changed": false,
+    "gpu_acceptance": "job 149 passed both BF16 HTTP pool modes with the same timeouts"
+  },
+  "current_validation": {
+    "source_snapshot": "phase4-http-ports-v1-source",
+    "computational_runtime_identical_to": "phase4-batched-kda-v2-source",
+    "cpu_regression": "362 passed, 81 skipped, 2 xfailed",
+    "component_distributed_checks": 85,
+    "component_scope": "includes CPU cases; not 85 distinct GPU tests",
+    "released_fp32_max_abs": 1.239776611328125e-05,
+    "long_prefix_http_dtypes": [
+      "float32",
+      "bfloat16"
+    ],
+    "long_prefix_http_pool_modes": [
+      "static",
+      "unified"
+    ],
+    "accuracy_benchmark_acceptance": false,
+    "sglang_performance_parity": false
   }
 }

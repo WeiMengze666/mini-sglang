@@ -64,22 +64,31 @@ class KDALayer(BaseOP):
         )
 
     def update(self, q, k, v, forget, beta, state=None, *, implementation="torch"):
-        channels = self._heads * self._dim
-        conv_state = (
-            None
-            if state is None
-            else state.conv.reshape(3, channels, self.q_conv1d.weight.shape[-1] - 1)
-        )
+        """Update one sequence [T,C] or independent equal-length sequences [B,T,C]."""
+        if q.ndim not in (2, 3):
+            raise ValueError("KDA projections must have shape [T,C] or [B,T,C]")
+        batched = q.ndim == 3
+        batch = q.shape[0] if batched else 1
+        tokens = q.shape[-2]
+        conv_state = None if state is None else state.conv
         values, histories = [], []
         for i, (projected, conv) in enumerate(
             zip((q, k, v), (self.q_conv1d, self.k_conv1d, self.v_conv1d))
         ):
             y, history = causal_conv1d(
-                projected, conv.weight, None if conv_state is None else conv_state[i]
+                projected, conv.weight, None if conv_state is None else conv_state[..., i, :, :]
             )
-            values.append(y.reshape(-1, self._heads, self._dim))
+            values.append(y.reshape(*q.shape[:-1], self._heads, self._dim))
             histories.append(history)
-        previous = None if state is None else state.recurrent
+        # Independent requests are independent heads to either recurrence backend.
+        # Convolution and persistent state retain their explicit request dimension.
+        a, dt = self.A_log, self.dt_bias
+        if batched:
+            values = [part.transpose(0, 1).flatten(1, 2) for part in values]
+            forget = forget.transpose(0, 1).flatten(1, 2)
+            beta = beta.transpose(0, 1).flatten(1, 2)
+            a, dt = a.repeat(batch), dt.repeat(batch)
+        previous = None if state is None else state.recurrent.reshape(-1, self._dim, self._dim)
         if (
             implementation == "flashinfer"
             and q.is_cuda
@@ -92,15 +101,18 @@ class KDALayer(BaseOP):
                 *values,
                 forget,
                 beta,
-                self.A_log,
-                self.dt_bias,
+                a,
+                dt,
                 previous,
                 self._config.gate_lower_bound,
             )
         else:
-            decay = kda_log_decay(forget, self.A_log, self.dt_bias, self._config.gate_lower_bound)
+            decay = kda_log_decay(forget, a, dt, self._config.gate_lower_bound)
             output, recurrent = kda_recurrence(*values, decay, beta.float().sigmoid(), previous)
-        return output, KDAState(torch.stack(histories), recurrent)
+        if batched:
+            output = output.reshape(tokens, batch, self._heads, self._dim).transpose(0, 1)
+            recurrent = recurrent.reshape(batch, self._heads, self._dim, self._dim)
+        return output, KDAState(torch.stack(histories, dim=-3), recurrent)
 
     def finish(self, x, output):
         gate = (

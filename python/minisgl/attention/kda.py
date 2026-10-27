@@ -17,18 +17,19 @@ def causal_conv1d(x, weight, state=None):
     """Depthwise causal convolution + SiLU, preserving *unactivated* history."""
     weight = weight.reshape(weight.shape[0], -1)
     channels, width = weight.shape
-    if x.ndim != 2 or x.shape[1] != channels or width < 1:
-        raise ValueError("Expected x[T,C] and depthwise weight[C,1,K] or [C,K]")
+    if x.ndim < 2 or x.shape[-1] != channels or width < 1:
+        raise ValueError("Expected x[...,T,C] and depthwise weight[C,1,K] or [C,K]")
+    shape = (*x.shape[:-2], channels, width - 1)
     if state is None:
-        state = x.new_zeros(channels, width - 1)
-    if state.shape != (channels, width - 1):
+        state = x.new_zeros(shape)
+    if state.shape != shape:
         raise ValueError("Convolution history has incorrect shape")
-    history = torch.cat((state.to(x), x.T), dim=-1)
-    if x.shape[0] == 0:
+    history = torch.cat((state.to(x), x.transpose(-2, -1)), dim=-1)
+    if x.shape[-2] == 0:
         return x.clone(), state.clone()
     windows = history.unfold(-1, width, 1)
-    y = (windows.float() * weight.float()[:, None, :]).sum(-1).T
-    tail = history[:, -(width - 1) :].clone() if width > 1 else history[:, :0].clone()
+    y = (windows.float() * weight.float()[:, None, :]).sum(-1).transpose(-2, -1)
+    tail = history[..., -(width - 1) :].clone() if width > 1 else history[..., :0].clone()
     return F.silu(y).to(x.dtype), tail
 
 
