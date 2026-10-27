@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 from minisgl.core import get_global_ctx
+from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel
 from minisgl.layers.attn_residual import attention_residual
 from minisgl.layers.base import BaseOP, OPList
@@ -92,7 +93,8 @@ class KimiK3LinearForCausalLM(BaseLLMModel):
     def __init__(self, config):
         text = config.kimi
         self._tp = TensorParallel()
-        validate_tp_config(text, self._tp.size)
+        layout = get_parallel_layout()
+        validate_tp_config(text, self._tp.size, dcp_size=layout.dcp_size, ep_size=layout.ep_size)
         self._sharded_vocab = self._tp.size > 1 and text.vocab_size % self._tp.size == 0
         vocab_width = text.vocab_size // self._tp.size if self._sharded_vocab else text.vocab_size
         self.model = KimiModel(text)

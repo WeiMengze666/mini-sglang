@@ -24,7 +24,7 @@ def situ_and_mul(
     beta: float = 1.0,
     linear_beta: float | None = None,
 ) -> torch.Tensor:
-    """K3 SiTU: beta*tanh(gate/beta)*sigmoid(gate), optionally clip up."""
+    """SiTU: beta*tanh(gate/beta)*sigmoid(gate), optionally clip up."""
     if beta <= 0 or (linear_beta is not None and linear_beta <= 0):
         raise ValueError("SiTU beta and linear_beta must be positive")
     g, u = gate.float(), up.float()

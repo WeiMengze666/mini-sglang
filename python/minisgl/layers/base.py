@@ -16,6 +16,18 @@ class BaseOP:
     @abstractmethod
     def forward(self, *args: Any, **kwargs: Any) -> Any: ...
 
+    def children(self):
+        return (
+            op
+            for name, op in vars(self).items()
+            if not name.startswith("_") and isinstance(op, BaseOP)
+        )
+
+    def apply(self, fn):
+        for child in self.children():
+            child.apply(fn)
+        fn(self)
+
     def state_dict(self, *, prefix: str = "", result: _STATE_DICT | None = None) -> _STATE_DICT:
         result = result if result is not None else {}
 
@@ -63,9 +75,7 @@ class BaseOP:
             parts = name.split(".")
             for part in parts[:-1]:
                 parent = (
-                    parent.op_list[int(part)]
-                    if isinstance(parent, OPList)
-                    else getattr(parent, part)
+                    parent.get_op(part) if isinstance(parent, OPList) else getattr(parent, part)
                 )
             setattr(parent, parts[-1], item)
         if remaining:
@@ -118,13 +128,32 @@ T = TypeVar("T", bound=BaseOP)
 
 
 class OPList(BaseOP, Generic[T]):
-    def __init__(self, ops: List[T]):
+    def __init__(self, ops: List[T], *, indices: Iterable[int] | None = None):
         super().__init__()
         self.op_list = ops
+        self._indices = list(range(len(ops)) if indices is None else indices)
+        if len(self._indices) != len(ops) or len(set(self._indices)) != len(ops):
+            raise ValueError("Operation indices must be unique and cover the local list")
+        self._lookup = {str(key): i for i, key in enumerate(self._indices)}
+
+    def items(self):
+        return zip(self._indices, self.op_list)
+
+    def children(self):
+        return iter(self.op_list)
+
+    def get_op(self, key):
+        return self.op_list[self._lookup[str(key)]]
+
+    def __contains__(self, key):
+        return str(key) in self._lookup
+
+    def set_op(self, key, op):
+        self.op_list[self._lookup[str(key)]] = op
 
     def state_dict(self, *, prefix: str = "", result: _STATE_DICT | None = None) -> _STATE_DICT:
         result = result if result is not None else {}
-        for i, op in enumerate(self.op_list):
+        for i, op in self.items():
             op.state_dict(prefix=_concat_prefix(prefix, str(i)), result=result)
         return result
 
@@ -135,7 +164,7 @@ class OPList(BaseOP, Generic[T]):
         prefix: str = "",
         _internal: bool = False,
     ) -> None:
-        for i, op in enumerate(self.op_list):
+        for i, op in self.items():
             op.load_state_dict(state_dict, prefix=_concat_prefix(prefix, str(i)), _internal=True)
 
         if not _internal and state_dict:

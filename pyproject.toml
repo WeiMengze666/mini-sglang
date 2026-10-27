@@ -26,7 +26,7 @@ dependencies = [
     "msgpack",
     "tiktoken>=0.9,<1",
     "modelscope",
-    "torch<2.10.0",
+    "torch<2.15.0",
     "transformers>=4.56.0,<=4.57.3",
     "flashinfer-python>=0.5.3",
     "pyzmq",
@@ -40,6 +40,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+native = [
+    "flashinfer-python>=0.7.1,<0.8",
+    "triton>=3.8,<4",
+]
 dev = [
     "pytest>=6.0",
     "pytest-cov>=2.0",

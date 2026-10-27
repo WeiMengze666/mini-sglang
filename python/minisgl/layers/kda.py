@@ -53,7 +53,7 @@ class KDALayer(BaseOP):
         self.o_norm = TorchRMSNorm(self._dim, config.rms_norm_eps)
         self.o_proj = Linear(width, hidden)
 
-    def forward(self, x, positions=None, state: KDAState | None = None):
+    def forward(self, x, positions=None, state: KDAState | None = None, *, implementation="torch"):
         channels = self._heads * self._dim
         conv_state = (
             None
@@ -74,16 +74,29 @@ class KDALayer(BaseOP):
             values.append(y.reshape(-1, self._heads, self._dim))
             histories.append(history)
         forget = self.f_b_proj.forward(self.f_a_proj.forward(x))
-        decay = kda_log_decay(
-            forget.reshape(-1, self._heads, self._dim),
-            self.A_log,
-            self.dt_bias,
-            self._config.gate_lower_bound,
-        )
-        beta = self.b_proj.forward(x).float().sigmoid()
-        output, recurrent = kda_recurrence(
-            *values, decay, beta, None if state is None else state.recurrent
-        )
+        forget = forget.reshape(-1, self._heads, self._dim)
+        beta = self.b_proj.forward(x)
+        previous = None if state is None else state.recurrent
+        if (
+            implementation == "flashinfer"
+            and x.is_cuda
+            and x.dtype == torch.bfloat16
+            and self._dim == 128
+        ):
+            from minisgl.attention.kda_fi import recurrent_kda
+
+            output, recurrent = recurrent_kda(
+                *values,
+                forget,
+                beta,
+                self.A_log,
+                self.dt_bias,
+                previous,
+                self._config.gate_lower_bound,
+            )
+        else:
+            decay = kda_log_decay(forget, self.A_log, self.dt_bias, self._config.gate_lower_bound)
+            output, recurrent = kda_recurrence(*values, decay, beta.float().sigmoid(), previous)
         gate = (
             self.g_proj.forward(x)
             if self._full_gate

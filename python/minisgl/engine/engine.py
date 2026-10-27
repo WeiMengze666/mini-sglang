@@ -7,6 +7,8 @@ import torch
 from minisgl.attention import create_attention_backend
 from minisgl.core import Batch, Context, Req, set_global_ctx
 from minisgl.distributed import destroy_distributed, enable_pynccl_distributed, set_tp_info
+from minisgl.distributed.context import init_context_parallel
+from minisgl.distributed.layout import ParallelLayout, configure_parallel
 from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight
@@ -30,6 +32,7 @@ class Engine:
     def __init__(self, config: EngineConfig):
         assert not torch.cuda.is_initialized()
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
+        configure_parallel(dcp_size=config.dcp_size, ep_size=config.ep_size)
         _adjust_config(config)
 
         self.device = torch.device(f"cuda:{config.tp_info.rank}")
@@ -42,6 +45,7 @@ class Engine:
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
+        init_context_parallel()
         # Hybrid rank capacities must agree with the least-free TP device.
         init_free_memory = self._sync_get_memory()[
             0 if (config.model_config.cache_config is not None) else 1
@@ -54,6 +58,11 @@ class Engine:
         set_rope_device(self.device)
         with torch.device("meta"), torch_dtype(config.dtype):
             self.model = create_model(config.model_config)
+        from minisgl.quantization.mxfp4 import MXFP4Linear
+
+        self.model.apply(
+            lambda op: op.set_backend(config.mxfp4_backend) if isinstance(op, MXFP4Linear) else None
+        )
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
             self.model.load_weights(self._iter_weights(config), device=self.device)
@@ -168,7 +177,7 @@ class Engine:
         )
         # Two usable pages plus the dummy page are the minimum engine allocation.
         pages = (config.num_page_override or 2) + 1
-        cache = pages * config.page_size * layout.cache_bytes_per_token(self.dtype)
+        cache = pages * layout.cache_bytes_per_page(self.dtype, config.page_size)
         minimum = weights + fixed + cache
         budget = int(config.memory_ratio * free_memory)
         if minimum >= budget:
@@ -228,7 +237,7 @@ class Engine:
         fixed_state = 0
         if config.model_config.cache_config is not None:
             layout = config.model_config.cache_config
-            cache_per_page = config.page_size * layout.cache_bytes_per_token(self.dtype)
+            cache_per_page = layout.cache_bytes_per_page(self.dtype, config.page_size)
             state_slots = config.max_running_req + (
                 getattr(config, "max_cached_states", 0)
                 if getattr(config, "cache_type", "hybrid") != "naive"
@@ -330,6 +339,18 @@ def _adjust_config(config: EngineConfig):
 
     if config.max_cached_states < 0:
         raise ValueError("max_cached_states cannot be negative")
+    if config.mxfp4_backend not in ("torch", "triton"):
+        raise ValueError("mxfp4_backend must be torch or triton")
+    ParallelLayout(config.tp_info.rank, config.tp_info.size, config.dcp_size, config.ep_size)
+    if config.dcp_size > 1 and config.model_config.cache_config is None:
+        raise ValueError("DCP requires a context-sharded attention/cache implementation")
+    if config.ep_size > 1:
+        if not config.model_config.is_moe:
+            raise ValueError("EP requires a model with routed experts")
+        if config.model_config.num_experts % config.ep_size:
+            raise ValueError("num_experts must be divisible by ep_size")
+    if config.page_size % config.dcp_size:
+        raise ValueError("page_size must be divisible by dcp_size")
     if config.enable_unified_memory and not config.model_config.has_recurrent_state:
         raise ValueError("Unified memory requires a hybrid recurrent/token cache")
 
@@ -340,16 +361,21 @@ def _adjust_config(config: EngineConfig):
         # Correctness-first TP uses native collectives; custom capture/buffer
         # assumptions have not been validated for K3's FP32 mixtures/vocab gather.
         override("use_pynccl", False)
-        if config.attention_backend not in ("auto", "recurrent"):
+        if config.attention_backend != "auto" and any(
+            name not in ("recurrent", "recurrent-fi")
+            for name in config.attention_backend.split(",")
+        ):
             raise ValueError("Hybrid state requires the recurrent attention backend")
-        override("attention_backend", "recurrent")
+        if config.attention_backend == "auto":
+            override("attention_backend", "recurrent")
         override("cuda_graph_bs", [])
         override("cuda_graph_max_bs", 0)
         if hasattr(config, "cache_type"):
             if config.cache_type != "naive":
                 override("cache_type", "hybrid" if config.max_cached_states > 0 else "naive")
         logger.warning_rank0(
-            "Hybrid attention reference backend: eager TP, sparse recurrent checkpoints; "
+            f"Hybrid attention {config.attention_backend}: TP={config.tp_info.size}, "
+            f"DCP={config.dcp_size}, EP={config.ep_size}; sparse recurrent checkpoints; "
             "CUDA graphs and overlap are disabled."
         )
         return

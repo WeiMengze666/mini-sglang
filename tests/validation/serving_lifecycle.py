@@ -17,28 +17,35 @@ from pathlib import Path
 import httpx
 
 
-def fixture(root):
+def fixture(root, args):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "models"))
     import run_kimi_runtime_gate as runtime
 
     config = runtime.tiny_config()
     config.vocab_size = 512
+    if args.packed:
+        config.linear_attn_config["head_dim"] = 32
+        config.v_head_dim = 32
+        config.intermediate_size = config.moe_intermediate_size = 32 * args.tp_size
     runtime.tiny_config = lambda: config
     runtime.generate_fixtures(root)
-    model = root / "dense"
+    model = root / ("packed" if args.packed else "dense")
     (model / "tiktoken.model").write_bytes(
         b"".join(base64.b64encode(bytes([i])) + f" {i}\n".encode() for i in range(256))
     )
-    names = {
-        256: "[BOS]",
-        257: "[EOS]",
-        258: "<|end_of_msg|>",
-        259: "<|open|>",
-        260: "<|close|>",
-        261: "<|sep|>",
-        510: "[UNK]",
-        511: "[PAD]",
-    }
+    names = {i: f"<extra_{i}>" for i in range(256, 512)}
+    names.update(
+        {
+            256: "[BOS]",
+            257: "[EOS]",
+            258: "<|end_of_msg|>",
+            259: "<|open|>",
+            260: "<|close|>",
+            261: "<|sep|>",
+            510: "[UNK]",
+            511: "[PAD]",
+        }
+    )
     metadata = {
         "tokenizer_class": "TikTokenTokenizer",
         "bos_token": "[BOS]",
@@ -56,7 +63,7 @@ def fixture(root):
     return model
 
 
-def run(model, output, unified):
+def run(model, output, unified, args):
     for _ in range(20):
         with socket.socket() as first, socket.socket() as second:
             first.bind(("127.0.0.1", 0))
@@ -88,6 +95,16 @@ def run(model, output, unified):
         "4",
         "--max-cached-states",
         "8",
+        "--tp-size",
+        str(args.tp_size),
+        "--dcp-size",
+        str(args.dcp_size),
+        "--ep-size",
+        str(args.ep_size),
+        "--mxfp4-backend",
+        args.mxfp4_backend,
+        "--attention-backend",
+        args.attention_backend,
     ]
     if unified:
         command.append("--enable-unified-memory")
@@ -111,7 +128,7 @@ def run(model, output, unified):
             else:
                 raise TimeoutError(f"Server did not become ready; see {log}")
 
-            def complete(prompt="hello", tokens=8):
+            def complete(prompt="hello", tokens=8, timeout=60):
                 response = httpx.post(
                     url + "/v1/chat/completions",
                     json={
@@ -121,12 +138,12 @@ def run(model, output, unified):
                         "max_tokens": tokens,
                         "ignore_eos": True,
                     },
-                    timeout=60,
+                    timeout=timeout,
                 )
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"]
 
-            baseline = complete()
+            baseline = complete(timeout=180)  # first-use CUDA compilation is outside latency gates
             for _ in range(3):
                 assert complete() == baseline, "Prefix restore or slot reuse changed the generation"
             complete("help")  # aligned radix fork and recurrent replay
@@ -162,6 +179,10 @@ def run(model, output, unified):
             return {
                 "status": "passed",
                 "unified_memory": unified,
+                "tp_size": args.tp_size,
+                "dcp_size": args.dcp_size,
+                "ep_size": args.ep_size,
+                "packed": args.packed,
                 "scope": "synthetic_http_scheduler_prefix_reuse_and_cancellation",
             }
         finally:
@@ -177,10 +198,16 @@ def run(model, output, unified):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--tp-size", type=int, default=1)
+    parser.add_argument("--dcp-size", type=int, default=1)
+    parser.add_argument("--ep-size", type=int, default=1)
+    parser.add_argument("--packed", action="store_true")
+    parser.add_argument("--mxfp4-backend", choices=["torch", "triton"], default="torch")
+    parser.add_argument("--attention-backend", default="recurrent")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    model = fixture(args.output / "fixture")
-    report = [run(model, args.output, unified) for unified in (False, True)]
+    model = fixture(args.output / "fixture", args)
+    report = [run(model, args.output, unified, args) for unified in (False, True)]
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report), flush=True)
 

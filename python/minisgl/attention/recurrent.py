@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import torch
 from minisgl.core import get_global_ctx
+from minisgl.distributed.context import ContextParallel
 
 from .base import BaseAttnBackend, BaseAttnMetadata
 
@@ -21,12 +22,29 @@ class HybridMetadata(BaseAttnMetadata):
 
 
 class RecurrentAttentionBackend(BaseAttnBackend):
-    def __init__(self, config):
+    def __init__(self, config, *, kda_implementation="torch"):
         self.config = config
+        self.kda_implementation = kda_implementation
+        from .mla import mla_attention
+
+        self.mla_attention = mla_attention
+        if kda_implementation == "flashinfer":
+            from .mla_fi import FlashInferMLA
+
+            self.mla_attention = FlashInferMLA()
         self.kvcache = get_global_ctx().kv_cache
 
     def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
-        return forward_layer(layer, layer_id, x, batch, cache, page_table)
+        return forward_layer(
+            layer,
+            layer_id,
+            x,
+            batch,
+            cache,
+            page_table,
+            kda_implementation=self.kda_implementation,
+            mla_attention=self.mla_attention,
+        )
 
     def prepare_metadata(self, batch) -> None:
         lengths = [req.extend_len for req in batch.reqs]
@@ -50,7 +68,9 @@ class RecurrentAttentionBackend(BaseAttnBackend):
         raise ValueError("Hybrid attention does not support CUDA graph replay")
 
 
-def forward_layer(layer, layer_id, x, batch, cache, page_table):
+def forward_layer(
+    layer, layer_id, x, batch, cache, page_table, *, kda_implementation="torch", mla_attention=None
+):
     """Apply a stateful attention layer to real request rows only.
 
     Prefix lengths, token-page addressing, and request state stay out of model
@@ -62,14 +82,18 @@ def forward_layer(layer, layer_id, x, batch, cache, page_table):
         current, positions = x[rows], batch.positions[rows]
         if layer.state_kind == "recurrent":
             state = cache.get_kda_state(layer_id, req.table_idx)
-            out, state = layer.forward(current, positions, state)
+            out, state = layer.forward(current, positions, state, implementation=kda_implementation)
             cache.set_kda_state(layer_id, req.table_idx, state)
         else:
             q, latent, key = layer.project(current, positions)
             cache.store_mla(layer_id, latent, key, batch.out_loc[rows])
-            latent, key = cache.gather_mla(layer_id, page_table[req.table_idx, : req.device_len])
             history = torch.arange(req.device_len, device=x.device)
-            out = layer.attend(current, q, latent, key, positions, history)
+            owned = ContextParallel().owns(history)
+            locations = page_table[req.table_idx, : req.device_len][owned]
+            latent, key = cache.gather_mla(layer_id, locations)
+            history = history[owned]
+            kwargs = {} if mla_attention is None else {"attention": mla_attention}
+            out = layer.attend(current, q, latent, key, positions, history, **kwargs)
         outputs.append(out)
         offset += req.extend_len
     return torch.cat(outputs)

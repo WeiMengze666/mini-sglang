@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
+from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.activation import situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
@@ -50,7 +51,7 @@ class _Expert(BaseOP):
     def __init__(self, hidden_size: int, intermediate_size: int, config):
         self._config = config
         intermediate_size = local_size(
-            intermediate_size, TensorParallel().size, "expert intermediate_size"
+            intermediate_size, get_parallel_layout().expert_tensor_size, "expert intermediate_size"
         )
         self.w1 = Linear(hidden_size, intermediate_size)
         self.w2 = Linear(intermediate_size, hidden_size)
@@ -123,11 +124,10 @@ class LatentMoE(BaseOP):
         self.gate = GroupedRouter(config)
         latent = getattr(config, "routed_expert_hidden_size", None)
         width = latent or config.hidden_size
+        expert_ids = get_parallel_layout().expert_range(config.num_experts)
         self.experts = OPList(
-            [
-                _Expert(width, config.moe_intermediate_size, config)
-                for _ in range(config.num_experts)
-            ]
+            [_Expert(width, config.moe_intermediate_size, config) for _ in expert_ids],
+            indices=expert_ids,
         )
         shared = getattr(config, "num_shared_experts", None) or 0
         self.shared_experts = (
@@ -150,7 +150,12 @@ class LatentMoE(BaseOP):
         routed = self.routed_expert_down_proj.forward(x) if self.routed_expert_down_proj else x
         # Accumulate mixture in FP32. RMSNorm is AFTER expert reduction, per token.
         mixed = torch.zeros_like(routed, dtype=torch.float32)
-        for expert_id, expert in enumerate(self.experts.op_list):
+        # Materialize only active IDs once rather than synchronizing once for
+        # every expert in the model. All ranks see the same replicated tokens.
+        for expert_id in ids.unique(sorted=True).tolist():
+            if expert_id not in self.experts:
+                continue
+            expert = self.experts.get_op(expert_id)
             rows, slots = torch.where(ids == expert_id)
             if rows.numel():
                 values = expert.forward(routed[rows]).float() * weights[rows, slots, None]

@@ -1,6 +1,7 @@
 import torch
 from minisgl.core import get_global_ctx
 from minisgl.distributed import DistributedCommunicator, get_tp_info
+from minisgl.distributed.layout import get_parallel_layout
 from minisgl.utils import div_even
 
 from .base import BaseOP
@@ -26,18 +27,21 @@ class MoELayer(BaseOP):
         self._comm = DistributedCommunicator()
 
         tp_info = get_tp_info()
-        self.tp_size = tp_size = tp_info.size
+        self.tp_size = tp_info.size
         self.renormalize = renormalize
         self.activation = activation
         self.apply_router_weight_on_input = apply_router_weight_on_input
-        intermediate_size_per_partition = div_even(intermediate_size, tp_size)
+        layout = get_parallel_layout()
+        self._expert_partition = layout.experts
+        self._expert_ids = layout.expert_range(num_experts)
+        intermediate_size_per_partition = div_even(intermediate_size, layout.expert_tensor_size)
         self.gate_up_proj = torch.empty(
-            num_experts,
+            len(self._expert_ids),
             2 * intermediate_size_per_partition,
             hidden_size,
         )
         self.down_proj = torch.empty(
-            num_experts,
+            len(self._expert_ids),
             hidden_size,
             intermediate_size_per_partition,
         )
@@ -53,6 +57,8 @@ class MoELayer(BaseOP):
             renormalize=self.renormalize,
             activation=self.activation,
             apply_router_weight_on_input=self.apply_router_weight_on_input,
+            expert_partition=self._expert_partition,
+            num_global_experts=self.num_experts,
         )
         if self.tp_size > 1:
             final_hidden_states = self._comm.all_reduce(final_hidden_states)

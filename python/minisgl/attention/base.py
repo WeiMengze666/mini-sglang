@@ -47,6 +47,10 @@ class HybridBackend(BaseAttnBackend):
         self.prefill_backend = prefill_backend
         self.decode_backend = decode_backend
 
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+        backend = self.prefill_backend if batch.is_prefill else self.decode_backend
+        return backend.forward_layer(layer, layer_id, x, batch, cache, page_table)
+
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, layer_id: int, batch: Batch
     ) -> torch.Tensor:

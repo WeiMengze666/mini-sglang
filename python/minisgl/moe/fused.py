@@ -2,6 +2,7 @@ import functools
 from typing import Dict, Tuple
 
 import torch
+from minisgl.distributed.partition import Partition
 from minisgl.moe import BaseMoeBackend
 from minisgl.utils import div_ceil
 
@@ -223,6 +224,8 @@ def fused_experts_impl(
     moe_sum_reduce_triton(
         intermediate_cache3,
         out_hidden_states[begin_token_idx:end_token_idx],
+        curr_topk_ids,
+        E,
     )
     return out_hidden_states
 
@@ -238,6 +241,8 @@ class FusedMoe(BaseMoeBackend):
         renormalize: bool,
         activation: str = "silu",
         apply_router_weight_on_input: bool = False,
+        expert_partition: Partition = Partition(0, 1),
+        num_global_experts: int | None = None,
     ) -> torch.Tensor:
         topk_weights, topk_ids = fused_topk(
             hidden_states=hidden_states,
@@ -245,6 +250,8 @@ class FusedMoe(BaseMoeBackend):
             topk=topk,
             renormalize=renormalize,
         )
+        if expert_partition.size > 1:
+            topk_ids = expert_partition.local_ids(topk_ids, num_global_experts)
         return fused_experts_impl(
             hidden_states,
             w1,

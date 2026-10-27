@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import glob
 import re
+from pathlib import Path
 from typing import Dict, Iterator, Tuple
 
-import safetensors
 import torch
 from minisgl.distributed import get_tp_info
 from minisgl.utils import cached_load_hf_config, div_ceil, download_hf_weight
 from tqdm import tqdm
+
+from .checkpoint import checkpoint_index, shard_readers
 
 _SPLIT_DIM_0 = [".q_proj", ".k_proj", ".v_proj", ".gate_proj", ".up_proj"]
 _SPLIT_DIM_1 = [".o_proj", ".down_proj"]
@@ -79,8 +80,11 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
 
     config = ModelConfig.from_hf(cached_load_hf_config(model_path))
     if config.is_kimi:
+        from minisgl.distributed.layout import get_parallel_layout
+
         from .kimi_weight import load_kimi_weight
 
+        layout = get_parallel_layout()
         yield from load_kimi_weight(
             model_path,
             device,
@@ -88,49 +92,65 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
             tp_size=get_tp_info().size,
             tp_rank=get_tp_info().rank,
             packed=bool(getattr(config.kimi, "quantization_config", None)),
+            dcp_size=layout.dcp_size,
+            ep_size=layout.ep_size,
         )
         return
     model_folder = download_hf_weight(model_path)
-    files = glob.glob(f"{model_folder}/*.safetensors")
-    files = [f for f in files if not f.endswith("consolidated.safetensors")] or files
     tp_info = get_tp_info()
+    from minisgl.distributed.layout import get_parallel_layout
+
+    layout = get_parallel_layout()
+    local_experts = layout.expert_range(config.num_experts) if config.is_moe else range(0)
 
     # Buffer for merge groups: merged_key -> {slot: tensor}
     merge_buf: Dict[str, Dict[str, torch.Tensor]] = {}
     expert_buf: Dict[str, Dict[int, torch.Tensor]] = {}
-    for file in tqdm(files, desc="Loading weights", disable=not tp_info.is_primary()):
-        with safetensors.safe_open(file, framework="pt", device=str(device)) as f:
-            for name in f.keys():
-                # Strip multimodal wrapper prefix, skip vision/projector weights
-                if name.startswith(("vision_tower.", "multi_modal_projector.")):
-                    continue
-                raw = f.get_tensor(name)
-                name = name.removeprefix("language_model.")
-                tensor = _shard_tensor(name, raw, tp_info.rank, tp_info.size, config.num_kv_heads)
-                del raw
 
-                if (info := _get_merge_info(name)) is None:
-                    out = (name, tensor)
-                else:
-                    merged_key, slot, all_slots = info
-                    merge_buf.setdefault(merged_key, {})[slot] = tensor
-                    if not all(s in merge_buf[merged_key] for s in all_slots):
-                        continue
-                    parts = [merge_buf[merged_key][s] for s in all_slots]
-                    del merge_buf[merged_key]
-                    out = (merged_key, torch.cat(parts, dim=0))
+    def normalize(name):
+        if name.startswith(("vision_tower.", "multi_modal_projector.")):
+            return None
+        return name.removeprefix("language_model.")
 
-                if config.is_moe and (expert_info := _get_expert_stack_info(out[0])) is not None:
-                    packed_key, expert_idx = expert_info
-                    slots = expert_buf.setdefault(packed_key, {})
-                    slots[expert_idx] = out[1]
-                    if len(slots) != config.num_experts:
-                        continue
-                    experts = [slots[idx] for idx in range(config.num_experts)]
-                    del expert_buf[packed_key]
-                    yield packed_key, torch.stack(experts, dim=0)
-                else:  # Normal dense model
-                    yield out[0], out[1]
+    index = checkpoint_index(Path(model_folder), normalize)
+    for name, reader in tqdm(
+        shard_readers(index),
+        total=len(index),
+        desc="Loading weights",
+        disable=not tp_info.is_primary(),
+    ):
+        raw_name = name
+        name = name.removeprefix("language_model.")
+        expert = _EXPERT_PATTERN.match(name)
+        if expert is not None and int(expert["idx"]) not in local_experts:
+            continue
+        raw = reader.get_tensor(raw_name)
+        partition = layout.expert_tensor if expert is not None else layout.tensor
+        tensor = _shard_tensor(name, raw, partition.rank, partition.size, config.num_kv_heads)
+        del raw
+
+        if (info := _get_merge_info(name)) is None:
+            out = (name, tensor)
+        else:
+            merged_key, slot, all_slots = info
+            merge_buf.setdefault(merged_key, {})[slot] = tensor
+            if not all(s in merge_buf[merged_key] for s in all_slots):
+                continue
+            parts = [merge_buf[merged_key][s] for s in all_slots]
+            del merge_buf[merged_key]
+            out = (merged_key, torch.cat(parts, dim=0))
+
+        if config.is_moe and (expert_info := _get_expert_stack_info(out[0])) is not None:
+            packed_key, expert_idx = expert_info
+            slots = expert_buf.setdefault(packed_key, {})
+            slots[expert_idx] = out[1]
+            if len(slots) != len(local_experts):
+                continue
+            experts = [slots[idx] for idx in local_experts]
+            del expert_buf[packed_key]
+            yield packed_key, torch.stack(experts, dim=0).to(device)
+        else:  # Normal dense model
+            yield out[0], out[1].to(device)
 
     assert not merge_buf, f"Incomplete merge groups in checkpoint: {list(merge_buf.keys())}"
     assert not expert_buf, f"Incomplete expert tensors in checkpoint: {list(expert_buf.keys())}"

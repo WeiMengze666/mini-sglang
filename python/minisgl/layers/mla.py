@@ -5,6 +5,8 @@ from __future__ import annotations
 import torch
 from minisgl.attention.config import MLAConfig
 from minisgl.attention.mla import MLAState, apply_rotary, mla_attention
+from minisgl.distributed.context import ContextParallel
+from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
 from minisgl.layers.linear import Linear
@@ -17,7 +19,11 @@ class MLALayer(BaseOP):
     def __init__(self, config: MLAConfig) -> None:
         self._config = config
         self._tp = TensorParallel()
-        self._heads = local_size(config.num_heads, self._tp.size, "MLA heads")
+        self._cp = ContextParallel()
+        self._heads = local_size(
+            config.num_heads, get_parallel_layout().attention_size, "MLA heads"
+        )
+        self._output_heads = local_size(config.num_heads, self._tp.size, "MLA output heads")
         self._nope = config.nope_dim
         self._rope = config.rope_dim
         self._value = config.value_dim
@@ -35,8 +41,8 @@ class MLALayer(BaseOP):
         self.kv_b_proj = Linear(self._latent, self._heads * (self._nope + self._value))
         self._output_gate = config.output_gate
         if self._output_gate:
-            self.g_proj = Linear(config.hidden_size, self._heads * self._value)
-        self.o_proj = Linear(self._heads * self._value, config.hidden_size)
+            self.g_proj = Linear(config.hidden_size, self._output_heads * self._value)
+        self.o_proj = Linear(self._output_heads * self._value, config.hidden_size)
 
     def project(self, x, positions):
         if self._config.q_lora_rank is None:
@@ -46,8 +52,8 @@ class MLALayer(BaseOP):
         q = q.reshape(-1, self._heads, self._nope + self._rope)
         latent, key = self.kv_a_proj_with_mqa.forward(x).split((self._latent, self._rope), -1)
         latent = self.kv_a_layernorm.forward(latent)
-        # K3 deliberately keeps this shared suffix unrotated: NoPE is not
-        # equivalent to removing the suffix or excluding it from the scale.
+        # An unrotated shared suffix still participates in the attention score
+        # and its scale; NoPE does not remove these projection dimensions.
         if not self._skip_rope and self._rope:
             theta = getattr(self._config, "rope_theta", 10000.0)
             interleaved = getattr(self._config, "rope_interleave", True)
@@ -61,8 +67,18 @@ class MLALayer(BaseOP):
             key = apply_rotary(key, positions, theta, interleaved=interleaved)
         return q, latent, key
 
-    def attend(self, x, q, latent_history, key_history, positions, history_positions):
-        output = mla_attention(
+    def attend(
+        self,
+        x,
+        q,
+        latent_history,
+        key_history,
+        positions,
+        history_positions,
+        *,
+        attention=mla_attention,
+    ):
+        partial = attention(
             q,
             latent_history,
             key_history,
@@ -71,7 +87,10 @@ class MLALayer(BaseOP):
             history_positions,
             nope_dim=self._nope,
             value_dim=self._value,
-        ).flatten(-2)
+            return_lse=self._cp.size > 1,
+        )
+        output = self._cp.exchange(*partial).to(q.dtype) if self._cp.size > 1 else partial
+        output = output.flatten(-2)
         if self._output_gate:
             output = output * self.g_proj.forward(x).sigmoid()
         return self._tp.all_reduce(self.o_proj.forward(output))
@@ -86,5 +105,7 @@ class MLALayer(BaseOP):
             history_positions = torch.cat((state.positions, positions))
         if latent.shape[0] > self._config.max_position_embeddings:
             raise ValueError("MLA context exceeds max_position_embeddings")
+        owned = self._cp.owns(history_positions)
+        latent, key, history_positions = latent[owned], key[owned], history_positions[owned]
         output = self.attend(x, q, latent, key, positions, history_positions)
         return output, MLAState(latent, key, history_positions)

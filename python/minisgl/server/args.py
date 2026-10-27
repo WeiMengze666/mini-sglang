@@ -92,6 +92,25 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--dcp-size",
+        type=int,
+        default=ServerArgs.dcp_size,
+        help="Interleaved MLA context shards within each TP group (divides TP and page size).",
+    )
+    parser.add_argument(
+        "--ep-size",
+        type=int,
+        default=ServerArgs.ep_size,
+        help="Expert ownership ranks within TP; remaining ranks shard expert intermediate channels.",
+    )
+
+    parser.add_argument(
+        "--mxfp4-backend",
+        choices=["torch", "triton"],
+        default=ServerArgs.mxfp4_backend,
+        help="Weight-only MXFP4 execution backend.",
+    )
+    parser.add_argument(
         "--max-running-requests",
         type=int,
         dest="max_running_req",

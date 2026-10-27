@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 import torch
+from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import local_size, tp_info
 
 
@@ -28,6 +29,10 @@ class HybridCacheConfig:
 
     def cache_bytes_per_token(self, dtype: torch.dtype) -> int:
         return len(self.mla_layers) * (self.latent_dim + self.key_dim) * dtype.itemsize
+
+    def cache_bytes_per_page(self, dtype: torch.dtype, page_size: int) -> int:
+        local_tokens = local_size(page_size, get_parallel_layout().dcp_size, "MLA page size")
+        return local_tokens * self.cache_bytes_per_token(dtype)
 
     def state_bytes_per_request(self, dtype: torch.dtype, tp_size: int | None = None) -> int:
         if not self.recurrent_layers:

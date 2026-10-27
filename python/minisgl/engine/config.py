@@ -17,6 +17,9 @@ class EngineConfig:
     model_path: str
     tp_info: DistributedInfo
     dtype: torch.dtype
+    dcp_size: int = 1
+    ep_size: int = 1
+    mxfp4_backend: str = "torch"
     max_running_req: int = 256
     max_cached_states: int = 8
     enable_unified_memory: bool = False

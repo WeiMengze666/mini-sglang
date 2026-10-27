@@ -12,11 +12,11 @@ from minisgl.layers.latent_moe import LatentMoE
 from minisgl.layers.linear import Linear
 from minisgl.models.kimi_config import KimiTextConfig
 from minisgl.models.kimi_quant import (
-    MXFP4Linear,
     quantization_rules,
     replace_quantized_linears,
 )
 from minisgl.models.kimi_weight import decode_mxfp4, load_kimi_weight
+from minisgl.quantization.mxfp4 import MXFP4Linear
 from safetensors.torch import save_file
 
 

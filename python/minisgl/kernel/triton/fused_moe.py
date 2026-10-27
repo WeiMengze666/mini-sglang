@@ -9,6 +9,7 @@ def moe_sum_reduce_kernel(
     input_stride_1,
     input_stride_2,
     output_ptr,
+    topk_ids_ptr,
     output_stride_0,
     output_stride_1,
     token_num: int,
@@ -17,6 +18,7 @@ def moe_sum_reduce_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_DIM: tl.constexpr,
     NUM_STAGE: tl.constexpr,
+    NUM_EXPERTS: tl.constexpr,
 ):
     input_stride_0 = tl.cast(input_stride_0, dtype=tl.int64)
     input_stride_1 = tl.cast(input_stride_1, dtype=tl.int64)
@@ -37,7 +39,14 @@ def moe_sum_reduce_kernel(
         accumulator = tl.zeros((BLOCK_DIM,), dtype=tl.float32)
         input_t_ptr = input_ptr + token_index * input_stride_0 + offs_dim
         for i in tl.range(0, topk_num, num_stages=NUM_STAGE):
-            tmp = tl.load(input_t_ptr + i * input_stride_1, mask=offs_dim < dim_end, other=0.0)
+            expert = tl.load(topk_ids_ptr + token_index * topk_num + i)
+            # Alignment kernels may omit the reserved remote-expert bucket.
+            # Read only owned routing slots, even if the scratch buffer aliases.
+            tmp = tl.load(
+                input_t_ptr + i * input_stride_1,
+                mask=(offs_dim < dim_end) & (expert >= 0) & (expert < NUM_EXPERTS),
+                other=0.0,
+            )
             accumulator += tmp
         store_t_ptr = output_ptr + token_index * output_stride_0 + offs_dim
         tl.store(
@@ -78,6 +87,7 @@ def fused_moe_kernel(
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr,
+    NUM_EXPERTS: tl.constexpr,
     MUL_ROUTED_WEIGHT: tl.constexpr,
     top_k: tl.constexpr,
     compute_type: tl.constexpr,
@@ -135,13 +145,20 @@ def fused_moe_kernel(
     offs_token_id = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_token = tl.load(sorted_token_ids_ptr + offs_token_id)
     offs_token = offs_token.to(tl.int64)
-    token_mask = offs_token < num_valid_tokens
+    token_mask = (offs_token >= 0) & (offs_token < num_valid_tokens)
 
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
     a_ptrs = a_ptr + (offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak)
 
     off_experts = tl.load(expert_ids_ptr + pid_m)
+    if (off_experts < 0) | (off_experts >= NUM_EXPERTS):
+        # Alignment may encode its remote/padding bucket as -1. Never read
+        # a weight matrix for that bucket; initialize valid routing slots to zero.
+        cols = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+        out = c_ptr + stride_cm * offs_token[:, None] + stride_cn * cols[None, :]
+        tl.store(out, 0.0, token_mask[:, None] & (cols[None, :] < N))
+        return
     b_ptrs = (
         b_ptr
         + off_experts * stride_be

@@ -14,6 +14,9 @@ from typing import Iterator
 import safetensors
 import torch
 from minisgl.quantization.mxfp4 import decode_mxfp4
+from minisgl.quantization.mxfp4 import read_mxfp4_pair as _read_packed_pair
+
+from .checkpoint import checkpoint_index, index_entries, shard_readers
 
 _LAYER = re.compile(r"(?:^|\.)layers\.(\d+)\.")
 
@@ -46,73 +49,6 @@ def normalize_kimi_name(name: str, num_layers: int | None = None) -> str | None:
     return name
 
 
-def _index_entries(folder: Path) -> dict[str, str] | None:
-    index_file = folder / "model.safetensors.index.json"
-    if not index_file.exists():
-        return None
-    entries = json.loads(index_file.read_text()).get("weight_map")
-    if not isinstance(entries, dict):
-        raise ValueError("Kimi checkpoint index requires a weight_map mapping")
-    for name, filename in entries.items():
-        if not isinstance(name, str) or not isinstance(filename, str):
-            raise ValueError("Kimi checkpoint index names and filenames must be strings")
-        relative = Path(filename)
-        if (
-            relative.is_absolute()
-            or ".." in relative.parts
-            or any(char in filename for char in "\\*?[]")
-            or not filename.endswith(".safetensors")
-        ):
-            raise ValueError(
-                f"Checkpoint index points outside model folder or unsafe shard: {filename}"
-            )
-    return entries
-
-
-def _checkpoint_index(folder: Path, num_layers: int | None = None) -> dict[str, Path]:
-    entries = _index_entries(folder)
-    if entries is not None:
-        result = {}
-        files_by_name = {}
-        for name, filename in entries.items():
-            if normalize_kimi_name(name, num_layers) is None:
-                continue
-            # HF snapshots legitimately symlink files into their blob cache.
-            # Reject path traversal in the index, not those managed symlinks.
-            if filename not in files_by_name:
-                file = folder / filename
-                if not file.is_file():
-                    raise FileNotFoundError(file)
-                files_by_name[filename] = file
-            result[name] = files_by_name[filename]
-        return result
-    files = sorted(folder.glob("*.safetensors"))
-    files = [p for p in files if p.name != "consolidated.safetensors"] or files
-    if not files:
-        raise FileNotFoundError(f"No safetensors checkpoint in {folder}")
-    result = {}
-    for file in files:
-        with safetensors.safe_open(file, framework="pt", device="cpu") as reader:
-            for name in reader.keys():
-                if normalize_kimi_name(name, num_layers) is None:
-                    continue
-                if name in result:
-                    raise ValueError(f"Duplicate checkpoint tensor: {name}")
-                result[name] = file
-    return result
-
-
-def _shard_readers(index):
-    # Parse/map each shard once rather than reopening it for every expert.
-    by_file = {}
-    for name, file in index.items():
-        by_file.setdefault(file, []).append(name)
-    for file, names in by_file.items():
-        with safetensors.safe_open(file, framework="pt", device="cpu") as reader:
-            for name in names:
-                yield name, reader
-
-
 def _validate_pairs(index, num_layers):
     logical_names = set()
     for raw_name in index:
@@ -132,46 +68,6 @@ def _validate_pairs(index, num_layers):
         if name in logical_names:
             raise ValueError(f"Duplicate normalized checkpoint tensor: {name}")
         logical_names.add(name)
-
-
-def _read_packed_pair(reader, raw_name, scales_reader, scale_name, spec, *, keep_packed):
-    """Slice logical TP rows/columns before materializing packed bytes/scales."""
-    weight_view = reader.get_slice(raw_name)
-    scale_view = scales_reader.get_slice(scale_name)
-    weight_shape, scale_shape = weight_view.get_shape(), scale_view.get_shape()
-    if weight_view.get_dtype() != "U8" or len(weight_shape) != 2:
-        raise ValueError("MXFP4 packed weights must be a 2-D uint8 tensor")
-    if scale_view.get_dtype() != "U8":
-        raise ValueError("MXFP4 scales must be uint8 E8M0 exponents")
-    rows, half_cols = weight_shape
-    cols = half_cols * 2
-    scale_4d = len(scale_shape) == 4 and scale_shape[1] == scale_shape[3] == 1
-    normalized_scale_shape = (scale_shape[0], scale_shape[2]) if scale_4d else tuple(scale_shape)
-    expected = (rows, (cols + 31) // 32)
-    if normalized_scale_shape != expected:
-        raise ValueError(f"MXFP4 scale shape {tuple(scale_shape)} != {expected}")
-    if keep_packed and (not rows or not cols or cols % 32):
-        raise ValueError("Packed Kimi storage requires positive widths divisible by 32")
-    row_slice, packed_slice, scale_slice = slice(None), slice(None), slice(None)
-    if spec is not None:
-        if spec.axis == 0:
-            if not 0 <= spec.start < spec.stop <= rows:
-                raise ValueError(f"Kimi TP output slice exceeds checkpoint shape: {raw_name}")
-            row_slice = slice(spec.start, spec.stop)
-        elif spec.axis == 1:
-            if not 0 <= spec.start < spec.stop <= cols:
-                raise ValueError(f"Kimi TP input slice exceeds checkpoint shape: {raw_name}")
-            if spec.start % 32 or spec.stop % 32:
-                raise ValueError("Kimi packed TP input boundaries must align to 32-element blocks")
-            packed_slice = slice(spec.start // 2, spec.stop // 2)
-            scale_slice = slice(spec.start // 32, spec.stop // 32)
-        else:
-            raise ValueError("Kimi packed TP only supports logical axes 0 and 1")
-    weight = weight_view[row_slice, packed_slice]
-    scale = (
-        scale_view[row_slice, 0, scale_slice, 0] if scale_4d else scale_view[row_slice, scale_slice]
-    )
-    return weight.contiguous(), scale.contiguous()
 
 
 def _read_dense(reader, raw_name, name, spec, config):
@@ -212,6 +108,8 @@ def load_kimi_weight(
     tp_size: int = 1,
     tp_rank: int = 0,
     packed: bool = False,
+    dcp_size: int = 1,
+    ep_size: int = 1,
 ) -> Iterator[tuple[str, torch.Tensor]]:
     """Stream native text weights, sharding before read/decode when applicable.
 
@@ -222,8 +120,10 @@ def load_kimi_weight(
     Remote downloads are data-only, revision-pinned, and index-filtered to shards
     containing requested text tensors (no vision-only or MTP-only shards).
     """
+    from minisgl.distributed.layout import ParallelLayout
+
     from .kimi_config import KimiTextConfig
-    from .kimi_parallel import shard_spec, validate_tp_config
+    from .kimi_parallel import owns_expert, shard_spec, validate_tp_config
     from .kimi_quant import quantization_rules
 
     if not 0 <= tp_rank < tp_size:
@@ -261,9 +161,10 @@ def load_kimi_weight(
     if tp_size > 1:
         if not config:
             raise ValueError("Kimi tensor-parallel loading requires checkpoint config.json")
-        validate_tp_config(shard_config, tp_size)
+        validate_tp_config(shard_config, tp_size, dcp_size=dcp_size, ep_size=ep_size)
+    layout = ParallelLayout(tp_rank, tp_size, dcp_size, ep_size)
     if remote:
-        entries = _index_entries(folder)
+        entries = index_entries(folder)
         patterns = (
             sorted(
                 {
@@ -279,9 +180,14 @@ def load_kimi_weight(
             folder = Path(
                 snapshot_download(model_path, revision=folder.name, allow_patterns=patterns)
             )
-    index = _checkpoint_index(folder, num_layers)
+    index = checkpoint_index(folder, lambda name: normalize_kimi_name(name, num_layers))
     _validate_pairs(index, num_layers)
-    for raw_name, reader in _shard_readers(index):
+    index = {
+        raw: file
+        for raw, file in index.items()
+        if owns_expert(normalize_kimi_name(raw, num_layers), shard_config, layout)
+    }
+    for raw_name, reader in shard_readers(index):
         name = normalize_kimi_name(raw_name, num_layers)
         if name.endswith(".weight_scale"):
             continue
@@ -290,7 +196,9 @@ def load_kimi_weight(
             if name.endswith(".weight_packed")
             else name
         )
-        spec = shard_spec(logical_name, shard_config, tp_rank, tp_size)
+        spec = shard_spec(
+            logical_name, shard_config, tp_rank, tp_size, dcp_size=dcp_size, ep_size=ep_size
+        )
         if name.endswith(".weight_packed"):
             scale_name = raw_name.removesuffix(".weight_packed") + ".weight_scale"
             if index[scale_name] == index[raw_name]:

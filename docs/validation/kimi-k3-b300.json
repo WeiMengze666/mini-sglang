@@ -1,0 +1,106 @@
+{
+  "scope": "staged validation, not full accuracy or throughput acceptance",
+  "hardware": "8 x NVIDIA B300",
+  "official_sglang": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "environment": {
+    "python": "3.11",
+    "torch": "2.14.1+cu130",
+    "flashinfer": "0.7.1",
+    "triton": "3.8.0",
+    "mini_transformers": "4.57.3"
+  },
+  "gates": [
+    {
+      "job": 27,
+      "source_snapshot": "phase2-layout-source",
+      "gate": "released FP32 TP8 DCP2 EP8 versus TP8",
+      "passed": true,
+      "max_abs": 1.4066696e-05,
+      "relative_l2": 1.0730779e-06
+    },
+    {
+      "job": 36,
+      "source_snapshot": "phase2-optimized-v2-source",
+      "gate": "native MXFP4 KDA MLA CUDA",
+      "passed": true,
+      "tests": 26
+    },
+    {
+      "job": 40,
+      "source_snapshot": "phase2-optimized-v2-source",
+      "gate": "TP4 DCP2 EP4 packed HTTP static/unified lifecycle",
+      "passed": true
+    },
+    {
+      "job": 42,
+      "source_snapshot": "phase2-optimized-v2-source",
+      "gate": "released FP32 Triton MXFP4 versus reference",
+      "passed": true,
+      "max_abs": 1.335144e-05,
+      "relative_l2": 1.0068927e-06
+    },
+    {
+      "job": 42,
+      "source_snapshot": "phase2-optimized-v2-source",
+      "gate": "released BF16 full/chunk pointwise logits",
+      "passed": false,
+      "max_abs": 1.25,
+      "relative_l2": 0.0939043,
+      "greedy_match": true
+    },
+    {
+      "job": 45,
+      "source_snapshot": "phase2-mla-prefill-source",
+      "gate": "absorbed MLA causal/interleaved CUDA",
+      "passed": true,
+      "tests": 8
+    },
+    {
+      "job": 65,
+      "source_snapshot": "phase2-generic-v3-source",
+      "gate": "ordinary stacked MoE EP and four-rank NCCL",
+      "passed": true,
+      "tests": 7
+    },
+    {
+      "job": 65,
+      "source_snapshot": "phase2-generic-v3-source",
+      "gate": "native MXFP4 KDA MLA regression",
+      "passed": true,
+      "tests": 30
+    },
+    {
+      "job": 65,
+      "source_snapshot": "phase2-generic-v3-source",
+      "gate": "hybrid layouts and four-rank NCCL after generic checkpoint refactor",
+      "passed": true,
+      "tests": 4
+    }
+  ],
+  "official_latency": {
+    "job": 45,
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "prompt_tokens": 27,
+    "output_tokens": 16,
+    "warmup": 1,
+    "repeats": 3,
+    "boundary": "paired synchronous Engine.generate; includes scheduler and logprobs",
+    "graphs_overlap_off_decode_seconds_estimates": [
+      0.11529867,
+      0.11676952,
+      0.11651281
+    ],
+    "graphs_overlap_on_decode_seconds_estimates": [
+      0.00914965,
+      0.01030642,
+      0.00913746
+    ]
+  },
+  "generic_cpu": {
+    "result": "345 passed, 36 skipped, 2 xfailed",
+    "report": "phase2-generic-cpu-accepted.log",
+    "scope": "selected core/model suite, real Gloo, pinned HF/FLA and tokenizer data"
+  }
+}

@@ -48,7 +48,7 @@ class HybridCache(BaseKVCachePool):
 
             self.arena = UnifiedMemory(
                 num_pages,
-                page_size * config.cache_bytes_per_token(dtype),
+                config.cache_bytes_per_page(dtype, page_size),
                 config.state_bytes_per_request(dtype),
                 device,
             )

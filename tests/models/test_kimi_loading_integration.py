@@ -80,7 +80,7 @@ def test_engine_stream_only_casts_floating_parameters(monkeypatch):
 def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
     import minisgl.engine.engine as engine_module
 
-    pool = SimpleNamespace(cache_bytes_per_token=None, state_bytes_per_request=None)
+    pool = SimpleNamespace(cache_bytes_per_page=None, state_bytes_per_request=None)
 
     monkeypatch.setattr(engine_module.logger, "info_rank0", lambda *args: None)
 
@@ -88,7 +88,7 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
     engine.model = Model()
     engine.dtype = torch.bfloat16
     seen = []
-    monkeypatch.setattr(pool, "cache_bytes_per_token", lambda *args: 4)
+    monkeypatch.setattr(pool, "cache_bytes_per_page", lambda dtype, page_size: 4 * page_size)
     monkeypatch.setattr(
         pool, "state_bytes_per_request", lambda *args, tp_size: seen.append(tp_size) or 16
     )
@@ -120,7 +120,7 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
 def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, fixed, ratio):
     import minisgl.engine.engine as module
 
-    pool = SimpleNamespace(cache_bytes_per_token=None, state_bytes_per_request=None)
+    pool = SimpleNamespace(cache_bytes_per_page=None, state_bytes_per_request=None)
 
     unit = 1024**2
     before, after, fixed = [tuple(v * unit for v in values) for values in (before, after, fixed)]
@@ -130,7 +130,7 @@ def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, f
     shared = min(budgets)
     expected_pages = shared // unit - 1
     monkeypatch.setattr(module.logger, "info", lambda *args: None)
-    monkeypatch.setattr(pool, "cache_bytes_per_token", lambda *args: unit)
+    monkeypatch.setattr(pool, "cache_bytes_per_page", lambda dtype, page_size: unit * page_size)
     group = object()
     calls = []
     for rank in range(len(before)):

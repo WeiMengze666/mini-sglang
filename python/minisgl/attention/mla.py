@@ -14,8 +14,29 @@ class MLAState(NamedTuple):
     positions: torch.Tensor
 
 
+def causal_query_groups(query_start, query_count, key_start, key_count, stride):
+    """Express an interleaved causal mask as ordinary causal subsequences.
+
+    Queries with the same position modulo the key stride advance one local key
+    per row. Their final visible prefix gives the usual bottom-right causal mask.
+    Queries preceding the first local key have empty attention and are omitted.
+    """
+    if stride < 1 or min(query_count, key_count) < 0:
+        raise ValueError("Invalid interleaved sequence dimensions")
+    groups = []
+    if key_count == 0:
+        return groups
+    for offset in range(min(stride, query_count)):
+        first = offset + max(0, (key_start - query_start - offset + stride - 1) // stride) * stride
+        rows = list(range(first, query_count, stride))
+        if rows:
+            visible = min(key_count, (query_start + rows[-1] - key_start) // stride + 1)
+            groups.append((rows, visible))
+    return groups
+
+
 def apply_rotary(x, positions, theta=10000.0, *, interleaved=True):
-    """Rotate a [T,...,R] suffix only; Kimi-K3 NoPE deliberately skips this."""
+    """Rotate a [T,...,R] suffix; NoPE callers leave it unchanged."""
     dim = x.shape[-1]
     if dim % 2:
         raise ValueError("Rotary dimension must be even")
@@ -31,7 +52,17 @@ def apply_rotary(x, positions, theta=10000.0, *, interleaved=True):
 
 
 def mla_attention(
-    q, latent, key, kv_b_weight, q_positions, kv_positions, *, nope_dim, value_dim, scale=None
+    q,
+    latent,
+    key,
+    kv_b_weight,
+    q_positions,
+    kv_positions,
+    *,
+    nope_dim,
+    value_dim,
+    scale=None,
+    return_lse=False,
 ):
     """Causal expanded MLA over low-rank cache; key is shared across heads.
 
@@ -53,4 +84,7 @@ def mla_attention(
     probabilities = scores.softmax(-1)
     # Empty attention rows are never valid for the model but remain well defined.
     probabilities = torch.nan_to_num(probabilities)
-    return torch.einsum("hts,shv->thv", probabilities, values.float()).to(q.dtype)
+    output = torch.einsum("hts,shv->thv", probabilities, values.float())
+    if return_lse:
+        return output, scores.logsumexp(-1).T.contiguous()
+    return output.to(q.dtype)

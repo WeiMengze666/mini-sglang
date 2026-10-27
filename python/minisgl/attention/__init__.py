@@ -26,6 +26,13 @@ def create_recurrent_backend(config: ModelConfig):
     return RecurrentAttentionBackend(config)
 
 
+@SUPPORTED_ATTENTION_BACKENDS.register("recurrent-fi")
+def create_recurrent_fi_backend(config: ModelConfig):
+    from .recurrent import RecurrentAttentionBackend
+
+    return RecurrentAttentionBackend(config, kda_implementation="flashinfer")
+
+
 @SUPPORTED_ATTENTION_BACKENDS.register("trtllm")
 def create_trtllm_backend(config: ModelConfig):
     from .trtllm import TensorRTLLMBackend

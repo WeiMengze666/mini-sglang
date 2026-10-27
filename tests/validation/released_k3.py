@@ -28,6 +28,15 @@ def main():
     parser.add_argument("--dtype", choices=["bfloat16", "float32"], default="bfloat16")
     parser.add_argument("--memory-ratio", type=float, default=0.9)
     parser.add_argument("--tokens", type=int, default=8)
+    parser.add_argument("--dcp-size", type=int, default=1)
+    parser.add_argument("--ep-size", type=int, default=1)
+    parser.add_argument("--unified-memory", action="store_true")
+    parser.add_argument("--num-pages", type=int, default=512)
+    parser.add_argument("--mxfp4-backend", choices=["torch", "triton"], default="torch")
+    parser.add_argument(
+        "--attention-backend", choices=["recurrent", "recurrent-fi"], default="recurrent"
+    )
+    parser.add_argument("--reference-logits", type=Path)
     parser.add_argument("--prompt", default="请只回答：你好。")
     args = parser.parse_args()
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -43,9 +52,15 @@ def main():
             str(args.model),
             DistributedInfo(rank, size),
             getattr(torch, args.dtype),
+            dcp_size=args.dcp_size,
+            ep_size=args.ep_size,
+            page_size=max(1, args.dcp_size),
+            enable_unified_memory=args.unified_memory,
+            mxfp4_backend=args.mxfp4_backend,
+            attention_backend=args.attention_backend,
             max_running_req=2,
             max_seq_len_override=256,
-            num_page_override=512,
+            num_page_override=args.num_pages,
             distributed_timeout=1800,
             memory_ratio=args.memory_ratio,
         )
@@ -61,6 +76,8 @@ def main():
             raise ValueError("Prompt and generation exceed the bounded validation context")
         table = torch.arange(512, dtype=torch.int32, device=engine.device).reshape(2, 256)
         engine.page_table[:2, :256].copy_(table)
+        if engine.kv_cache.arena is not None:
+            engine.kv_cache.arena.allocate_pages(list(range(512 // args.dcp_size)))
         req = Req(prompt, 0, 0, args.tokens, 100, SamplingParams(max_tokens=args.tokens), None)
         outputs, step_seconds = [], []
         traces = {"full": [], "chunked": []}
@@ -119,6 +136,29 @@ def main():
                 )
                 + "\n"
             )
+        if args.reference_logits:
+            reference = torch.load(args.reference_logits, map_location="cpu", weights_only=True)
+            torch.testing.assert_close(prompt, reference["input_ids"], rtol=0, atol=0)
+            expected = reference["logits"].float()
+            error = reference_logits - expected
+            if rank == 0:
+                (args.output / "layout-comparison.json").write_text(
+                    json.dumps(
+                        {
+                            "reference": str(args.reference_logits),
+                            "max_abs": float(error.abs().max()),
+                            "relative_l2": float(error.norm() / expected.norm()),
+                            "greedy_match": int(reference_logits.argmax(-1))
+                            == int(expected.argmax(-1)),
+                        },
+                        indent=2,
+                    )
+                    + "\n"
+                )
+            tolerance = (1e-4, 1e-4) if args.dtype == "float32" else (0.05, 0.1)
+            torch.testing.assert_close(
+                reference_logits, expected, rtol=tolerance[0], atol=tolerance[1]
+            )
         trace_mode[0] = "chunked"
         # Replay the same prompt in two chunks, from a clean request state.
         engine.kv_cache.release_request(0, 100)
@@ -161,6 +201,8 @@ def main():
             "scope": "released_checkpoint_runtime_consistency",
             "independent_accuracy": "not_tested",
             "tp_size": size,
+            "dcp_size": args.dcp_size,
+            "ep_size": args.ep_size,
             "token_ids": outputs,
             "text": tokenizer.decode(outputs),
             "step_seconds": step_seconds,
