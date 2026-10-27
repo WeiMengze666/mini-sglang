@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Final, List
 
 import torch
 from minisgl.message import BaseBackendMsg, BaseTokenizerMsg, BatchTokenizerMsg, DetokenizeMsg
-from minisgl.utils import ZmqPubQueue, ZmqPullQueue, ZmqPushQueue, ZmqSubQueue, init_logger
+from minisgl.utils import ZmqPullQueue, ZmqPushQueue, init_logger
 
 if TYPE_CHECKING:
     from .config import SchedulerConfig
@@ -49,14 +49,21 @@ class SchedulerIOMixin:
         if tp_info.size > 1:
             if tp_info.is_primary():
                 recv = self._recv_msg_multi_rank0
-                self._send_into_ranks: Final = ZmqPubQueue(
-                    config.zmq_scheduler_broadcast_addr, create=True, encoder=BaseBackendMsg.encoder
-                )
+                # One reliable queue per receiver also covers late connections.
+                # PUB/SUB can drop a wakeup before subscriptions reach the publisher.
+                self._send_into_ranks: Final = [
+                    ZmqPushQueue(
+                        f"{config.zmq_scheduler_broadcast_addr}.{rank}",
+                        create=True,
+                        encoder=BaseBackendMsg.encoder,
+                    )
+                    for rank in range(1, tp_info.size)
+                ]
             else:
                 recv = self._recv_msg_multi_rank1
                 send = self._reply_tokenizer_rank1
-                self._recv_from_rank0: Final = ZmqSubQueue(
-                    config.zmq_scheduler_broadcast_addr,
+                self._recv_from_rank0: Final = ZmqPullQueue(
+                    f"{config.zmq_scheduler_broadcast_addr}.{tp_info.rank}",
                     create=False,
                     decoder=BaseBackendMsg.decoder,
                 )
@@ -90,7 +97,7 @@ class SchedulerIOMixin:
         if blocking:
             self.run_when_idle()
             raw = self._recv_from_tokenizer.get_raw()
-            self._send_into_ranks.put_raw(raw)
+            self._forward_to_ranks(raw)
             pending_msgs.append(self._recv_from_tokenizer.decode(raw))
 
         pending_raw_msgs: List[bytes] = []
@@ -102,9 +109,13 @@ class SchedulerIOMixin:
         self.tp_cpu_group.broadcast(src_tensor, root=0).wait()
 
         for raw in pending_raw_msgs:
-            self._send_into_ranks.put_raw(raw)
+            self._forward_to_ranks(raw)
             pending_msgs.append(self._recv_from_tokenizer.decode(raw))
         return pending_msgs
+
+    def _forward_to_ranks(self, raw: bytes) -> None:
+        for queue in self._send_into_ranks:
+            queue.put_raw(raw)
 
     def _recv_msg_multi_rank1(self, blocking: bool = False) -> List[BaseBackendMsg]:
         pending_msgs: List[BaseBackendMsg] = []

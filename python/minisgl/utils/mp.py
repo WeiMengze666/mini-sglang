@@ -23,7 +23,10 @@ class ZmqPushQueue(Generic[T]):
 
     def put(self, obj: T):
         event = msgpack.packb(self.encoder(obj), use_bin_type=True)
-        self.socket.send(event, copy=False)
+        self.put_raw(event)
+
+    def put_raw(self, raw: bytes):
+        self.socket.send(raw, copy=False)
 
     def stop(self):
         self.socket.close()
