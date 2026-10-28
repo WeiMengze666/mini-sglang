@@ -48,6 +48,7 @@ native = [
 dev = [
     "pytest>=6.0",
     "pytest-cov>=2.0",
+    "httpx>=0.28,<1",
     "black>=22.0",
     "flake8>=4.0",
     "mypy>=0.950",
