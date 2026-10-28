@@ -83,9 +83,7 @@ def test_packed_checkpoint_preserves_global_expert_ids(tmp_path, monkeypatch):
                     divisor = (
                         2
                         if name.endswith("weight_packed")
-                        else 32
-                        if name.endswith("weight_scale")
-                        else 1
+                        else 32 if name.endswith("weight_scale") else 1
                     )
                     start, length = start // divisor, length // divisor
                 expected = expected.narrow(spec.axis, start, length)
@@ -115,7 +113,7 @@ def _worker(rank, world, init_file, device_type):
         c = _config(shared=2)
         c.moe_intermediate_size = 12
         info._TP_INFO = None
-        reference = KimiK3LinearForCausalLM(SimpleNamespace(kimi=c))
+        reference = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
         _initialize(reference)
         state = {name: value.clone() for name, value in reference.state_dict().items()}
         tokens = [2, 17, 4, 22, 8, 13, 7]
@@ -142,7 +140,7 @@ def _worker(rank, world, init_file, device_type):
             configure_parallel(dcp_size=dcp, ep_size=ep)
             init_context_parallel()
             layout = ParallelLayout(rank, world, dcp, ep)
-            model = KimiK3LinearForCausalLM(SimpleNamespace(kimi=c))
+            model = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
 
             def stream():
                 for name, value in state.items():

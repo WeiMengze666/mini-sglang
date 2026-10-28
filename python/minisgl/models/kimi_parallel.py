@@ -15,7 +15,7 @@ from minisgl.distributed.partition import ShardSpec
 
 
 def _text_config(config):
-    return getattr(config, "kimi", None) or getattr(config, "text_config", config)
+    return getattr(config, "hf_config", None) or getattr(config, "text_config", config)
 
 
 def validate_tp_config(config, tp_size: int, *, dcp_size=1, ep_size=1) -> None:

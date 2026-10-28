@@ -37,16 +37,12 @@ class ModelConfig:
     norm_topk_prob: bool
     model_type: str
     architectures: list[str]
-    kimi: Any | None = None
+    hf_config: PretrainedConfig | None = None
     cache_config: HybridCacheConfig | None = None
 
     @property
     def is_moe(self) -> bool:
         return (self.num_experts or 0) > 0
-
-    @property
-    def is_kimi(self) -> bool:
-        return self.kimi is not None
 
     @property
     def has_recurrent_state(self) -> bool:
@@ -90,7 +86,7 @@ class ModelConfig:
                 norm_topk_prob=kimi.moe_renormalize,
                 model_type="kimi_linear",
                 architectures=["KimiK3LinearForCausalLM"],
-                kimi=kimi,
+                hf_config=kimi,
                 cache_config=cache_config(kimi),
             )
 
@@ -134,4 +130,5 @@ class ModelConfig:
             norm_topk_prob=norm_topk_prob,
             model_type=model_type,
             architectures=architectures,
+            hf_config=config,
         )

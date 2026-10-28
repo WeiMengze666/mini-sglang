@@ -29,7 +29,7 @@ def load_tokenizer(model_path: str) -> PreTrainedTokenizerBase:
         if not os.path.isdir(folder):
             revision = metadata.get("_commit_hash")
             if not revision:
-                raise ValueError("Kimi tokenizer metadata has no pinned snapshot revision")
+                raise ValueError("XTML tokenizer metadata has no pinned snapshot revision")
             folder = snapshot_download(
                 model_path,
                 revision=revision,

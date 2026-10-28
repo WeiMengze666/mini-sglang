@@ -63,7 +63,7 @@ def setup_model(dtype=torch.float32):
 
 
 def cache_for(config, dtype=torch.float32):
-    return HybridCache(cache_config(config.kimi), 128, 1, 3, dtype, torch.device("cpu"))
+    return HybridCache(cache_config(config.hf_config), 128, 1, 3, dtype, torch.device("cpu"))
 
 
 def batch_for(tokens, *, uid=10, slot=0, start=0, padding=0):
@@ -160,8 +160,8 @@ def test_model_roundtrip_and_config_validation():
     state = {k: v.clone() for k, v in model.state_dict().items()}
     other.load_state_dict(state)
     assert not state
-    assert config.is_moe and config.is_kimi
-    assert config.kimi.linear_attn_config["head_dim"] != config.kimi.v_head_dim
+    assert config.is_moe and config.model_type == "kimi_linear"
+    assert config.hf_config.linear_attn_config["head_dim"] != config.hf_config.v_head_dim
     text = tiny_config()
     text.linear_attn_config["full_attn_layers"] = [1, 2]
     with pytest.raises(ValueError, match="partition"):
@@ -229,11 +229,11 @@ def test_engine_guards_and_existing_model_config(tmp_path, monkeypatch):
     engine_bad = SchedulerConfig(str(tmp_path), DistributedInfo(0, 3), torch.bfloat16)
     with pytest.raises(ValueError, match="divisible"):
         _adjust_config(engine_bad)
-    assert model_config.is_kimi
+    assert model_config.model_type == "kimi_linear"
     llama = ModelConfig.from_hf(LlamaConfig())
-    assert not llama.is_moe and not llama.is_kimi
+    assert not llama.is_moe and llama.hf_config.model_type == "llama"
     qwen = ModelConfig.from_hf(Qwen3MoeConfig())
-    assert qwen.is_moe and not qwen.is_kimi
+    assert qwen.is_moe and qwen.hf_config.model_type == "qwen3_moe"
 
 
 def test_complete_synthetic_checkpoint_load(tmp_path):
@@ -248,7 +248,7 @@ def test_complete_synthetic_checkpoint_load(tmp_path):
         for name, value in model.state_dict().items()
     }
     save_file(raw, str(tmp_path / "model.safetensors"))
-    (tmp_path / "config.json").write_text(json.dumps(config.kimi.to_dict()))
+    (tmp_path / "config.json").write_text(json.dumps(config.hf_config.to_dict()))
     loaded = dict(load_kimi_weight(str(tmp_path), "cpu"))
     fresh = KimiK3LinearForCausalLM(config)
     fresh.load_state_dict(loaded)

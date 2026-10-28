@@ -407,7 +407,7 @@ def test_selected_mla_kv_b_packing_fails_explicitly():
 def test_packed_metadata_slice_descriptors():
     from audit_kimi_packed_storage import sliced_descriptor
 
-    c = SimpleNamespace(kimi=config())
+    c = SimpleNamespace(hf_config=config())
     prefix = "model.layers.0.mlp.experts.0.w2"
     assert sliced_descriptor(prefix + ".weight_packed", (32, 32), "U8", c, 1, 2) == (
         (32, 16),

@@ -25,7 +25,7 @@ def test_standard_checkpoint_expert_selection_and_tensor_slices(tmp_path, monkey
             state[f"model.layers.0.mlp.experts.{expert}.{name}.weight"] = torch.randn(shape)
     state["model.layers.0.mlp.gate.weight"] = torch.randn(4, 8)
     save_file(state, tmp_path / "weights.safetensors")
-    config = SimpleNamespace(is_kimi=False, is_moe=True, num_experts=4, num_kv_heads=2)
+    config = SimpleNamespace(model_type="qwen3_moe", is_moe=True, num_experts=4, num_kv_heads=2)
     monkeypatch.setattr(loader, "cached_load_hf_config", lambda _: None)
     monkeypatch.setattr(loader, "download_hf_weight", lambda _: str(tmp_path))
     monkeypatch.setattr(ModelConfig, "from_hf", lambda _: config)

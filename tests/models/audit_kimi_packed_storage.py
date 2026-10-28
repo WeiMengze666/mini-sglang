@@ -106,13 +106,13 @@ def sliced_descriptor(name, shape, dtype, config, rank, size):
     if name.endswith(".self_attn.A_log"):
         if len(shape) == 4 and shape[:2] == [1, 1] and shape[-1] == 1:
             shape = [shape[2]]
-        heads = config.kimi.linear_attn_config["num_heads"]
+        heads = config.hf_config.linear_attn_config["num_heads"]
         if len(shape) != 1 or shape[0] < heads:
             raise ValueError(f"Invalid A_log descriptor: {name}")
         shape = [heads]
         dtype = "F32"
     logical_name = name.rsplit(".", 1)[0] + ".weight" if is_packed or is_scale else name
-    spec = shard_spec(logical_name, config.kimi, rank, size)
+    spec = shard_spec(logical_name, config.hf_config, rank, size)
     if spec is not None:
         divisor = (2 if is_packed else 32 if is_scale else 1) if spec.axis == 1 else 1
         if (is_packed or is_scale) and spec.axis == 1 and (spec.start % 32 or spec.stop % 32):
@@ -125,7 +125,9 @@ def sliced_descriptor(name, shape, dtype, config, rank, size):
 
 def audit_rank(config, tensors, rank, size):
     old_dtype = torch.get_default_dtype()
-    dtype_name = getattr(config.kimi, "dtype", None) or getattr(config.kimi, "torch_dtype", None)
+    dtype_name = getattr(config.hf_config, "dtype", None) or getattr(
+        config.hf_config, "torch_dtype", None
+    )
     dtype = (
         dtype_name
         if isinstance(dtype_name, torch.dtype)

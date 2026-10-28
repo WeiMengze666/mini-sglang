@@ -201,7 +201,7 @@ def load_fixture(path: Path, dtype: torch.dtype, device: torch.device):
             str(path),
             device,
             dtype=dtype,
-            packed=bool(getattr(config.kimi, "quantization_config", None)),
+            packed=bool(getattr(config.hf_config, "quantization_config", None)),
         )
     )
     model.load_weights(weights)
@@ -209,7 +209,7 @@ def load_fixture(path: Path, dtype: torch.dtype, device: torch.device):
 
 
 def cache_for(config, dtype, device):
-    return HybridCache(cache_config(config.kimi), MAX_LENGTH * SLOTS, 1, SLOTS, dtype, device)
+    return HybridCache(cache_config(config.hf_config), MAX_LENGTH * SLOTS, 1, SLOTS, dtype, device)
 
 
 def page_table(device):

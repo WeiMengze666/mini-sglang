@@ -91,7 +91,7 @@ class KimiModel(BaseOP):
 
 class KimiK3LinearForCausalLM(BaseLLMModel):
     def __init__(self, config):
-        text = config.kimi
+        text = config.hf_config
         self._tp = TensorParallel()
         layout = get_parallel_layout()
         validate_tp_config(text, self._tp.size, dcp_size=layout.dcp_size, ep_size=layout.ep_size)

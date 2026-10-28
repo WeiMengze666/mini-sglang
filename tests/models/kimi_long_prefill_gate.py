@@ -20,7 +20,7 @@ DECODE_STEPS = 3
 
 
 def _cache_and_table(config, dtype, device, capacity, slots):
-    cache = HybridCache(cache_config(config.kimi), capacity * slots, 1, slots, dtype, device)
+    cache = HybridCache(cache_config(config.hf_config), capacity * slots, 1, slots, dtype, device)
     table = torch.arange(capacity * slots, device=device).reshape(slots, capacity)
     return cache, table
 
@@ -104,15 +104,15 @@ def run_long_prefill_gate(
     uids, reports, dense_reference = [7001, 7002], {}, None
     for kind in ("dense", "packed"):
         model, config = load_fixture(root / kind, dtype, device)
-        checkpoint_limit = config.kimi.max_position_embeddings
+        checkpoint_limit = config.hf_config.max_position_embeddings
         # load_fixture creates a fresh KimiTextConfig shared with the layers.
         # No weights or on-disk config change. NoPE has no positional table;
         # unscaled RoPE, if supplied, computes positions directly in the operator.
-        config.kimi.max_position_embeddings = max(checkpoint_limit, capacity)
+        config.hf_config.max_position_embeddings = max(checkpoint_limit, capacity)
         config = replace(
             config,
             rotary_config=replace(
-                config.rotary_config, max_position=config.kimi.max_position_embeddings
+                config.rotary_config, max_position=config.hf_config.max_position_embeddings
             ),
         )
         generator = torch.Generator(device="cpu").manual_seed(manifest["seed"] + 17)
@@ -274,8 +274,8 @@ def run_long_prefill_gate(
             "decode_input_token_ids": decode_inputs,
             "batched_cache_bytes": batched_cache.allocated_bytes,
             "checkpoint_max_position_embeddings": checkpoint_limit,
-            "runtime_max_position_embeddings": config.kimi.max_position_embeddings,
-            "mla_position_encoding": "nope" if config.kimi.mla_use_nope else "unscaled_rope",
+            "runtime_max_position_embeddings": config.hf_config.max_position_embeddings,
+            "mla_position_encoding": "nope" if config.hf_config.mla_use_nope else "unscaled_rope",
         }
     verify_fixtures(root)
     return {

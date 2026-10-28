@@ -79,7 +79,7 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
     from .config import ModelConfig
 
     config = ModelConfig.from_hf(cached_load_hf_config(model_path))
-    if config.is_kimi:
+    if config.model_type == "kimi_linear":
         from minisgl.distributed.layout import get_parallel_layout
 
         from .kimi_weight import load_kimi_weight
@@ -91,7 +91,7 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
             num_layers=config.num_layers,
             tp_size=get_tp_info().size,
             tp_rank=get_tp_info().rank,
-            packed=bool(getattr(config.kimi, "quantization_config", None)),
+            packed=bool(getattr(config.hf_config, "quantization_config", None)),
             dcp_size=layout.dcp_size,
             ep_size=layout.ep_size,
         )
