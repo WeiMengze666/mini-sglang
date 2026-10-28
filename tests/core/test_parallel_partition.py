@@ -14,7 +14,7 @@ def test_logical_slices_and_global_routing_ids():
         ids = torch.tensor([[0, 3, 4, 7]])
         actual = partition.local_ids(ids, 8)
         owned = partition.range(8)
-        expected = [[int(i) - owned.start if int(i) in owned else 2 for i in ids[0]]]
+        expected = [[int(i) - owned.start if int(i) in owned else -1 for i in ids[0]]]
         torch.testing.assert_close(actual, torch.tensor(expected))
     with pytest.raises(ValueError):
         Partition(2, 2)

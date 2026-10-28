@@ -39,11 +39,11 @@ class Partition:
         return ShardSpec(axis, rows.start * block, rows.stop * block)
 
     def local_ids(self, ids: torch.Tensor, global_size: int):
-        """Map global routing IDs to local IDs; the final ID denotes no work.
+        """Map global routing IDs to local IDs; -1 denotes a remote route.
 
         Routing and normalization happen over all experts before this mapping.
-        Fused kernels reserve one zero-output expert at the local expert count.
+        Native alignment reserves its first bucket for ID -1.
         """
         owned = self.range(global_size)
         local = ids - owned.start
-        return local.masked_fill((local < 0) | (local >= len(owned)), len(owned))
+        return local.masked_fill((local < 0) | (local >= len(owned)), -1)

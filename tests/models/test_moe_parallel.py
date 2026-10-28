@@ -97,6 +97,45 @@ def test_stacked_fused_experts_ep_and_expert_tensor_parallel(tokens, remote_only
     torch.testing.assert_close(actual, expected.float(), rtol=0.04, atol=0.002)
 
 
+@pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")
+@pytest.mark.parametrize("tokens", [38, 65])
+def test_single_local_expert_mixture_matches_dense_reference(tokens):
+    import torch.nn.functional as F
+    from minisgl.moe.fused import FusedMoe
+
+    torch.manual_seed(149)
+    dtype, device = torch.bfloat16, "cuda"
+    x = torch.randn(tokens, 32, dtype=dtype, device=device) * 0.2
+    gate = torch.randn(4, 64, 32, dtype=dtype, device=device) * 0.1
+    up = torch.randn_like(gate) * 0.1
+    down = torch.randn(4, 32, 64, dtype=dtype, device=device) * 0.1
+    logits = torch.randn(tokens, 4, device=device)
+    weights, ids = logits.softmax(-1).topk(2, -1)
+    weights /= weights.sum(-1, keepdim=True)
+    expected = torch.zeros_like(x, dtype=torch.float32)
+    for expert in range(4):
+        rows, slots = torch.where(ids == expert)
+        g = F.linear(x[rows].float(), gate[expert].float()).to(dtype)
+        u = F.linear(x[rows].float(), up[expert].float()).to(dtype)
+        values = F.linear((F.silu(g) * u).float(), down[expert].float()).to(dtype)
+        expected.index_add_(0, rows, values.float() * weights[rows, slots, None])
+    backend = FusedMoe()
+    for _ in range(3):
+        actual = torch.zeros_like(expected)
+        for rank in range(4):
+            actual += backend.forward(
+                x.clone(),
+                torch.cat((gate[rank : rank + 1], up[rank : rank + 1]), 1),
+                down[rank : rank + 1].contiguous(),
+                logits,
+                2,
+                True,
+                expert_partition=Partition(rank, 4),
+                num_global_experts=4,
+            ).float()
+        torch.testing.assert_close(actual, expected, rtol=0.04, atol=0.002)
+
+
 def _distributed_worker(rank, init_file):
     from datetime import timedelta
 
