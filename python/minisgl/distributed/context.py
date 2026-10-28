@@ -29,7 +29,10 @@ def merge_attention(output, lse):
     shard is empty. Arithmetic stays FP32 until the caller's output projection.
     """
     maximum = lse.amax(0)
-    weights = torch.nan_to_num((lse - maximum).exp(), nan=0.0)
+    # Avoid -inf - -inf only for all-empty rows. Invalid active LSE must
+    # propagate instead of silently removing that shard's contribution.
+    maximum = maximum.masked_fill(torch.isneginf(maximum), 0)
+    weights = (lse - maximum).exp()
     weights = weights / weights.sum(0).clamp_min(torch.finfo(weights.dtype).tiny)
     # Empty softmax rows may have undefined outputs. Zero weight alone cannot
     # discard them: IEEE arithmetic keeps NaN * 0 as NaN.

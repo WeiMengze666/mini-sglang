@@ -20,6 +20,17 @@ def test_empty_shard_may_have_an_undefined_partial_output(all_empty):
     assert output[0].isnan().all()  # Merging must not modify a producer's buffer.
 
 
+@pytest.mark.parametrize("invalid", ["output", "nan_lse", "infinite_lse"])
+def test_corrupt_active_shard_is_not_treated_as_empty(invalid):
+    output = torch.tensor([[[[3.0]]], [[[5.0]]]])
+    lse = torch.zeros(2, 1, 1)
+    if invalid == "output":
+        output[0] = torch.nan
+    else:
+        lse[0] = torch.nan if invalid == "nan_lse" else torch.inf
+    assert merge_attention(output, lse).isnan().all()
+
+
 def _worker(rank, init_file):
     import minisgl.distributed.info as info
     from minisgl.distributed import DistributedInfo
