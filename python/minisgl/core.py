@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List, Literal
 
@@ -117,7 +117,9 @@ class Context:
         assert self._batch is None, "Nested forward_batch is not allowed"
         try:
             self._batch = batch
-            yield
+            cache = getattr(self, "kv_cache", None)
+            with cache.forward_batch(batch) if cache is not None else nullcontext():
+                yield
         finally:
             self._batch = None
 

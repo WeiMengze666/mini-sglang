@@ -164,6 +164,10 @@ class LatentMoE(BaseOP):
                 linear_beta=getattr(self._config, "activation_situ_linear_beta", None),
             )
 
+    def validate_cuda_graph(self):
+        if self._packed_experts is None:
+            raise ValueError("CUDA graphs require a device-side grouped expert executor")
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         shape = x.shape
         x = x.reshape(-1, shape[-1])

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -114,6 +115,7 @@ def scheduler(monkeypatch):
     scheduler.device = torch.device("cpu")
     scheduler.finished_reqs = set()
     scheduler.aborted_reqs = set()
+    scheduler.inflight_reqs = {}
     scheduler.stop_token_ids = {99}
     scheduler.prefill_budget = 8
     scheduler.replies = []
@@ -144,10 +146,16 @@ def scheduler(monkeypatch):
         sampler=SimpleNamespace(prepare=lambda batch: None),
         attn_backend=SimpleNamespace(prepare_metadata=lambda batch: None),
         kv_cache=SimpleNamespace(
-            release_request=lambda table_idx, uid: scheduler.released.append((table_idx, uid))
+            stage_state=lambda *args: None,
+            release_staged=lambda checkpoint: None,
+            release_request=lambda table_idx, uid: scheduler.released.append((table_idx, uid)),
         ),
         forward_batch=forward,
     )
+    scheduler.cache_manager.pool = scheduler.engine.kv_cache
+    scheduler.engine_stream_ctx = nullcontext()
+    scheduler.stream = None
+    scheduler.engine.stream = SimpleNamespace(wait_stream=lambda stream: None)
     return scheduler
 
 
@@ -158,12 +166,48 @@ def request(uid=7, tokens=(1, 2), max_tokens=2):
 
 
 def assert_idle(scheduler):
+    assert not scheduler.inflight_reqs
     assert not scheduler.prefill_manager.runnable
     assert not scheduler.decode_manager.runnable
     assert scheduler.table_manager.available_size == 2
     assert len(set(scheduler.table_manager._free_slots)) == 2
     assert scheduler.cache_manager.available_size == 32
     scheduler.cache_manager.check_integrity()
+
+
+@pytest.mark.parametrize("max_tokens", [1, 2, 4])
+@pytest.mark.parametrize("chunk_size", [2, 8])
+def test_overlap_keeps_completed_lengths_and_drains_exact_output_budget(
+    scheduler, max_tokens, chunk_size
+):
+    scheduler.prefill_budget = chunk_size
+    scheduler._process_one_msg(request(tokens=(1, 2, 1, 2), max_tokens=max_tokens))
+    data = None
+    for _ in range(12):
+        data = scheduler.overlap_loop(data)
+        if data is None:
+            break
+    assert len(scheduler.replies) == max_tokens
+    assert [reply.finished for reply in scheduler.replies] == [False] * (max_tokens - 1) + [True]
+    assert len(scheduler.released) == 1
+    assert_idle(scheduler)
+
+
+@pytest.mark.parametrize("max_tokens", [1, 3])
+def test_abort_pending_reply_and_reuse_slot_without_a_late_reply(scheduler, max_tokens):
+    scheduler._process_one_msg(request(max_tokens=max_tokens))
+    data = scheduler.overlap_loop(None)
+    scheduler._process_one_msg(AbortBackendMsg(7))
+    assert scheduler.replies == [DetokenizeMsg(7, None, True)]
+    scheduler._process_one_msg(request(uid=8, max_tokens=2))
+    for _ in range(5):
+        data = scheduler.overlap_loop(data)
+        if data is None:
+            break
+    assert [reply.next_token for reply in scheduler.replies if reply.uid == 8] == [1, 1]
+    assert len([reply for reply in scheduler.replies if reply.uid == 7]) == 1
+    assert len(scheduler.released) == 2
+    assert_idle(scheduler)
 
 
 @pytest.mark.parametrize(
@@ -272,6 +316,31 @@ def test_offline_errors_are_reported_after_valid_requests_are_drained(scheduler)
         {"text": "", "token_ids": []}
     ]
     assert_idle(scheduler)
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_repeated_offline_generate_starts_a_fresh_request_namespace(scheduler, overlap):
+    scheduler.__class__ = LLM
+    scheduler.tokenizer = tokenizer()
+    scheduler.receive_msg = scheduler.offline_receive_msg
+    scheduler.send_result = scheduler.offline_send_result
+
+    def run():
+        data = None
+        for _ in range(10):
+            if overlap:
+                data = scheduler.overlap_loop(data)
+            else:
+                scheduler.normal_loop()
+        pytest.fail("Offline generation did not drain")
+
+    scheduler.run_forever = run
+    for _ in range(3):
+        assert scheduler.generate([[1, 2], [2, 1]], SamplingParams(max_tokens=2)) == [
+            {"text": "hellohello", "token_ids": [1, 1]},
+            {"text": "hellohello", "token_ids": [1, 1]},
+        ]
+        assert_idle(scheduler)
 
 
 def frontend():

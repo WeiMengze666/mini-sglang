@@ -16,6 +16,11 @@ class BaseAttnMetadata(ABC):
 
 
 class BaseAttnBackend(ABC):
+    supports_graph_padding = True
+
+    def finish_capture(self, batch) -> None:
+        """Release any temporary cache ownership used to warm/capture a graph."""
+
     def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
         """Execute a stateful projection layer, when supported by the backend."""
         raise NotImplementedError("This backend only supports Q/K/V attention")
@@ -39,6 +44,13 @@ class BaseAttnBackend(ABC):
 
 
 class HybridBackend(BaseAttnBackend):
+    @property
+    def supports_graph_padding(self):
+        return self.decode_backend.supports_graph_padding
+
+    def finish_capture(self, batch):
+        self.decode_backend.finish_capture(batch)
+
     def __init__(
         self,
         prefill_backend: BaseAttnBackend,

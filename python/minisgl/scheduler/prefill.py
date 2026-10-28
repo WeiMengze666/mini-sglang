@@ -110,7 +110,7 @@ class PrefillAdder:
         if chunked_req := pending_req.chunked_req:
             return self._add_one_req(
                 pending_req=pending_req,
-                cache_handle=chunked_req.cache_handle,
+                cache_handle=self.cache_manager.current_handle(chunked_req),
                 table_idx=chunked_req.table_idx,
                 cached_len=chunked_req.cached_len,
             )

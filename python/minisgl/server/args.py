@@ -125,6 +125,12 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         help="Maximum sparse recurrent checkpoints retained by the hybrid prefix cache.",
     )
     parser.add_argument(
+        "--enable-cache-overlap",
+        action="store_true",
+        help="Stage immutable recurrent checkpoints for overlap scheduling; uses one temporary state per running request at boundaries.",
+    )
+
+    parser.add_argument(
         "--enable-unified-memory",
         action="store_true",
         help="Share hybrid recurrent state and MLA token pages in one compact byte pool.",
@@ -174,6 +180,14 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         dest="server_port",
         default=ServerArgs.server_port,
         help="The port number for the server to listen on.",
+    )
+
+    parser.add_argument(
+        "--cuda-graph-bs",
+        type=int,
+        nargs="+",
+        default=ServerArgs.cuda_graph_bs,
+        help="Exact batch sizes to capture; overrides --cuda-graph-max-bs.",
     )
 
     parser.add_argument(
@@ -260,7 +274,6 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     # resolve some arguments
     run_shell |= kwargs.pop("shell_mode")
     if run_shell:
-        kwargs["cuda_graph_max_bs"] = 1
         kwargs["max_running_req"] = 1
         kwargs["silent_output"] = True
 

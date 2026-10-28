@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -12,6 +13,20 @@ class BaseKVCachePool(ABC):
     Base class for key-value caches.
     This class defines the interface for key-value caches used.
     """
+
+    supports_overlap = True
+    forward_stream_updates = False
+
+    def forward_batch(self, batch):
+        """Bracket host-side state ownership, including graph replay."""
+        return nullcontext()
+
+    def stage_state(self, table_idx, uid, length):
+        """Optionally preserve a committed frontier before its next update."""
+        return None
+
+    def release_staged(self, checkpoint):
+        """Release an unclaimed staged state; donated tree state stays owned."""
 
     @abstractmethod
     def k_cache(self, index: int) -> torch.Tensor: ...
@@ -65,10 +80,18 @@ class MatchResult(NamedTuple):
 
 
 class BasePrefixCache(ABC):
+    checkpoint_interval = None
+
+    @property
+    def reclaimable_state_bytes(self):
+        return 0
+
     def restore_state(self, table_idx: int, uid: int, handle: BaseCacheHandle) -> None:
         """Restore mutable state after locking a matched handle, if applicable."""
 
-    def cache_state(self, req, handle: BaseCacheHandle) -> None:
+    def cache_state(
+        self, req, handle: BaseCacheHandle, *, checkpoint=None, cached_len=None
+    ) -> None:
         """Attach a committed recurrent checkpoint to an inserted token prefix."""
 
     def release_checkpoint_memory(self, required_bytes: int) -> None:

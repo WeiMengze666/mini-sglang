@@ -37,12 +37,13 @@ def test_generation_stops_are_distinct_from_tokenizer_identity():
 @pytest.mark.parametrize("ignore_eos", [False, True])
 def test_scheduler_obeys_generation_stop_ids(ignore_eos):
     scheduler = object.__new__(Scheduler)
-    scheduler._has_recurrent_state = False
     scheduler.stop_token_ids = get_stop_token_ids(tokenizer())
     scheduler.eos_token_id = 163585
     scheduler.finished_reqs = set()
     scheduler.aborted_reqs = set()
-    scheduler.cache_manager = SimpleNamespace(lazy_free_region=nullcontext)
+    scheduler.cache_manager = SimpleNamespace(
+        lazy_free_region=nullcontext, should_cache=lambda *args: False
+    )
     freed, removed, replies = [], [], []
     scheduler.decode_manager = SimpleNamespace(remove_req=removed.append)
     scheduler._free_req_resources = freed.append

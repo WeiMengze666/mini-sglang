@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import torch
@@ -20,6 +21,18 @@ class CausalLayout(NamedTuple):
     query_start: int
     key_start: int = 0
     key_stride: int = 1
+
+
+@dataclass
+class MLAPagedMetadata:
+    """CSR physical KV pages shared by query plans, prepared once per batch."""
+
+    indptr: torch.Tensor  # CPU page counts
+    indices: torch.Tensor  # device physical page IDs
+    lengths: torch.Tensor  # CPU local token counts, including the new token
+    page_size: int
+    nonempty: torch.Tensor | None = None
+    capture_size: int | None = None
 
 
 def causal_query_groups(query_start, query_count, key_start, key_count, stride):

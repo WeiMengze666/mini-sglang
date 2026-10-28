@@ -33,6 +33,7 @@ def create_kvcache_pool(
     max_running_req: int | None = None,
     max_cached_states: int = 0,
     unified_memory: bool = False,
+    enable_cache_overlap: bool = False,
 ) -> BaseKVCachePool:
     if model_config.cache_config is not None:
         from .hybrid_pool import HybridCache
@@ -48,6 +49,7 @@ def create_kvcache_pool(
             device,
             max_cached_states=max_cached_states,
             unified_memory=unified_memory,
+            enable_cache_overlap=enable_cache_overlap,
         )
 
     from .mha_pool import MHAKVCache

@@ -23,6 +23,7 @@ class EngineConfig:
     max_running_req: int = 256
     max_cached_states: int = 8
     enable_unified_memory: bool = False
+    enable_cache_overlap: bool = False
     attention_backend: str = "auto"
     moe_backend: str = "auto"
     cuda_graph_bs: List[int] | None = None
@@ -54,6 +55,12 @@ class EngineConfig:
     @property
     def max_forward_len(self) -> int:
         return self.max_seq_len
+
+    @property
+    def state_slot_budget(self) -> int:
+        cached = self.max_cached_states if getattr(self, "cache_type", "hybrid") != "naive" else 0
+        staged = self.max_running_req if cached and self.enable_cache_overlap else 0
+        return self.max_running_req + cached + staged
 
     @property
     def distributed_addr(self) -> str:

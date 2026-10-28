@@ -1,4 +1,4 @@
-"""Text-only, eager K3 with correctness-first tensor parallelism."""
+"""K3 text decoder assembled from reusable attention, residual and MoE layers."""
 
 from __future__ import annotations
 
@@ -101,30 +101,42 @@ class KimiK3LinearForCausalLM(BaseLLMModel):
         self.lm_head = Linear(text.hidden_size, vocab_width)
         self._tie_embeddings = text.tie_word_embeddings
         if self._tie_embeddings:
-            raise ValueError("Kimi-K3 eager baseline requires untied embeddings")
+            raise ValueError("Kimi-K3 text decoder requires untied embeddings")
         from .kimi_quant import replace_quantized_linears
 
         replace_quantized_linears(self, text)
 
     def forward(self):
         ctx = get_global_ctx()
-        return self.forward_batch(ctx.batch, ctx.kv_cache, ctx.page_table, backend=ctx.attn_backend)
+        return self._forward_batch(
+            ctx.batch, ctx.kv_cache, ctx.page_table, backend=ctx.attn_backend
+        )
 
     def forward_batch(self, batch, cache, page_table, *, all_logits=False, backend=None):
-        """Explicit context seam for CPU correctness tests, also used by serving."""
+        """Explicit owned-state seam for direct/reference execution."""
+        with cache.forward_batch(batch):
+            return self._forward_batch(
+                batch, cache, page_table, all_logits=all_logits, backend=backend
+            )
+
+    def _forward_batch(self, batch, cache, page_table, *, all_logits=False, backend=None):
         if not batch.reqs:
             raise ValueError("Kimi-K3 requires a nonempty batch")
         real_tokens = sum(req.extend_len for req in batch.reqs)
         if len(batch.input_ids) < real_tokens or len(batch.positions) < real_tokens:
             raise ValueError("Batch tensors do not cover the real token rows")
-        with cache.forward_batch(batch):
-            hidden = self.model.forward(
-                batch.input_ids[:real_tokens], batch, cache, page_table, backend
-            )
-            if not all_logits:
-                last = torch.tensor([req.extend_len for req in batch.reqs], device=hidden.device)
-                hidden = hidden[last.cumsum(0) - 1]
-            logits = self.lm_head.forward(hidden).float()
-            if self._sharded_vocab:
-                logits = self._tp.all_gather(logits.T.contiguous()).T.contiguous()
-            return logits
+        hidden = self.model.forward(
+            batch.input_ids[:real_tokens], batch, cache, page_table, backend
+        )
+        if not all_logits:
+            metadata = getattr(batch, "attn_metadata", None)
+            if metadata is None:
+                lengths = torch.tensor([req.extend_len for req in batch.reqs], device=hidden.device)
+                last = lengths.cumsum(0) - 1
+            else:
+                last = metadata.get_last_indices(len(batch.reqs))
+            hidden = hidden[last]
+        logits = self.lm_head.forward(hidden).float()
+        if self._sharded_vocab:
+            logits = self._tp.all_gather(logits.T.contiguous()).T.contiguous()
+        return logits

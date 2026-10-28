@@ -41,6 +41,13 @@ class UnifiedMemory:
         start = self._states[key] * self.state_bytes
         return self.buffer[start : start + self.state_bytes]
 
+    def state_index(self, key):
+        """Current physical row; resolve again after any allocation or free."""
+        return self._states[key]
+
+    def has_state(self, key):
+        return key in self._states
+
     def allocate_state(self, key):
         if key in self._states:
             raise ValueError("State handle is already allocated")

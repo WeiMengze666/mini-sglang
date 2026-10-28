@@ -79,10 +79,13 @@ class Engine:
             device=self.device,
             dtype=self.dtype,
             max_running_req=config.max_running_req,
-            max_cached_states=getattr(config, "max_cached_states", 0)
-            if getattr(config, "cache_type", "hybrid") != "naive"
-            else 0,
+            max_cached_states=(
+                getattr(config, "max_cached_states", 0)
+                if getattr(config, "cache_type", "hybrid") != "naive"
+                else 0
+            ),
             unified_memory=config.enable_unified_memory,
+            enable_cache_overlap=config.enable_cache_overlap,
         )
 
         # ======================= Page table initialization ========================
@@ -130,6 +133,7 @@ class Engine:
             max_seq_len=aligned_max_seq_len,
             vocab_size=config.model_config.vocab_size,
             dummy_req=self.dummy_req,
+            max_batch_size=min(config.max_running_req, num_tokens),
         )
 
     def _init_communication(self, config: EngineConfig) -> torch.distributed.ProcessGroup:
@@ -167,11 +171,7 @@ class Engine:
         """
         layout = config.model_config.cache_config
         weights = sum(t.numel() * t.element_size() for t in self.model.state_dict().values())
-        state_slots = config.max_running_req + (
-            getattr(config, "max_cached_states", 0)
-            if getattr(config, "cache_type", "hybrid") != "naive"
-            else 0
-        )
+        state_slots = config.state_slot_budget
         fixed = state_slots * layout.state_bytes_per_request(
             self.dtype, tp_size=config.tp_info.size
         )
@@ -238,11 +238,7 @@ class Engine:
         if config.model_config.cache_config is not None:
             layout = config.model_config.cache_config
             cache_per_page = layout.cache_bytes_per_page(self.dtype, config.page_size)
-            state_slots = config.max_running_req + (
-                getattr(config, "max_cached_states", 0)
-                if getattr(config, "cache_type", "hybrid") != "naive"
-                else 0
-            )
+            state_slots = config.state_slot_budget
             fixed_state = state_slots * layout.state_bytes_per_request(
                 self.dtype, tp_size=config.tp_info.size
             )
@@ -365,15 +361,22 @@ def _adjust_config(config: EngineConfig):
             raise ValueError("Hybrid state requires the recurrent attention backend")
         if config.attention_backend == "auto":
             override("attention_backend", "recurrent")
-        override("cuda_graph_bs", [])
-        override("cuda_graph_max_bs", 0)
+        requested_graphs = bool(config.cuda_graph_bs) or (
+            config.cuda_graph_bs is None and (config.cuda_graph_max_bs or 0) > 0
+        )
+        if requested_graphs and config.attention_backend.split(",")[-1] != "recurrent-fi":
+            raise ValueError("Hybrid CUDA graphs require a native recurrent decode backend")
+        if not requested_graphs:
+            override("cuda_graph_bs", [])
+            override("cuda_graph_max_bs", 0)
         if hasattr(config, "cache_type"):
             if config.cache_type != "naive":
                 override("cache_type", "hybrid" if config.max_cached_states > 0 else "naive")
         logger.warning_rank0(
             f"Hybrid attention {config.attention_backend}: TP={config.tp_info.size}, "
             f"DCP={config.dcp_size}, EP={config.ep_size}; sparse recurrent checkpoints; "
-            "CUDA graphs and overlap are disabled."
+            f"CUDA graphs {'requested' if requested_graphs else 'disabled'}; "
+            f"cache overlap {'enabled' if config.enable_cache_overlap else 'disabled'}."
         )
         return
 

@@ -19,6 +19,8 @@ class HybridCache(BaseKVCachePool):
     begin/finish bracket a complete model forward, never individual layers.
     """
 
+    forward_stream_updates = True
+
     def __init__(
         self,
         config,
@@ -29,6 +31,7 @@ class HybridCache(BaseKVCachePool):
         device: torch.device,
         max_cached_states: int = 0,
         unified_memory: bool = False,
+        enable_cache_overlap: bool = False,
     ):
         if min(num_pages, page_size, max_running_req) <= 0:
             raise ValueError("Hybrid cache capacities must be positive")
@@ -43,6 +46,7 @@ class HybridCache(BaseKVCachePool):
         heads = local_size(config.num_heads, tp_info()[1], "KDA heads") if self._kda_layers else 0
         dim = config.head_dim
         self.arena = None
+        self.supports_overlap = enable_cache_overlap
         if unified_memory:
             from .unified import UnifiedMemory
 
@@ -72,7 +76,16 @@ class HybridCache(BaseKVCachePool):
             device,
             max_cached_states=max_cached_states,
             arena=self.arena,
+            max_staged_states=max_running_req if enable_cache_overlap and max_cached_states else 0,
         )
+
+    def stage_state(self, table_idx, uid, length):
+        if not self.recurrent.max_staged_states:
+            return None
+        return self.recurrent.snapshot(table_idx, uid, staged=True, expected_len=length)
+
+    def release_staged(self, checkpoint):
+        self.recurrent.release_staged(checkpoint)
 
     def begin_request(self, *args):
         self.recurrent.begin_request(*args)
@@ -108,8 +121,8 @@ class HybridCache(BaseKVCachePool):
     def set_kda_state(self, *args):
         self.recurrent.set_kda_state(*args)
 
-    def store_mla(self, layer_id, latent, key_suffix, out_loc):
-        self.mla.store_mla(layer_id, latent, key_suffix, out_loc)
+    def store_mla(self, layer_id, latent, key_suffix, out_loc, **kwargs):
+        self.mla.store_mla(layer_id, latent, key_suffix, out_loc, **kwargs)
 
     def gather_mla(self, layer_id, locations):
         return self.mla.gather_mla(layer_id, locations)

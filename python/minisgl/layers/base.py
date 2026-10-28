@@ -31,6 +31,9 @@ class BaseOP:
     def after_load(self) -> None:
         """Rebuild optional inference metadata after all checkpoint tensors exist."""
 
+    def validate_cuda_graph(self) -> None:
+        """Reject an execution path that needs host decisions during replay."""
+
     def state_dict(self, *, prefix: str = "", result: _STATE_DICT | None = None) -> _STATE_DICT:
         result = result if result is not None else {}
 

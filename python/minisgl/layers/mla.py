@@ -91,6 +91,17 @@ class MLALayer(BaseOP):
             causal_layout=causal_layout,
         )
 
+    def attend_paged_partial(self, q, pages, metadata, *, attention):
+        return attention.decode(
+            q,
+            pages,
+            self.kv_b_proj.weight,
+            metadata,
+            nope_dim=self._nope,
+            value_dim=self._value,
+            return_lse=self._cp.size > 1,
+        )
+
     def finish(self, x, partial):
         output = self._cp.exchange(*partial).to(x.dtype) if self._cp.size > 1 else partial
         output = output.flatten(-2)

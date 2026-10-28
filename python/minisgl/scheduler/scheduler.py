@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import replace
 from typing import TYPE_CHECKING, List, NamedTuple, NoReturn, Set, Tuple, TypeAlias
 
@@ -40,7 +41,10 @@ class ForwardInput(NamedTuple):
     write_tuple: Indice2D  # (req_mapping, seq_lens or -1)
 
 
-ForwardData: TypeAlias = "Tuple[ForwardInput, ForwardOutput]"
+class ForwardData(NamedTuple):
+    inputs: ForwardInput
+    output: ForwardOutput
+    processed_lens: tuple[int, ...]
 
 
 class Scheduler(SchedulerIOMixin):
@@ -48,12 +52,12 @@ class Scheduler(SchedulerIOMixin):
         from minisgl.engine import Engine
 
         self.engine = Engine(config)
-        self._has_recurrent_state = config.model_config.has_recurrent_state
         self.vocab_size = config.model_config.vocab_size
 
         # use another stream to overlap metadata processing with computation
         self.device = self.engine.device
         self.stream = torch.cuda.Stream(device=self.device)
+        self.stream.wait_stream(self.engine.stream)
         self.engine_stream_ctx = torch.cuda.stream(self.engine.stream)
         torch.cuda.set_stream(self.stream)
 
@@ -74,6 +78,7 @@ class Scheduler(SchedulerIOMixin):
         # some alias for easy access
         self.finished_reqs: Set[Req] = set()
         self.aborted_reqs: Set[Req] = set()
+        self.inflight_reqs: dict[int, Req] = {}
         self.tokenizer = load_tokenizer(config.model_path)
         self.eos_token_id = self.tokenizer.eos_token_id
         self.stop_token_ids = get_stop_token_ids(self.tokenizer)
@@ -83,6 +88,7 @@ class Scheduler(SchedulerIOMixin):
 
         # Initialize the I/O mixin
         super().__init__(config, self.engine.tp_cpu_group)
+        self.engine.stream.wait_stream(self.stream)
 
     def run_when_idle(self) -> None:
         """Called when the scheduler is idle to perform background tasks."""
@@ -106,12 +112,28 @@ class Scheduler(SchedulerIOMixin):
 
         forward_input = self._schedule_next_batch()
         ongoing_data = None
-        if forward_input is not None:
-            with self.engine_stream_ctx:  # run the batch in the engine's stream
-                self.engine.stream.wait_stream(self.stream)
-                ongoing_data = (forward_input, self._forward(forward_input))
-
-        self._process_last_data(last_data)
+        staged = {}
+        try:
+            if last_data is not None:
+                excluded = {req.uid for req in self.finished_reqs | self.aborted_reqs}
+                staged = self.cache_manager.stage_states(
+                    last_data.inputs.batch.reqs,
+                    last_data.processed_lens,
+                    is_prefill=last_data.inputs.batch.is_prefill,
+                    excluded=excluded,
+                )
+            if forward_input is not None:
+                with self.engine_stream_ctx:
+                    self.engine.stream.wait_stream(self.stream)
+                    output = self._forward(forward_input)
+                    ongoing_data = ForwardData(
+                        forward_input,
+                        output,
+                        tuple(req.cached_len for req in forward_input.batch.reqs),
+                    )
+            self._process_last_data(last_data, staged=staged)
+        finally:
+            self.cache_manager.release_staged(staged)
         return ongoing_data
 
     def normal_loop(self) -> None:
@@ -122,13 +144,18 @@ class Scheduler(SchedulerIOMixin):
         forward_input = self._schedule_next_batch()
         ongoing_data = None
         if forward_input is not None:
-            ongoing_data = (forward_input, self._forward(forward_input))
+            output = self._forward(forward_input)
+            ongoing_data = ForwardData(
+                forward_input,
+                output,
+                tuple(req.cached_len for req in forward_input.batch.reqs),
+            )
 
         self._process_last_data(ongoing_data)
 
     @torch.inference_mode()
     def run_forever(self) -> NoReturn:
-        if ENV.DISABLE_OVERLAP_SCHEDULING or self._has_recurrent_state:
+        if ENV.DISABLE_OVERLAP_SCHEDULING or not self.engine.kv_cache.supports_overlap:
             with self.engine_stream_ctx:
                 self.engine.stream.wait_stream(self.stream)
                 while True:
@@ -137,14 +164,22 @@ class Scheduler(SchedulerIOMixin):
             assert torch.cuda.current_stream() == self.stream
             data = None
             while True:
-                data = self.overlap_loop(data)
+                # Compacting or mutable pools enqueue every cache operation on
+                # the producer stream, while host scheduling still overlaps it.
+                context = (
+                    torch.cuda.stream(self.engine.stream)
+                    if self.engine.kv_cache.forward_stream_updates
+                    else nullcontext()
+                )
+                with context:
+                    data = self.overlap_loop(data)
 
     def shutdown(self) -> None:
         torch.cuda.synchronize(self.device)
         self.sync_all_ranks()
         self.engine.shutdown()
 
-    def _process_last_data(self, last_data: ForwardData | None) -> None:
+    def _process_last_data(self, last_data: ForwardData | None, *, staged=None) -> None:
         if last_data is None:
             self.aborted_reqs.clear()
             return
@@ -153,17 +188,23 @@ class Scheduler(SchedulerIOMixin):
         copy_done.synchronize()
         reply: List[DetokenizeMsg] = []
         new_finished_reqs: Set[Req] = set()
+        excluded = {req.uid for req in self.finished_reqs | self.aborted_reqs}
         with self.cache_manager.lazy_free_region():
             for i, req in enumerate(batch.reqs):
-                if req in self.aborted_reqs:
+                if req.uid in excluded:
                     continue
+                length = last_data.processed_lens[i] if staged is not None else req.cached_len
+                checkpoint = staged.get(req.uid) if staged is not None else None
+                cache_args = (
+                    {"frontier": length, "checkpoint": checkpoint} if staged is not None else {}
+                )
                 if isinstance(req, ChunkedReq):
-                    self.cache_manager.cache_req(req, finished=False)
+                    self.cache_manager.cache_req(req, finished=False, **cache_args)
                     continue
                 next_token = next_tokens_cpu[i]
                 req.append_host(next_token.unsqueeze(0))
                 next_token = int(next_token.item())
-                finished = not req.can_decode
+                finished = length + 1 >= req.max_device_len
                 if not req.sampling_params.ignore_eos:
                     finished |= next_token in self.stop_token_ids
                 reply.append(DetokenizeMsg(uid=req.uid, next_token=next_token, finished=finished))
@@ -171,10 +212,10 @@ class Scheduler(SchedulerIOMixin):
                 # NOTE: overlap scheduling may make the request freed twice, skip second free
                 if finished and req not in self.finished_reqs:
                     self.decode_manager.remove_req(req)
-                    self._free_req_resources(req)
+                    self._free_req_resources(req, **cache_args)
                     new_finished_reqs.add(req)
-                elif batch.is_prefill or (self._has_recurrent_state and req.cached_len % 64 == 0):
-                    self.cache_manager.cache_req(req, finished=False)
+                elif self.cache_manager.should_cache(batch.is_prefill, length):
+                    self.cache_manager.cache_req(req, finished=False, **cache_args)
 
         self.finished_reqs = new_finished_reqs
         self.aborted_reqs.clear()
@@ -233,6 +274,9 @@ class Scheduler(SchedulerIOMixin):
             logger.debug_rank0("Aborting request %d", msg.uid)
             req_to_free = self.prefill_manager.abort_req(msg.uid)
             req_to_free = req_to_free or self.decode_manager.abort_req(msg.uid)
+            # A final forward leaves the decode set before its CPU reply is
+            # consumed. It must still be cancellable during that interval.
+            req_to_free = req_to_free or self.inflight_reqs.get(msg.uid)
             if req_to_free is not None:
                 self._free_req_resources(req_to_free)
                 self.aborted_reqs.add(req_to_free)
@@ -243,10 +287,10 @@ class Scheduler(SchedulerIOMixin):
             logger.error(f"Unknown message type: {type(msg)}")
             raise NotImplementedError
 
-    def _free_req_resources(self, req: Req) -> None:
-        self.cache_manager.cache_req(req, finished=True)
-        if self._has_recurrent_state:
-            self.engine.kv_cache.release_request(req.table_idx, req.uid)
+    def _free_req_resources(self, req: Req, **cache_args) -> None:
+        self.inflight_reqs.pop(req.uid, None)
+        self.cache_manager.cache_req(req, finished=True, **cache_args)
+        self.cache_manager.release_state(req.table_idx, req.uid)
         self.table_manager.free(req.table_idx)
 
     def _prepare_batch(self, batch: Batch) -> ForwardInput:
@@ -278,6 +322,7 @@ class Scheduler(SchedulerIOMixin):
         forward_output = self.engine.forward_batch(batch, sample_args)
         self.token_pool[output_mapping] = forward_output.next_tokens_gpu
         self.decode_manager.filter_reqs(forward_input.batch.reqs)
+        self.inflight_reqs.update((req.uid, req) for req in batch.reqs)
         return forward_output
 
 

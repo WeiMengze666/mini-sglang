@@ -18,6 +18,16 @@ class HybridCacheHandle(RadixCacheHandle):
 
 
 class HybridPrefixCache(RadixPrefixCache):
+    checkpoint_interval = 64
+
+    @property
+    def reclaimable_state_bytes(self):
+        return (
+            len(self.checkpoints) * self.states.arena.state_bytes
+            if self.states.arena is not None
+            else 0
+        )
+
     def __init__(self, device, states: RecurrentStatePool, max_states_per_path=4):
         super().__init__(device)
         if max_states_per_path < 1 or states.max_cached_states < 1:
@@ -91,11 +101,14 @@ class HybridPrefixCache(RadixPrefixCache):
         if entry is not None:
             self.states.drop_checkpoint(entry[1])
 
-    def cache_state(self, req, handle):
+    def cache_state(self, req, handle, *, checkpoint=None, cached_len=None):
         # A state cannot be rewound to an earlier page boundary. Checkpoint only
         # exactly aligned committed states and replay the remaining tail later.
-        if handle.cached_len != req.cached_len or not req.cached_len:
+        length = req.cached_len if cached_len is None else cached_len
+        if handle.cached_len != length or not length:
             return
+        if checkpoint is not None and checkpoint.length != length:
+            raise RuntimeError("Staged checkpoint and radix frontier lengths differ")
         node = handle.node
         if node.uuid in self.checkpoints:
             return
@@ -119,7 +132,10 @@ class HybridPrefixCache(RadixPrefixCache):
             # Preserve branching points before equivalent single-child nodes.
             self._drop(min(candidates, key=lambda n: (len(n.children) > 1, n.timestamp)))
         try:
-            snapshot = self.states.snapshot(req.table_idx, req.uid)
+            snapshot = checkpoint or self.states.snapshot(
+                req.table_idx, req.uid, expected_len=length
+            )
+            self.states.adopt_staged(snapshot)
         except MemoryError:
             # KV and working state take precedence over an optional checkpoint.
             return

@@ -95,9 +95,13 @@ def test_state_copy_shape_release_and_bounds():
         cache.begin_request(2, 3, 0)
 
 
-def test_metadata_only_uses_real_requests_and_graphs_rejected():
-    backend = RecurrentAttentionBackend.__new__(RecurrentAttentionBackend)
-    backend.kvcache = pool()
+def test_metadata_only_uses_real_requests_and_portable_graphs_rejected(monkeypatch):
+    import minisgl.core as core
+
+    ctx = core.Context(page_size=4)
+    ctx.kv_cache = pool()
+    monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
+    backend = RecurrentAttentionBackend(None)
     batch = SimpleNamespace(
         reqs=[SimpleNamespace(extend_len=3), SimpleNamespace(extend_len=2)],
         padded_reqs=[SimpleNamespace(extend_len=999)],
@@ -108,7 +112,7 @@ def test_metadata_only_uses_real_requests_and_graphs_rejected():
     with pytest.raises(ValueError):
         batch.attn_metadata.get_last_indices(3)
     backend.init_capture_graph(100, [])
-    with pytest.raises(ValueError, match="eager"):
+    with pytest.raises(ValueError, match="native"):
         backend.init_capture_graph(100, [1])
     with pytest.raises(ValueError):
         backend.prepare_for_capture(batch)

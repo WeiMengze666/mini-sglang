@@ -123,7 +123,12 @@ class Embedding(BaseOP):
     def forward(self, input_ids):
         if not self._sharded:
             return F.embedding(input_ids.long(), self.weight)
-        if ((input_ids < 0) | (input_ids >= self._vocab_size)).any():
+        # Admission validates host token IDs. A device scalar read here would
+        # synchronize every forward and cannot run inside a CUDA graph.
+        if (
+            input_ids.device.type == "cpu"
+            and ((input_ids < 0) | (input_ids >= self._vocab_size)).any()
+        ):
             raise IndexError("Token ID is outside the vocabulary")
         local = input_ids.long() - self._start
         mask = (local >= 0) & (local < self.weight.shape[0])

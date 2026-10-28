@@ -95,6 +95,7 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
     config = SimpleNamespace(
         model_config=SimpleNamespace(cache_config=pool),
         max_running_req=2,
+        state_slot_budget=2,
         tp_info=SimpleNamespace(rank=0, size=2),
         page_size=2,
         memory_ratio=0.9,
@@ -161,6 +162,7 @@ def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, f
             tp_info=SimpleNamespace(size=len(before)),
             page_size=1,
             max_running_req=1,
+            state_slot_budget=1,
             num_page_override=None,
             memory_ratio=ratio,
         )

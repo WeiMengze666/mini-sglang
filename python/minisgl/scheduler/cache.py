@@ -27,6 +27,7 @@ class CacheManager:
         self.page_size = page_size
         self.pool = pool
         self.arena = getattr(pool, "arena", None)
+        self._handles = {}
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
@@ -38,16 +39,54 @@ class CacheManager:
         if self.arena is not None and handle.cached_len == 0:
             self.prefix_cache.release_checkpoint_memory(self.arena.state_bytes)
             self.pool.recurrent.reserve_request(table_idx, uid)
+        self._handles[table_idx, uid] = handle
 
     def release_state(self, table_idx, uid):
+        self._handles.pop((table_idx, uid), None)
         if self.pool is not None and hasattr(self.pool, "release_request"):
             self.pool.release_request(table_idx, uid)
+
+    def current_handle(self, req):
+        # Chunked prefill may already have built its next Req while the previous
+        # result updates the shared prefix. The manager owns the latest lease.
+        return self._handles.get((req.table_idx, req.uid), req.cache_handle)
+
+    def should_cache(self, is_prefill, length):
+        interval = self.prefix_cache.checkpoint_interval
+        return is_prefill or (interval is not None and length % interval == 0)
+
+    def stage_states(self, reqs, lengths, *, is_prefill, excluded=()):
+        staged = {}
+        if self.pool is None:
+            return staged
+        try:
+            for req, length in zip(reqs, lengths):
+                if (
+                    req.uid in excluded
+                    or length % self.page_size
+                    or not self.should_cache(is_prefill, length)
+                ):
+                    continue
+                try:
+                    checkpoint = self.pool.stage_state(req.table_idx, req.uid, length)
+                except MemoryError:
+                    continue  # Optional reuse must not prevent the admitted forward.
+                if checkpoint is not None:
+                    staged[req.uid] = checkpoint
+        except Exception:
+            self.release_staged(staged)
+            raise
+        return staged
+
+    def release_staged(self, staged):
+        for checkpoint in staged.values():
+            self.pool.release_staged(checkpoint)
 
     @property
     def available_size(self) -> int:
         free_pages = len(self.free_slots)
         if self.arena is not None:
-            snapshots = len(self.pool.recurrent._checkpoints) * self.arena.state_bytes
+            snapshots = self.prefix_cache.reclaimable_state_bytes
             free_pages = min(
                 free_pages, (self.arena.free_bytes + snapshots) // self.arena.page_bytes
             )
@@ -72,7 +111,7 @@ class CacheManager:
             allocated = self._page_to_token(self._allocate(needed_pages))
             _write_page_table(self.page_table, allocated, allocation_info, self.page_size)
 
-    def cache_req(self, req: Req, *, finished: bool) -> None:
+    def cache_req(self, req: Req, *, finished: bool, frontier=None, checkpoint=None) -> None:
         # ==================================== valid cache region ====================================
         # [0, req.cached_len)                       This part is valid for attention kernel read/write.
         # [0, old_handle.cached_len)                This part is in the prefix cache before prefill.
@@ -84,23 +123,29 @@ class CacheManager:
         # [cached_len, new_handle.cached_len)       This part is newly inserted into the prefix cache.
         # [new_handle.cached_len, req.cached_len)   This part is tailing part that can not inserted into the prefix cache.
         #                                           We should free it if the request has finished.
-        insert_ids = req.input_ids[: req.cached_len]
-        page_indices = self.page_table[req.table_idx, : req.cached_len]
-        old_handle = req.cache_handle
+        length = req.cached_len if frontier is None else frontier
+        insert_ids = req.input_ids[:length]
+        page_indices = self.page_table[req.table_idx, :length]
+        old_handle = self.current_handle(req)
         cached_len, new_handle = self.prefix_cache.insert_prefix(insert_ids, page_indices)
-        self.prefix_cache.cache_state(req, new_handle)
+        # An explicit old frontier needs its staged state. It cannot be rebuilt
+        # from a working slot that the next forward may already have advanced.
+        if checkpoint is not None or frontier is None:
+            self.prefix_cache.cache_state(req, new_handle, checkpoint=checkpoint, cached_len=length)
         # unlock until all operations on handle is done
         self.unlock(old_handle)
         # this part is already in the prefix cache, free it
         self._free(page_indices[old_handle.cached_len : cached_len].clone())
         if finished:  # this tail part should be freed
-            self._free(page_indices[new_handle.cached_len :])
+            self._free(self.page_table[req.table_idx, new_handle.cached_len : req.cached_len])
+            self._handles.pop((req.table_idx, req.uid), None)
         else:  # keep the tail part, update the handle
             if new_handle.cached_len:
                 # Replay may join an existing radix edge. Point the continuing
                 # request at its shared KV pages before freed duplicates are reused.
                 page_indices[: new_handle.cached_len].copy_(new_handle.get_matched_indices())
             req.cache_handle = new_handle
+            self._handles[req.table_idx, req.uid] = new_handle
             self.lock(new_handle)
 
     def check_integrity(self) -> None:

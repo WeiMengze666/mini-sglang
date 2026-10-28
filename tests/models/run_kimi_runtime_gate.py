@@ -124,6 +124,7 @@ def generate_fixtures(root: Path, seed: int = SEED) -> dict:
             and parameter.shape[1] % 32 == 0
             and (".self_attn." in name or ".mlp." in name)
             and ".gate.weight" not in name
+            and not name.endswith(".kv_b_proj.weight")
             and "routed_expert_down_proj" not in name
             and "routed_expert_up_proj" not in name
         )
