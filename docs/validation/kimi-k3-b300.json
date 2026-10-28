@@ -722,7 +722,8 @@
       "unified"
     ],
     "accuracy_benchmark_acceptance": false,
-    "sglang_performance_parity": false
+    "sglang_performance_parity": false,
+    "scope": "Historical phase4 validation; current rebuilt-server evidence is in current_candidate."
   },
   "phase5_paged_graphs": {
     "job": 166,
@@ -844,7 +845,7 @@
     "fix_commit": "408e557",
     "pending_runtime_changes": false,
     "server_boot_id": "8dcb0ae2-5b59-4693-85f4-f2d9e8ecbd8e",
-    "gpuq_job": 33,
+    "gpuq_job": 36,
     "cpu": {
       "passed": 444,
       "skipped": 183,
@@ -989,8 +990,8 @@
       }
     ],
     "local_evidence_backup": {
-      "archive": "phase8-recovery-evidence-v6.tar.gz",
-      "sha256": "41973e7df05e01122a79ade1298537605b9c417ed15b4e7b5d5f33a021f1e652",
+      "archive": "phase8-recovery-evidence-v7.tar.gz",
+      "sha256": "eaf32d0e0c71ba715aebbad49284c5f75feddd9a9aaa1ce1e8fac421994d292b",
       "live_stage_outputs_included": false
     },
     "configuration_cleanup": {
@@ -1043,7 +1044,7 @@
     ],
     "runtime_commit": "d315aa6e68a19af740059a8da64b2b7049bcd9e9",
     "validation_commit": "0faeee4a7676ae478a8293bac9bf150b6b670013",
-    "status": "mini full task run completed; official JIT repair passed CPU preload; complete paired reference and real HTTP/profile queued",
+    "status": "mini full task run completed; official autotune stalled in job 33; released HTTP/profile and paired reference queued as job 36",
     "source_commit": "8d28bd639925bc821825cbfd15b2fc2bd4146876",
     "completed_mini_task_run": {
       "gpuq_job": 25,
@@ -1077,7 +1078,27 @@
       "cpu_preload_passed": true,
       "gpu_execution_confirmed": false,
       "proof": "phase8-official-aot-load-v1.json",
-      "environment": "phase8-official-environment-v3.txt"
+      "environment": "phase8-official-environment-v3.txt",
+      "previous_jit_failure_crossed_on_gpu": true
+    },
+    "official_reference_autotune": {
+      "failed_job": 33,
+      "official_examples_completed": 0,
+      "log_stale_seconds": 549.4025013446808,
+      "wait_point": "FlashInfer AutoTuner._profile_single_kernel: distributed all_reduce at autotuner.py:3104",
+      "root_cause_established": false,
+      "manually_aborted": true,
+      "core_dump_disabled": true,
+      "reference_source_modified": false,
+      "public_runtime_options": {
+        "flashinfer_autotune_skip_ops": [
+          "flashinfer::trtllm_fp4_block_scale_moe"
+        ]
+      },
+      "fallback_scope": "Only the skipped op uses the official heuristic fallback; this is not default-tuned SGLang performance.",
+      "report": "phase8-official-autotune-failure-v1.json",
+      "trace": "phase8-official-autotune-trace-v1.txt",
+      "resume_entry": "phase8-lifecycle-profile-resume-entry-v2.sha256"
     }
   },
   "historical_candidates": [

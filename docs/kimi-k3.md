@@ -27,7 +27,7 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 | Released BF16 full/chunked prefill | **Failed**: max error 1.3515625, relative L2 0.09507; same first greedy token |
 | Native synthetic HTTP lifecycle | Job 25: serial/overlap × static/unified passed; TP4/DCP2/EP4, native dimensions and graphs enabled |
 | Complete mini GSM8K | Job 25: 1282/1319 correct (97.19%), one invalid answer counted wrong, zero length truncation |
-| Complete paired GSM8K | Official initialization failed in job 25; resumed as job 33, all 1319 cases retained; comparison pending |
+| Complete paired GSM8K | Job 25 failed in JIT compilation; job 33 stalled in autotune; job 36 resumes all 1319 official cases; comparison pending |
 | Performance parity with full SGLang | Not established |
 
 The generic runtime is committed as `d315aa6`, configuration cleanup as
@@ -63,8 +63,17 @@ definitions. No official task result or later profile was produced. The separate
 reference environment now includes matching `flashinfer-jit-cache==0.7.1+cu130`
 and its declared architecture providers. Its SM103a TRTLLM module loads on CPU;
 all nine core package versions and RECORD hashes are unchanged. SGLang source,
-FlashInfer core and mini's environment were not patched. Job 33 resumes the
-official arm before real-checkpoint HTTP confirmation and the original profile.
+FlashInfer core and mini's environment were not patched. Job 33 crossed the
+previous compilation failure, then made no progress for 549 seconds during TRTLLM MoE tuning. All GPUs were idle; an owned rank-zero
+faulthandler trace locates its wait in the autotuner's distributed timing
+`all_reduce`. The precise root cause remains unestablished. Core dumps were
+disabled before manually aborting the owned process; SGLang cleaned its peers.
+
+Job 36 first runs real-checkpoint HTTP and mini profiling, then resumes the
+complete official arm. The public `flashinfer_autotune_skip_ops` option skips
+only `flashinfer::trtllm_fp4_block_scale_moe`, which uses the official heuristic
+fallback. This reference policy is recorded explicitly and cannot establish
+default-tuned SGLang performance. Neither source nor precision was patched.
 
 ## Framework structure
 
@@ -209,10 +218,13 @@ and the same generation/EOS stop IDs. It scores the last explicit `#### <number>
 and retains invalid/truncated responses. `compare_accuracy.py` rejects partial
 runs, duplicate IDs, changed gold/case hashes or mismatched generation protocols.
 
-The 11-prompt full-vocabulary/generation suite is separate from GSM8K. Warm
-performance uses 64 raw output tokens, three repeats and batch 1/2/4/8; its boundary
-includes model forward, greedy selection and token transfer, excluding loading
-and first-use compilation. Raw and stopped token agreement are reported separately.
+The 11-prompt full-vocabulary/generation suite is separate from GSM8K. Warm mini
+performance uses 64 raw output tokens, three repeats and batch 1/2/4/8; its boundary includes model forward, greedy selection and token transfer,
+excluding loading and first-use compilation. The optional official
+`--benchmark-batch-sizes 1 2 4 8` gate records the same fixed-length workload
+through synchronous `Engine.generate`, including prefill, scheduler and IPC,
+without logprobs. These timing boundaries differ and are reported separately.
+Raw and stopped token agreement are also reported separately.
 
 Historical job 166 measured 6.64/13.17/26.38/52.77 tokens/s for paged eager decode
 at batch 1/2/4/8, versus 13.44/22.44/43.48/83.49 with graphs. All 11 diagnostic

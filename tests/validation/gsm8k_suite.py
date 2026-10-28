@@ -268,6 +268,7 @@ def run_sglang(args, cases, stop_ids):
         mamba_ssm_dtype="float32",
         chunked_prefill_size=4096,
         page_size=64,
+        flashinfer_autotune_skip_ops=args.flashinfer_autotune_skip_ops,
         log_level="info",
     )
     rows, started = [], time.monotonic()
@@ -321,6 +322,7 @@ def main():
     parser.add_argument("--ep-size", type=int, default=8)
     parser.add_argument("--attention-backend", default="recurrent-fi")
     parser.add_argument("--cuda-graph", action="store_true")
+    parser.add_argument("--flashinfer-autotune-skip-ops", nargs="*", default=[])
     args = parser.parse_args()
     if args.prepare:
         if args.dataset is None:
