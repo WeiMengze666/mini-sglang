@@ -7,6 +7,13 @@ from pathlib import Path
 import torch
 
 
+def full_logprobs(result):
+    """Read official logprobs or normalize saved mini full-vocabulary logits."""
+    if "logprobs" in result:
+        return result["logprobs"].float().reshape(-1)
+    return result["full"]["logits"].float().reshape(-1).log_softmax(-1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mini", type=Path, required=True)
@@ -23,7 +30,7 @@ def main():
         return tokens
 
     mini = json.loads((args.mini / "report.json").read_text())
-    official = {
+    reference = {
         case["name"]: case for case in json.loads((args.reference / "report.json").read_text())
     }
     results = []
@@ -34,9 +41,8 @@ def main():
             args.reference / (name + ".pt"), map_location="cpu", weights_only=True
         )
         assert actual["input_ids"] == expected["input_ids"]
-        logits = actual["full"]["logits"].float().reshape(-1)
-        logp = logits.log_softmax(-1)
-        ref = expected["logprobs"]
+        logp = full_logprobs(actual)
+        ref = full_logprobs(expected)
         if (
             logp.shape != ref.shape
             or not torch.isfinite(logp).all()
@@ -44,7 +50,7 @@ def main():
         ):
             raise AssertionError("Invalid full-vocabulary comparison")
         chunkp = actual["chunked"]["logits"].float().reshape(-1).log_softmax(-1)
-        tokens = official[name]["token_ids"]
+        tokens = reference[name]["token_ids"]
         prefix = 0
         for a, b in zip(case["token_ids"], tokens):
             if a != b:

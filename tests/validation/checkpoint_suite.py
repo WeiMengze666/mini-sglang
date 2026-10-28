@@ -68,6 +68,7 @@ def main():
     parser.add_argument("--max-context", type=int, default=4096)
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--cuda-graph-max-bs", type=int)
     parser.add_argument("--batch-sizes", type=int, nargs="+", default=[1])
     args = parser.parse_args()
     if args.tokens < 1 or args.max_context < 1 or min(args.batch_sizes) < 1:
@@ -106,6 +107,7 @@ def main():
             DistributedInfo(rank, world),
             getattr(torch, args.dtype),
             attention_backend=args.attention_backend,
+            cuda_graph_max_bs=args.cuda_graph_max_bs,
             mxfp4_backend="triton",
             dcp_size=args.dcp_size,
             ep_size=args.ep_size,
@@ -171,7 +173,11 @@ def main():
                 batch.out_loc = torch.cat([table[p.table_idx, p.cached_len : stop] for p in parts])
                 engine.attn_backend.prepare_metadata(batch)
                 with engine.ctx.forward_batch(batch):
-                    logits = engine.model.forward()
+                    logits = (
+                        engine.graph_runner.replay(batch)
+                        if engine.graph_runner.can_use_cuda_graph(batch)
+                        else engine.model.forward()
+                    )
                 for req in reqs:
                     req.cached_len = stop
             token = logits.argmax(-1).to(torch.int32).cpu()
@@ -253,17 +259,19 @@ def main():
                     ),
                     "median_decode_seconds": decode,
                     "decode_tokens_per_second": batch_size / decode if decode else None,
-                    "greedy_matches_first_case": all(
-                        r["token_ids"] == results[0]["token_ids"] for r in warm
-                    )
-                    if rank == 0
-                    else None,
-                    "greedy_through_stop_matches_first_case": all(
-                        through_stop(r["token_ids"]) == through_stop(results[0]["token_ids"])
-                        for r in warm
-                    )
-                    if rank == 0
-                    else None,
+                    "greedy_matches_first_case": (
+                        all(r["token_ids"] == results[0]["token_ids"] for r in warm)
+                        if rank == 0
+                        else None
+                    ),
+                    "greedy_through_stop_matches_first_case": (
+                        all(
+                            through_stop(r["token_ids"]) == through_stop(results[0]["token_ids"])
+                            for r in warm
+                        )
+                        if rank == 0
+                        else None
+                    ),
                 }
             )
             if rank == 0:
@@ -271,7 +279,7 @@ def main():
                 (args.output / "benchmark.json").write_text(
                     json.dumps(
                         {
-                            "boundary": "batch construction, model.forward, argmax and token transfer; excludes scheduler",
+                            "boundary": "batch construction, model execution (eager or CUDA Graph), argmax and token transfer; excludes scheduler",
                             "complete": len(batches) == len(set(args.batch_sizes)),
                             "warm_step_seconds": single.get("warm_step_seconds"),
                             "median_decode_seconds": single.get("median_decode_seconds"),

@@ -28,6 +28,12 @@ def fixture(root, args):
         config.linear_attn_config["head_dim"] = 32
         config.v_head_dim = 32
         config.intermediate_size = config.moe_intermediate_size = 32 * args.tp_size
+    if args.attention_backend.split(",")[-1] == "recurrent-fi":
+        config.hidden_size = config.routed_expert_hidden_size = 128
+        config.q_lora_rank = 32
+        config.kv_lora_rank, config.qk_nope_head_dim = 512, 192
+        config.qk_rope_head_dim, config.v_head_dim = 64, 128
+        config.linear_attn_config["head_dim"] = 128
     runtime.tiny_config = lambda: config
     runtime.generate_fixtures(root)
     model = root / ("packed" if args.packed else "dense")
@@ -118,6 +124,10 @@ def run(model, output, unified, args):
     ]
     if args.max_seq_len is not None:
         command.extend(("--max-seq-len-override", str(args.max_seq_len)))
+    if args.cuda_graph_max_bs is not None:
+        command.extend(("--cuda-graph-max-bs", str(args.cuda_graph_max_bs)))
+    if args.enable_cache_overlap:
+        command.append("--enable-cache-overlap")
     if unified:
         command.append("--enable-unified-memory")
     log = output / ("http-unified.log" if unified else "http-static.log")
@@ -156,8 +166,11 @@ def run(model, output, unified, args):
                 return response.json()["choices"][0]["message"]["content"]
 
             baseline = complete(timeout=180)  # first-use CUDA compilation is outside latency gates
+            warm_seconds = []
             for _ in range(3):
+                start = time.perf_counter()
                 assert complete() == baseline, "Prefix restore or slot reuse changed the generation"
+                warm_seconds.append(time.perf_counter() - start)
             complete(args.prompt[:-2] + "different ending")  # radix fork and recurrent replay
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                 assert all(value == baseline for value in pool.map(lambda _: complete(), range(4)))
@@ -182,6 +195,32 @@ def run(model, output, unified, args):
                     raise AssertionError("No stream event received")
             assert complete() == baseline, "A cancelled request contaminated a reused state slot"
             assert complete(tokens=0) == "", "Zero-token request did not complete"
+            for budget in (1, 2, 5):
+                with httpx.stream(
+                    "POST",
+                    url + "/v1/chat/completions",
+                    json={
+                        "model": str(model),
+                        "prompt": args.prompt,
+                        "temperature": 0,
+                        "max_tokens": budget,
+                        "ignore_eos": True,
+                        "stream": True,
+                    },
+                    timeout=60,
+                ) as response:
+                    response.raise_for_status()
+                    events = [
+                        json.loads(line[5:])
+                        for line in response.iter_lines()
+                        if line.startswith("data:") and "[DONE]" not in line
+                    ]
+                # The frontend emits one acknowledgement per sampled token,
+                # including empty text fragments, plus its final finish event.
+                assert (
+                    sum(event["choices"][0]["finish_reason"] is None for event in events) == budget
+                )
+                assert events[-1]["choices"][0]["finish_reason"] == "stop"
             bad = httpx.post(
                 url + "/v1/chat/completions",
                 json={"model": str(model), "prompt": "hi", "max_tokens": -1},
@@ -197,9 +236,16 @@ def run(model, output, unified, args):
                 "packed": args.packed,
                 "prompt_tokens": args.prompt_tokens,
                 "page_size": args.page_size,
-                "scope": "synthetic_http_scheduler_prefix_reuse_and_cancellation"
-                if args.model is None
-                else "released_checkpoint_http_scheduler_prefix_reuse_and_cancellation",
+                "cache_overlap": args.enable_cache_overlap,
+                "cuda_graph_max_bs": args.cuda_graph_max_bs,
+                "baseline": baseline,
+                "warm_eight_token_request_seconds": warm_seconds,
+                "stream_token_budgets": [1, 2, 5],
+                "scope": (
+                    "synthetic_http_scheduler_prefix_reuse_and_cancellation"
+                    if args.model is None
+                    else "released_checkpoint_http_scheduler_prefix_reuse_and_cancellation"
+                ),
             }
         finally:
             if server.poll() is None:
@@ -232,6 +278,8 @@ def main():
     parser.add_argument("--packed", action="store_true")
     parser.add_argument("--mxfp4-backend", choices=["torch", "triton"], default="torch")
     parser.add_argument("--attention-backend", default="recurrent")
+    parser.add_argument("--cuda-graph-max-bs", type=int)
+    parser.add_argument("--enable-cache-overlap", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     model = (
