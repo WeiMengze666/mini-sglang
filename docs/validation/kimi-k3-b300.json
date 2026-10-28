@@ -839,19 +839,19 @@
     "sglang_performance_parity": false
   },
   "current_candidate": {
-    "source_snapshot": "k3-config-generic-v1-source",
-    "source_manifest_sha256": "93a0080a644441d36e3ef9cf00302ddb3f0ccf5dcc7a4da1402f151a2b9987c0",
+    "source_snapshot": "phase8-committed-v1-source",
+    "source_manifest_sha256": "9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373",
     "fix_commit": "408e557",
     "pending_runtime_changes": false,
     "server_boot_id": "8dcb0ae2-5b59-4693-85f4-f2d9e8ecbd8e",
-    "gpuq_job": 25,
+    "gpuq_job": 33,
     "cpu": {
       "passed": 444,
       "skipped": 183,
       "expected_semantic_disagreements": 2,
-      "report": "phase8-full-cpu-v8.log",
-      "source_snapshot": "k3-config-generic-v1-source",
-      "source_manifest_sha256": "93a0080a644441d36e3ef9cf00302ddb3f0ccf5dcc7a4da1402f151a2b9987c0"
+      "report": "phase8-full-cpu-v9.log",
+      "source_snapshot": "phase8-committed-v1-source",
+      "source_manifest_sha256": "9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373"
     },
     "gpu": {
       "components_passed": 173,
@@ -962,12 +962,12 @@
     "task_accuracy_accepted": false,
     "performance_parity_accepted": false,
     "diagnostic": {
-      "gpuq_job": 25,
-      "status": "precision controls and four native HTTP modes completed; complete GSM8K mini running",
-      "entry": "k3-phase8-functional-gate-v1.sh",
-      "entry_hashes": "phase8-functional-entry-v1.sha256",
-      "source_snapshot": "phase8-format-contract-v1-source",
-      "purpose": "supported BF16 accumulation/attention controls, native HTTP lifecycle, complete 1319-example paired GSM8K, then 11-prompt and warm decode suite",
+      "gpuq_job": 33,
+      "status": "queued",
+      "entry": "k3-phase8-reference-resume-gate-v1.sh",
+      "entry_hashes": "phase8-reference-resume-entry-v1.sha256",
+      "source_snapshot": "phase8-committed-v1-source",
+      "purpose": "resume full official GSM8K with unchanged saved mini result, then real checkpoint HTTP and original 11-prompt/profile suite",
       "unchanged_tolerances": true,
       "diagnostic_completion_is_not_numerical_acceptance": true,
       "precision_report": "phase8-bf16-precision-v3/report.json",
@@ -989,9 +989,8 @@
       }
     ],
     "local_evidence_backup": {
-      "archive": "phase8-recovery-evidence-v5.tar.gz",
-      "sha256": "e0fb2e0f3b08a38e5bf73fae2ed7616052711fe13b7325fd5e062626e0700ed4",
-      "completed_job25_stages_included": true,
+      "archive": "phase8-recovery-evidence-v6.tar.gz",
+      "sha256": "41973e7df05e01122a79ade1298537605b9c417ed15b4e7b5d5f33a021f1e652",
       "live_stage_outputs_included": false
     },
     "configuration_cleanup": {
@@ -1044,7 +1043,42 @@
     ],
     "runtime_commit": "d315aa6e68a19af740059a8da64b2b7049bcd9e9",
     "validation_commit": "0faeee4a7676ae478a8293bac9bf150b6b670013",
-    "status": "native lifecycle passed; strict BF16 failed; complete paired task evaluation running"
+    "status": "mini full task run completed; official JIT repair passed CPU preload; complete paired reference and real HTTP/profile queued",
+    "source_commit": "8d28bd639925bc821825cbfd15b2fc2bd4146876",
+    "completed_mini_task_run": {
+      "gpuq_job": 25,
+      "complete": true,
+      "examples": 1319,
+      "correct": 1282,
+      "accuracy": 0.9719484457922669,
+      "invalid_answers": 1,
+      "truncated": 0,
+      "generated_tokens": 141845,
+      "evaluation_seconds": 3767.7698602940654,
+      "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+      "batch_size": 8,
+      "max_new_tokens": 1024,
+      "max_context": 4096,
+      "execution_source": "phase8-format-contract-v1-source",
+      "report": "phase8-gsm8k-mini-v3/report.json",
+      "responses": "phase8-gsm8k-mini-v3/responses.jsonl",
+      "archive_sha256": "1aeb267097d322e9e24ade990ea5a073c4e607d9690db486a0d16a5330ac65f2",
+      "paired_accuracy_accepted": false
+    },
+    "official_reference_repair": {
+      "failed_job": 25,
+      "official_examples_completed": 0,
+      "error": "TRTLLM JIT SfLayoutDecl.h duplicate definitions through two include paths",
+      "reference_source_modified": false,
+      "core_packages_unchanged": 9,
+      "optional_jit_cache_version": "0.7.1+cu130",
+      "aot_provider": "sm103a",
+      "aot_module_sha256": "09b6b25e712f5166f66f2b9a3c7452ee7449d4303074d7a896f26672ba488807",
+      "cpu_preload_passed": true,
+      "gpu_execution_confirmed": false,
+      "proof": "phase8-official-aot-load-v1.json",
+      "environment": "phase8-official-environment-v3.txt"
+    }
   },
   "historical_candidates": [
     {

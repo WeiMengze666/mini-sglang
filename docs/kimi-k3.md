@@ -7,11 +7,11 @@ correctness precede further performance work.
 
 ## Current validation
 
-The current configuration candidate is `k3-config-generic-v1-source`, manifest
-SHA256 `93a0080a644441d36e3ef9cf00302ddb3f0ccf5dcc7a4da1402f151a2b9987c0`.
-Its complete CPU/Gloo regression passed in `phase8-full-cpu-v8.log`. It replaces
-the model-specific config payload with `hf_config` without changing operator
-math. GPU rows below belong to its parent runtime, including
+The committed runtime snapshot is `phase8-committed-v1-source`, commit `8d28bd6`,
+manifest SHA256 `9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373`.
+Its complete CPU/Gloo regression passed in `phase8-full-cpu-v9.log` from a clean
+Git worktree. It replaces the model-specific config payload with `hf_config`
+without changing operator math. Earlier GPU rows belong to its parent runtime, including
 `phase8-format-contract-v1-source`; the config refactor still needs GPU startup
 confirmation. Validation followed the environment rebuild on 2026-10-28. Queue IDs
 below belong to boot `8dcb0ae2-5b59-4693-85f4-f2d9e8ecbd8e`; older queue IDs are
@@ -26,7 +26,8 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 | Released FP32 TP8/DCP2/EP8 | Job 12: max error 1.2875e-5 against the all-PyTorch TP8 reference; full/chunked error 1.2159e-5; unchanged 1e-4 tolerance passed |
 | Released BF16 full/chunked prefill | **Failed**: max error 1.3515625, relative L2 0.09507; same first greedy token |
 | Native synthetic HTTP lifecycle | Job 25: serial/overlap × static/unified passed; TP4/DCP2/EP4, native dimensions and graphs enabled |
-| Complete paired GSM8K | Running in job 25; no current task-accuracy acceptance |
+| Complete mini GSM8K | Job 25: 1282/1319 correct (97.19%), one invalid answer counted wrong, zero length truncation |
+| Complete paired GSM8K | Official initialization failed in job 25; resumed as job 33, all 1319 cases retained; comparison pending |
 | Performance parity with full SGLang | Not established |
 
 The generic runtime is committed as `d315aa6`, configuration cleanup as
@@ -49,6 +50,21 @@ in every case. Switching attention or disabling reduced-precision reductions
 does not eliminate the discrepancy; neither is adopted as a numerical fix.
 The saved 93-layer traces and full-vocabulary analysis remain diagnostic evidence,
 with task accuracy and performance reported independently.
+
+The complete mini task run generated 141,845 tokens in 3,767.77 evaluation
+seconds, excluding loading. This includes prefill, decode, CPU transfer and
+state reset, so it is not a fixed-batch decode microbenchmark. Every case ID,
+gold answer, response flag and input hash was checked before archiving the full
+run. It establishes a one-sided task score, not agreement with SGLang.
+
+Official initialization then failed while JIT-compiling TRTLLM MoE: the same
+`SfLayoutDecl.h` was included through two paths and produced duplicate
+definitions. No official task result or later profile was produced. The separate
+reference environment now includes matching `flashinfer-jit-cache==0.7.1+cu130`
+and its declared architecture providers. Its SM103a TRTLLM module loads on CPU;
+all nine core package versions and RECORD hashes are unchanged. SGLang source,
+FlashInfer core and mini's environment were not patched. Job 33 resumes the
+official arm before real-checkpoint HTTP confirmation and the original profile.
 
 ## Framework structure
 
