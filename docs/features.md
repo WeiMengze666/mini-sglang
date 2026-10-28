@@ -18,13 +18,16 @@ python -m minisgl --model "Qwen/Qwen3-0.6B" --shell
 
 To scale performance across multiple GPUs, Mini-SGLang supports Tensor Parallelism (TP). You can enable distributed serving by specifying the number of GPUs with the `--tp n` argument, where `n` is the degree of parallelism.
 
+DCP (`--dcp-size`) partitions token ownership for context-sharded MLA and merges partial attention using output/LSE exchange. EP (`--ep-size`) partitions experts independently of their tensor shards, for both ordinary and latent MoE. The replicated-token scheduler combines local expert contributions by TP reduction. The integrated paged DCP path currently serves MLA; the exchange itself is independent of the attention algorithm.
+
 ## Supported Models
 
-Our framework currently supports the following dense model architectures:
+Our framework currently supports the following model architectures:
 
 - [`Llama-3`](https://huggingface.co/collections/meta-llama/llama-31) series
 - [`Qwen-3`](https://huggingface.co/collections/Qwen/qwen3) series (including MoE)
 - [`Qwen-2.5`](https://huggingface.co/collections/Qwen/qwen25) series
+- Experimental Kimi-K3 text decoding, assembled from reusable KDA, gated MLA, residual and MoE layers. See [scope and validation](kimi-k3.md).
 
 ## Chunked Prefill
 
@@ -42,7 +45,9 @@ You can specify the backend using the `--attn` argument. If two values are provi
 
 ## CUDA Graph
 
-To minimize CPU launch overhead during decoding, Mini-SGLang supports capturing and replaying CUDA graphs. This feature is enabled by default. The maximum batch size for CUDA graph capture can be set with `--cuda-graph-max-bs n`. Setting `n` to `0` disables this feature.
+To minimize CPU launch overhead during decoding, Mini-SGLang supports capturing and replaying CUDA graphs. This feature is enabled by default. The maximum batch size for CUDA graph capture can be set with `--cuda-graph-max-bs n`. Setting `n` to `0` disables this feature. Explicit buckets can be supplied with `--cuda-graph-bs 1 2 4 8`.
+
+Hybrid recurrent attention requires explicit graph enablement and a compatible native backend. It uses exact batch sizes with eager fallback for uncaptured sizes, because padded rows would mutate request state. Capture temporarily borrows idle state slots at startup; replay resolves current request and page indirection.
 
 ## Radix Cache
 
@@ -51,9 +56,13 @@ Adopting the original design from [SGLang](https://github.com/sgl-project/sglang
 ![radix](https://lmsys.org/images/blog/sglang/radix_attn.jpg)
 *Illustration of Radix Attention from [LMSYS Blog](https://lmsys.org/blog/2024-01-17-sglang/).*
 
+Hybrid prefix reuse additionally preserves sparse recurrent checkpoints alongside token pages. `--max-cached-states` bounds shared snapshots; admission restores a private working copy before updates. `--enable-unified-memory` places state and token pages in the same compacting byte arena.
+
 ## Overlap Scheduling
 
 To further reduce CPU overhead, Mini-SGLang employs overlap scheduling, a technique proposed in [NanoFlow](https://arxiv.org/abs/2408.12757). This approach overlaps the CPU scheduling overhead with GPU computation, improving overall system throughput.
 
 ![overlap](https://lmsys.org/images/blog/sglang_v0_4/scheduler.jpg)
 *Illustration of Overlap Scheduling from [LMSYS Blog](https://lmsys.org/blog/2024-12-04-sglang-v0-4/).*
+
+For mutable hybrid pools, `--enable-cache-overlap` stages completed frontiers before the next forward and donates them when consuming the prior reply. Working state, staged snapshots and tree checkpoints have separate ownership. All compaction and state mutation use the producer stream. This option is off by default; `MINISGL_DISABLE_OVERLAP_SCHEDULING=1` disables overlap for every pool.

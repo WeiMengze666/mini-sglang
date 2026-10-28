@@ -3,11 +3,14 @@
   "hardware": "8 x NVIDIA B300",
   "official_sglang": "baa9befa381511cd4d56f83980951e5a45fffc6d",
   "environment": {
-    "python": "3.11",
+    "python": "3.11.18",
     "torch": "2.14.1+cu130",
     "flashinfer": "0.7.1",
     "triton": "3.8.0",
-    "mini_transformers": "4.57.3"
+    "mini_transformers": "4.57.3",
+    "cutlass_dsl": "4.8.0",
+    "sglang_kernel": "0.4.9",
+    "tvm_ffi": "0.1.11"
   },
   "gates": [
     {
@@ -720,5 +723,380 @@
     ],
     "accuracy_benchmark_acceptance": false,
     "sglang_performance_parity": false
-  }
+  },
+  "phase5_paged_graphs": {
+    "job": 166,
+    "comparison_and_http_job": 168,
+    "source_snapshot": "phase5-hybrid-graphs-v3-source",
+    "comparison_snapshot": "phase5-hybrid-graphs-v4-source",
+    "component_distributed_checks": 86,
+    "component_scope": "includes CPU cases; not 86 distinct GPU tests",
+    "synthetic_engine": {
+      "world_size": 4,
+      "captured_batch_sizes": [
+        1,
+        2,
+        4
+      ],
+      "eager_fallback_batch_size": 3,
+      "pool_modes": [
+        "static",
+        "unified"
+      ],
+      "reordered_requests": true,
+      "unified_compaction": true,
+      "logits_max_abs": 0.0,
+      "conv_recurrent_states_bitwise_equal": true
+    },
+    "released_fp32": {
+      "reference_max_abs": 1.239776611328125e-05,
+      "reference_relative_l2": 9.781225571714458e-07,
+      "full_chunked_max_abs": 1.2159347534179688e-05,
+      "threshold": 0.0001,
+      "passed": true
+    },
+    "graph_eager_comparison": {
+      "case_count": 11,
+      "first_token_matches": 11,
+      "generation_exact_matches": 11,
+      "generation_through_stop_matches": 11
+    },
+    "official_comparison": {
+      "case_count": 11,
+      "first_token_matches": 11,
+      "generation_exact_matches": 1,
+      "generation_through_stop_matches": 8
+    },
+    "released_http": {
+      "passed": true,
+      "dtypes": [
+        "bfloat16",
+        "float32"
+      ],
+      "bf16_cuda_graph": true,
+      "fp32_eager": true,
+      "pool_modes": [
+        "static",
+        "unified"
+      ],
+      "prompt_tokens": 460,
+      "page_size": 64
+    },
+    "performance": {
+      "tp": 8,
+      "dcp": 2,
+      "ep": 8,
+      "prompt_tokens": 27,
+      "raw_output_tokens": 64,
+      "warm_repeats": 3,
+      "boundary": "batch construction, model execution (eager or CUDA Graph), argmax and token transfer; excludes scheduler",
+      "batches": [
+        {
+          "batch_size": 1,
+          "eager_median_decode_seconds": 0.15053144504781812,
+          "eager_tokens_per_second": 6.64313027542078,
+          "graph_median_decode_seconds": 0.07442493096459657,
+          "graph_tokens_per_second": 13.436357777418607
+        },
+        {
+          "batch_size": 2,
+          "eager_median_decode_seconds": 0.15187702898401767,
+          "eager_tokens_per_second": 13.16854835375048,
+          "graph_median_decode_seconds": 0.08913257997483015,
+          "graph_tokens_per_second": 22.438484340571915
+        },
+        {
+          "batch_size": 4,
+          "eager_median_decode_seconds": 0.15160738106351346,
+          "eager_tokens_per_second": 26.383939699639456,
+          "graph_median_decode_seconds": 0.09199800994247198,
+          "graph_tokens_per_second": 43.47920137078261
+        },
+        {
+          "batch_size": 8,
+          "eager_median_decode_seconds": 0.15160606801509857,
+          "eager_tokens_per_second": 52.76833641779611,
+          "graph_median_decode_seconds": 0.09582111402414739,
+          "graph_tokens_per_second": 83.48890619226114
+        }
+      ]
+    },
+    "reports": [
+      "phase5-hybrid-graphs-native-v3.log",
+      "phase5-graphs-synthetic-static-v3.json",
+      "phase5-graphs-synthetic-unified-v3.json",
+      "phase5-paged-eager-suite-v3/benchmark.json",
+      "phase5-graph-suite-v3/benchmark.json",
+      "phase5-graph-eager-comparison-v4.json",
+      "phase5-graph-official-comparison-v4.json",
+      "phase5-graph-http-bf16-v4/report.json",
+      "phase5-graph-http-fp32-v4/report.json"
+    ],
+    "job_failure_scope": {
+      "166": "Computational stages completed; comparison helper then rejected mini-to-mini logit schema. Fixed in validation only.",
+      "168": "Comparisons and four HTTP pool/dtype cases passed; subsequent GSM run failed on an unaligned contiguous beta slice after 8 examples. Partial run is not accuracy acceptance."
+    },
+    "sglang_performance_parity": false
+  },
+  "current_candidate": {
+    "source_snapshot": "k3-config-generic-v1-source",
+    "source_manifest_sha256": "93a0080a644441d36e3ef9cf00302ddb3f0ccf5dcc7a4da1402f151a2b9987c0",
+    "fix_commit": "408e557",
+    "pending_runtime_changes": false,
+    "server_boot_id": "8dcb0ae2-5b59-4693-85f4-f2d9e8ecbd8e",
+    "gpuq_job": 25,
+    "cpu": {
+      "passed": 444,
+      "skipped": 183,
+      "expected_semantic_disagreements": 2,
+      "report": "phase8-full-cpu-v8.log",
+      "source_snapshot": "k3-config-generic-v1-source",
+      "source_manifest_sha256": "93a0080a644441d36e3ef9cf00302ddb3f0ccf5dcc7a4da1402f151a2b9987c0"
+    },
+    "gpu": {
+      "components_passed": 173,
+      "components_report": "phase8-native-v6.log",
+      "routing_cases_passed": 48,
+      "routing_report": "phase8-moe-sort-stream-v2.json",
+      "engine_graph_comparison_passed": true,
+      "pool_modes": [
+        "static",
+        "unified"
+      ],
+      "logits_max_abs": 0,
+      "conv_recurrent_states_bitwise_equal": true,
+      "reports": [
+        "phase8-expert-graphs-static-v1.json",
+        "phase8-expert-graphs-unified-v1.json"
+      ],
+      "component_gpuq_job": 18,
+      "ordinary_model_graphs": {
+        "passed": true,
+        "gpuq_job": 22,
+        "models": [
+          "Qwen3",
+          "Qwen3-MoE"
+        ],
+        "tp_size": 4,
+        "moe_ep_size": 4,
+        "request_slot_batches": [
+          [
+            3,
+            0,
+            6,
+            1
+          ],
+          [
+            6,
+            2
+          ],
+          [
+            4
+          ],
+          [
+            5,
+            2,
+            0
+          ]
+        ],
+        "max_abs_logits": 0,
+        "comparison": "exact values after lossless BF16-to-FP32 conversion",
+        "reports": [
+          "phase8-standard-graphs-dense-v2.json",
+          "phase8-standard-graphs-moe-v2.json"
+        ],
+        "reproducer": "tests/models/standard_graph_gate.py"
+      },
+      "parent_runtime_source_snapshot": "phase8-format-contract-v1-source",
+      "native_http": {
+        "passed": true,
+        "gpuq_job": 25,
+        "scope": "synthetic native-dimension HTTP lifecycle",
+        "tp_size": 4,
+        "dcp_size": 2,
+        "ep_size": 4,
+        "cuda_graph_max_bs": 2,
+        "prompt_tokens": 81,
+        "page_size": 8,
+        "scheduler_modes": [
+          "serial",
+          "overlap"
+        ],
+        "pool_modes": [
+          "static",
+          "unified"
+        ],
+        "reports": [
+          "phase8-http-native-serial-v2/report.json",
+          "phase8-http-native-overlap-v2/report.json"
+        ]
+      }
+    },
+    "root_cause": {
+      "description": "Packed expert remote IDs used E; native alignment indexes counts with ID+1 and accepts -1 plus [0,E).",
+      "generic_fix": "Map nonlocal routes to -1 before alignment.",
+      "regression_fails_on_old_source": true,
+      "before_report": "phase8-expert-before-v1.log",
+      "tolerances_changed": false,
+      "native_library_modified": false
+    },
+    "released_model_validation": {
+      "gpuq_job": 12,
+      "status": "FP32 passed; BF16 pointwise full/chunk failed; later stages did not execute",
+      "fp32": {
+        "passed": true,
+        "reference_max_abs": 1.2874603271484375e-05,
+        "reference_relative_l2": 9.85346332527115e-07,
+        "full_chunk_max_abs": 1.2159347534179688e-05,
+        "threshold": 0.0001,
+        "report": "phase8-released-fp32-v1/report.json"
+      },
+      "bf16": {
+        "pointwise_passed": false,
+        "full_chunk_max_abs": 1.3515625,
+        "relative_l2": 0.09507237374782562,
+        "greedy_match": true,
+        "report": "phase8-released-bf16-v1/diagnostics.json"
+      }
+    },
+    "task_accuracy_accepted": false,
+    "performance_parity_accepted": false,
+    "diagnostic": {
+      "gpuq_job": 25,
+      "status": "precision controls and four native HTTP modes completed; complete GSM8K mini running",
+      "entry": "k3-phase8-functional-gate-v1.sh",
+      "entry_hashes": "phase8-functional-entry-v1.sha256",
+      "source_snapshot": "phase8-format-contract-v1-source",
+      "purpose": "supported BF16 accumulation/attention controls, native HTTP lifecycle, complete 1319-example paired GSM8K, then 11-prompt and warm decode suite",
+      "unchanged_tolerances": true,
+      "diagnostic_completion_is_not_numerical_acceptance": true,
+      "precision_report": "phase8-bf16-precision-v3/report.json",
+      "analysis_report": "phase8-bf16-precision-analysis-v1.json"
+    },
+    "fix_commits": [
+      "408e557",
+      "79f2cf1"
+    ],
+    "completed_diagnostics": [
+      {
+        "gpuq_job": 18,
+        "status": "173 components passed; ordinary graph and precision harness launch failures; no HTTP or task accuracy result"
+      },
+      {
+        "gpuq_job": 22,
+        "status": "ordinary dense and MoE graphs passed; experimental precision setting unsupported by cuBLAS; no HTTP or task accuracy result",
+        "precision_report": "phase8-bf16-precision-v2/report.json"
+      }
+    ],
+    "local_evidence_backup": {
+      "archive": "phase8-recovery-evidence-v5.tar.gz",
+      "sha256": "e0fb2e0f3b08a38e5bf73fae2ed7616052711fe13b7325fd5e062626e0700ed4",
+      "completed_job25_stages_included": true,
+      "live_stage_outputs_included": false
+    },
+    "configuration_cleanup": {
+      "commit": "fd6747bc8838427bf34874df3826927c830bee67",
+      "generic_payload": "ModelConfig.hf_config",
+      "removed": [
+        "ModelConfig.kimi",
+        "ModelConfig.is_kimi"
+      ],
+      "operator_arithmetic_changed": false,
+      "gpu_startup_confirmed": false,
+      "export_cpu_failure": "source Git identity assertion; 443 checks passed; complete Git-worktree rerun passed all 444 without changing the assertion",
+      "synthetic_checkpoint_equivalence": {
+        "passed": true,
+        "checkpoint_files": 6,
+        "all_files_byte_identical": true,
+        "gpu_executed": false,
+        "report": "phase8-http-config-compat-v1.json"
+      }
+    },
+    "precision_controls": [
+      {
+        "mode": "native-default",
+        "strict_pointwise_passed": false,
+        "max_abs": 1.3515625,
+        "relative_l2": 0.09507237374782562,
+        "greedy_match": true
+      },
+      {
+        "mode": "native-fp32-reduction",
+        "strict_pointwise_passed": false,
+        "max_abs": 1.2265625,
+        "relative_l2": 0.09581004828214645,
+        "greedy_match": true
+      },
+      {
+        "mode": "torch-default",
+        "strict_pointwise_passed": false,
+        "max_abs": 1.0703125,
+        "relative_l2": 0.0887925773859024,
+        "greedy_match": true
+      },
+      {
+        "mode": "torch-fp32-reduction",
+        "strict_pointwise_passed": false,
+        "max_abs": 1.384765625,
+        "relative_l2": 0.11010991781949997,
+        "greedy_match": true
+      }
+    ],
+    "runtime_commit": "d315aa6e68a19af740059a8da64b2b7049bcd9e9",
+    "validation_commit": "0faeee4a7676ae478a8293bac9bf150b6b670013",
+    "status": "native lifecycle passed; strict BF16 failed; complete paired task evaluation running"
+  },
+  "historical_candidates": [
+    {
+      "source_snapshot": "phase6-mla-stream-v1-source",
+      "base_commit": "3390cb5af0ec137e25b0e3e2ae1abe0297f85b37",
+      "gpuq_job": 185,
+      "cpu": {
+        "passed": 437,
+        "skipped": 163,
+        "expected_semantic_disagreements": 2,
+        "report": "phase6-mla-stream-full-cpu-v9.log"
+      },
+      "status": "Native components passed; actual Engine prefill comparison failed",
+      "changes": [
+        "Independent native MLA plan/workspace lifetimes",
+        "Explicit producer-stream binding at native MLA plan/run boundaries",
+        "Native KDA prefill alignment and explicit FP32-state backend selection",
+        "Generic paged hybrid graphs and opt-in cache overlap"
+      ],
+      "previous_candidate_failure": {
+        "job": 181,
+        "source_snapshot": "phase6-mla-plan-v2-source",
+        "components_passed": 114,
+        "engine_graph_comparison_passed": false,
+        "nonfinite_logits": false,
+        "mismatched_logits": 488,
+        "compared_logits": 2560,
+        "max_abs": 0.2421875,
+        "first_difference_phase": "prefill, before graph replay",
+        "report": "phase6-mla-plan-graphs-static-v7.log"
+      },
+      "task_accuracy_accepted": false,
+      "performance_parity_accepted": false,
+      "gpu": {
+        "components_passed": 115,
+        "components_report": "phase6-mla-stream-native-v8.log",
+        "engine_graph_comparison_passed": false,
+        "mismatched_logits": 488,
+        "compared_logits": 2560,
+        "max_abs": 0.2421875,
+        "first_difference_phase": "prefill, before graph replay",
+        "report": "phase6-mla-stream-graphs-static-v8.log",
+        "later_gates_executed": false
+      },
+      "diagnostic": {
+        "job": 187,
+        "status": "obsolete after server replacement; completed diagnostics are in phase8 recovery evidence",
+        "entry": "k3-prefill-isolation-gate-v2.sh",
+        "entry_hashes": "phase6-prefill-isolation-entry-v2.sha256",
+        "purpose": "Asynchronous mixed MLA geometries, first differing module boundary, independent MLA/KDA prefill isolation"
+      },
+      "stream_binding_root_cause_confirmed": false
+    }
+  ]
 }

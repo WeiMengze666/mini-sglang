@@ -8,7 +8,7 @@ A **lightweight yet high-performance** inference framework for Large Language Mo
 
 ---
 
-Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-project/sglang), designed to demystify the complexities of modern LLM serving systems. With a compact codebase of **~5,000 lines of Python**, it serves as both a capable inference engine and a transparent reference for researchers and developers.
+Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-project/sglang), designed to demystify the complexities of modern LLM serving systems. With a compact, modular Python codebase, it serves as both a capable inference engine and a transparent reference for researchers and developers.
 
 ## ✨ Key Features
 
@@ -26,10 +26,12 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
 
 Reusable KDA, gated MLA, LatentMoE, hybrid prefix checkpoints and an opt-in
 unified state/KV pool are implemented. The packed released K3 checkpoint loads
-and generates on 8×B300. DCP/EP, released-weight FP32 consistency and actual
-FP32/BF16 HTTP lifecycle checks have passed. Optional MXFP4/KDA/MLA kernels and
-grouped expert execution are available. Strict BF16 alignment, broader task
-accuracy and performance parity remain unaccepted. See the
+and generates on 8×B300. DCP/EP, released-weight FP32 consistency, hybrid graph
+replay and ordinary dense/MoE graph regressions have passed. Optional
+MXFP4/KDA/MLA kernels and grouped expert execution are available. Native synthetic
+HTTP lifecycle checks pass with serial/overlap scheduling and static/unified
+pools. Strict BF16 alignment, complete paired task accuracy and performance
+parity remain unresolved. See the
 [architecture, validation results and remaining gates](docs/kimi-k3.md).
 
 ## 🚀 Quick Start
