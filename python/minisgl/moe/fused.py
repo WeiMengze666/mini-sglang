@@ -37,8 +37,8 @@ def moe_align_block_size(
     size for matrix multiplication.
 
     Parameters:
-    - topk_ids: A tensor of shape [total_tokens, top_k] representing the
-        top-k expert indices for each token.
+    - topk_ids: A tensor of shape [total_tokens, top_k], with local expert IDs
+        in [0, num_experts). Use -1 for routes owned by another rank.
     - block_size: The block size used in block matrix multiplication.
     - num_experts: The total number of experts.
 
@@ -56,7 +56,7 @@ def moe_align_block_size(
 
     Example:
     Given topk_ids = [[2, 3, 4], [1, 2, 4], [1, 3, 4], [1, 2, 3]],
-    block_size = 4, and num_experts = 4:
+    block_size = 4, and num_experts = 5:
     - We initially have 12 tokens (after repeating 'top_k' times) and 4 experts,
         with each expert needing to process 3 tokens.
     - As block_size is 4, we pad 1 token for each expert.

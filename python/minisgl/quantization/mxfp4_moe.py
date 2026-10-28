@@ -158,14 +158,14 @@ class MXFP4Experts:
         count, topk = ids.shape
         experts = len(self._experts)
         local = ids - self._start
-        local = local.masked_fill((local < 0) | (local >= experts), experts).int().contiguous()
+        local = local.masked_fill((local < 0) | (local >= experts), -1).int().contiguous()
         bm, bn, bk = 16, 32, 64
         sorted_ids, expert_ids, length = moe_align_block_size(local, bm, experts)
         # At most one padded block tail per nonempty bucket; no host readback.
         routes = count * topk
         blocks = tr.cdiv(routes + min(experts + 1, routes) * (bm - 1), bm)
         activated = x.new_empty((routes, intermediate))
-        # The alignment primitive may omit the reserved remote-expert bucket.
+        # The alignment primitive assigns remote routes to expert -1, which both kernels skip.
         partial = torch.zeros((count, topk, hidden), device=x.device, dtype=torch.float32)
         _gate_up[(blocks, tr.cdiv(intermediate, bn))](
             x.contiguous(),

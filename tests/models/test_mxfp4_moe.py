@@ -32,16 +32,26 @@ def _projection(inputs, outputs, dtype):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("activation", ["silu", "situ"])
 @pytest.mark.parametrize(
-    "tokens,selection", [(1, "remote"), (1, "mixed"), (7, "mixed"), (65, "owned")]
+    "tokens,selection,experts,width",
+    [
+        (1, "remote", 4, 96),
+        (1, "mixed", 4, 96),
+        (7, "mixed", 4, 96),
+        (65, "owned", 4, 96),
+        (38, "mixed", 1, 128),
+        (38, "remote", 1, 128),
+        (65, "mixed", 1, 128),
+    ],
 )
-def test_grouped_packed_experts(dtype, activation, tokens, selection):
+def test_grouped_packed_experts(dtype, activation, tokens, selection, experts, width):
     from minisgl.quantization.mxfp4_moe import MXFP4Experts
 
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(103)
-    hidden, intermediate = 96, 96  # exercise the last 64-column K tile
+    hidden = intermediate = width  # 96 also exercises the last 64-column K tile
+    topk = min(3, experts + 1)
     items, dense = [], []
-    for index in range(4, 8):
+    for index in range(4, 4 + experts):
         w1, gate = _projection(hidden, intermediate, dtype)
         w3, up = _projection(hidden, intermediate, dtype)
         w2, down = _projection(intermediate, hidden, dtype)
@@ -49,12 +59,14 @@ def test_grouped_packed_experts(dtype, activation, tokens, selection):
         dense.append((gate, up, down))
     executor = MXFP4Experts(items, activation=activation, beta=4.0, linear_beta=25.0)
     x = torch.randn(tokens, hidden, device="cuda", dtype=dtype) * 0.12
-    ids = torch.randint(4 if selection == "owned" else 0, 8, (tokens, 3), device="cuda")
+    ids = torch.randint(
+        4 if selection == "owned" else 0, 4 + experts, (tokens, topk), device="cuda"
+    )
     if selection == "remote":
         ids.fill_(0)
     elif selection == "mixed":
-        ids[0] = torch.tensor([0, 4, 7], device="cuda")
-    weights = torch.randn(tokens, 3, device="cuda").softmax(-1) * 1.7
+        ids[0] = torch.tensor([0, 4, 7][:topk], device="cuda")
+    weights = torch.randn(tokens, topk, device="cuda").softmax(-1) * 1.7
     expected = torch.zeros(tokens, hidden, device="cuda", dtype=torch.float32)
     for index, (gate, up, down) in enumerate(dense, 4):
         rows, slots = torch.where(ids == index)
@@ -65,11 +77,12 @@ def test_grouped_packed_experts(dtype, activation, tokens, selection):
             F.linear(activated.float(), down.float()).to(dtype).float() * weights[rows, slots, None]
         )
         expected.index_add_(0, rows, values)
-    actual = executor.forward(x, weights, ids)
     tolerance = 3e-5 if dtype == torch.float32 else 0.015
-    torch.testing.assert_close(actual, expected, rtol=tolerance, atol=tolerance)
-    if selection == "remote":
-        assert actual.eq(0).all()
+    for _ in range(3):
+        actual = executor.forward(x, weights, ids)
+        torch.testing.assert_close(actual, expected, rtol=tolerance, atol=tolerance)
+        if selection == "remote":
+            assert actual.eq(0).all()
 
 
 @pytest.mark.parametrize("tokens", [2, 8])
