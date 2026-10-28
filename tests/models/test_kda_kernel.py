@@ -14,14 +14,18 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.mark.parametrize("tokens", [1, 7, 64])
+@pytest.mark.parametrize("tokens", [1, 7, 64, 99, 143, 149, 226])
 @pytest.mark.parametrize("bound", [-5.0, None])
-def test_flashinfer_kda_matches_fp32_state_and_continuation(tokens, bound):
+@pytest.mark.parametrize("unaligned_beta", [False, True])
+def test_flashinfer_kda_matches_fp32_state_and_continuation(tokens, bound, unaligned_beta):
     torch.manual_seed(103)
     q, k, v, forget = [
         torch.randn(tokens, 12, 128, device="cuda", dtype=torch.bfloat16) * 0.1 for _ in range(4)
     ]
-    beta = torch.randn(tokens, 12, device="cuda", dtype=torch.bfloat16)
+    storage = torch.randn(tokens + 1, 12, device="cuda", dtype=torch.bfloat16)
+    beta = storage[1:] if unaligned_beta else storage[:tokens]
+    assert beta.is_contiguous()
+    assert (beta.data_ptr() % 16 != 0) == unaligned_beta
     a = torch.randn(12, device="cuda") * 0.1
     dt = torch.randn(12 * 128, device="cuda") * 0.1
     # Deliberately nonsymmetric so an accidental K,V reinterpretation fails.

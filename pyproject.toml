@@ -43,6 +43,7 @@ dependencies = [
 native = [
     "flashinfer-python>=0.7.1,<0.8",
     "triton>=3.8,<4",
+    "nvidia-cutlass-dsl>=4.7,<5",
 ]
 dev = [
     "pytest>=6.0",

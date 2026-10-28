@@ -19,6 +19,11 @@ def recurrent_kda(q, k, v, forget, beta_logits, a_log, dt_bias, state, lower_bou
         return kda_recurrence(q, k, v, decay, beta_logits.float().sigmoid(), state)
     from flashinfer import recurrent_kda as run
 
+    # A contiguous request slice can still start at an unaligned byte offset.
+    # The FP32-state prefill backend requires a 16-byte-aligned beta base.
+    beta_logits = beta_logits.contiguous()
+    if beta_logits.data_ptr() % 16:
+        beta_logits = beta_logits.clone()
     # FlashInfer stores V,K while the portable recurrence stores K,V. Never
     # reinterpret the same square matrix without exchanging its semantic axes.
     initial = (
@@ -33,7 +38,8 @@ def recurrent_kda(q, k, v, forget, beta_logits, a_log, dt_bias, state, lower_bou
         k.contiguous().unsqueeze(0),
         v.contiguous().unsqueeze(0),
         forget.contiguous().unsqueeze(0),
-        beta_logits.contiguous().unsqueeze(0),
+        beta_logits.unsqueeze(0),
+        backend="cute-dsl",
         A_log=a_log,
         dt_bias=dt_bias,
         initial_state=initial,
