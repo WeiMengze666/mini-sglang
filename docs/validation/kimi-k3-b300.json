@@ -845,7 +845,7 @@
     "fix_commit": "408e557",
     "pending_runtime_changes": false,
     "server_boot_id": "8dcb0ae2-5b59-4693-85f4-f2d9e8ecbd8e",
-    "gpuq_job": 36,
+    "gpuq_job": 41,
     "cpu": {
       "passed": 444,
       "skipped": 183,
@@ -960,15 +960,15 @@
         "report": "phase8-released-bf16-v1/diagnostics.json"
       }
     },
-    "task_accuracy_accepted": false,
+    "task_accuracy_accepted": true,
     "performance_parity_accepted": false,
     "diagnostic": {
-      "gpuq_job": 33,
-      "status": "queued",
-      "entry": "k3-phase8-reference-resume-gate-v1.sh",
-      "entry_hashes": "phase8-reference-resume-entry-v1.sha256",
+      "gpuq_job": 36,
+      "status": "finished; all independent stages passed except HTTP startup budget",
+      "entry": "k3-phase8-lifecycle-profile-resume-v2.sh",
+      "entry_hashes": "phase8-lifecycle-profile-resume-entry-v2.sha256",
       "source_snapshot": "phase8-committed-v1-source",
-      "purpose": "resume full official GSM8K with unchanged saved mini result, then real checkpoint HTTP and original 11-prompt/profile suite",
+      "purpose": "current generic-config Engine suite, full paired task score, full-vocabulary comparison and baseline profile",
       "unchanged_tolerances": true,
       "diagnostic_completion_is_not_numerical_acceptance": true,
       "precision_report": "phase8-bf16-precision-v3/report.json",
@@ -990,9 +990,10 @@
       }
     ],
     "local_evidence_backup": {
-      "archive": "phase8-recovery-evidence-v7.tar.gz",
-      "sha256": "eaf32d0e0c71ba715aebbad49284c5f75feddd9a9aaa1ce1e8fac421994d292b",
-      "live_stage_outputs_included": false
+      "archive": "phase8-recovery-evidence-v8.tar.gz",
+      "sha256": "529a43c3866002769636d510a26cf14e15961ff808c855176d67235d2ad483cf",
+      "live_stage_outputs_included": false,
+      "verified_local_items": 26
     },
     "configuration_cleanup": {
       "commit": "fd6747bc8838427bf34874df3826927c830bee67",
@@ -1002,7 +1003,7 @@
         "ModelConfig.is_kimi"
       ],
       "operator_arithmetic_changed": false,
-      "gpu_startup_confirmed": false,
+      "gpu_startup_confirmed": true,
       "export_cpu_failure": "source Git identity assertion; 443 checks passed; complete Git-worktree rerun passed all 444 without changing the assertion",
       "synthetic_checkpoint_equivalence": {
         "passed": true,
@@ -1010,6 +1011,19 @@
         "all_files_byte_identical": true,
         "gpu_executed": false,
         "report": "phase8-http-config-compat-v1.json"
+      },
+      "gpu_confirmation": {
+        "gpuq_job": 36,
+        "source_snapshot": "phase8-committed-v1-source",
+        "report": "phase8-released-suite-v4/report.json",
+        "complete_prompts": 11,
+        "full_chunk_first_token_matches": 11,
+        "cuda_graph_batch_sizes": [
+          1,
+          2,
+          4,
+          8
+        ]
       }
     },
     "precision_controls": [
@@ -1044,7 +1058,7 @@
     ],
     "runtime_commit": "d315aa6e68a19af740059a8da64b2b7049bcd9e9",
     "validation_commit": "0faeee4a7676ae478a8293bac9bf150b6b670013",
-    "status": "mini full task run completed; official autotune stalled in job 33; released HTTP/profile and paired reference queued as job 36",
+    "status": "complete paired task scores and current generic-config Engine suite verified; four-mode HTTP cold-start retry and isolated matrix pilot queued",
     "source_commit": "8d28bd639925bc821825cbfd15b2fc2bd4146876",
     "completed_mini_task_run": {
       "gpuq_job": 25,
@@ -1064,7 +1078,7 @@
       "report": "phase8-gsm8k-mini-v3/report.json",
       "responses": "phase8-gsm8k-mini-v3/responses.jsonl",
       "archive_sha256": "1aeb267097d322e9e24ade990ea5a073c4e607d9690db486a0d16a5330ac65f2",
-      "paired_accuracy_accepted": false
+      "paired_accuracy_accepted": true
     },
     "official_reference_repair": {
       "failed_job": 25,
@@ -1099,6 +1113,130 @@
       "report": "phase8-official-autotune-failure-v1.json",
       "trace": "phase8-official-autotune-trace-v1.txt",
       "resume_entry": "phase8-lifecycle-profile-resume-entry-v2.sha256"
+    },
+    "task_accuracy_acceptance_scope": "complete fixed 1319-case task protocol; no observed score degradation; not strict pointwise/token alignment or statistical superiority",
+    "completed_paired_task_run": {
+      "gpuq_job": 36,
+      "complete": true,
+      "examples": 1319,
+      "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+      "mini_correct": 1282,
+      "official_correct": 1279,
+      "mini_accuracy": 0.9719484457922669,
+      "official_accuracy": 0.9696739954510993,
+      "delta_percentage_points": 0.22744503411675512,
+      "both_correct": 1277,
+      "both_wrong": 35,
+      "mini_only_correct": [
+        12,
+        73,
+        322,
+        926,
+        951
+      ],
+      "official_only_correct": [
+        187,
+        796
+      ],
+      "same_valid_answer": 1309,
+      "identical_token_ids": 745,
+      "mini_invalid": 1,
+      "official_invalid": 1,
+      "mini_truncated": 0,
+      "official_truncated": 0,
+      "official_evaluation_seconds": 455.79264966596384,
+      "official_public_runtime_options": {
+        "flashinfer_autotune_skip_ops": [
+          "flashinfer::trtllm_fp4_block_scale_moe"
+        ]
+      },
+      "comparison": "phase8-gsm8k-comparison-v5.json",
+      "archive": "phase8-gsm8k-paired-result-v1.tar.gz",
+      "archive_sha256": "7686c35cfa1b49d64792ff13a43d017110348142147c5c248c7075ab715e2a70"
+    },
+    "current_generation_comparison": {
+      "gpuq_job": 36,
+      "prompts": 11,
+      "raw_tokens": 64,
+      "first_token_matches": 11,
+      "through_stop_matches": 8,
+      "raw_exact_matches": 0,
+      "different_before_stop": [
+        "python",
+        "reasoning",
+        "explanation"
+      ],
+      "report": "phase8-released-comparison-v5.json",
+      "scope": "wording and full-vocabulary diagnostic, independent of task score"
+    },
+    "current_benchmarks": {
+      "gpuq_job": 36,
+      "batch_sizes": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "raw_tokens": 64,
+      "warmup": 1,
+      "repeats": 3,
+      "mini": {
+        "source": "phase8-committed-v1-source",
+        "boundary": "batch construction, forward/graph replay, argmax and token transfer; decode-only median excludes prefill and scheduler",
+        "decode_tokens_per_second": [
+          13.453539254846232,
+          24.7488073216922,
+          47.98852152751929,
+          91.67794707691985
+        ],
+        "all_duplicate_and_singleton_through_stop_matches": true,
+        "report": "phase8-released-suite-v4/benchmark.json"
+      },
+      "official": {
+        "boundary": "synchronous Engine.generate, including prefill, decode, scheduler and IPC, without logprobs",
+        "generation_tokens_per_second": [
+          83.53138940078144,
+          166.6267370046308,
+          333.37752146553845,
+          616.5996791247521
+        ],
+        "public_autotune_skip_ops": [
+          "flashinfer::trtllm_fp4_block_scale_moe"
+        ],
+        "report": "phase8-released-official-suite-v5/benchmark.json"
+      },
+      "boundaries_identical": false,
+      "performance_parity_established": false,
+      "profile_decode_moe_kernel_percent": 26.527620905006074,
+      "profile_report": "phase8-mini-profile-split-v1.json"
+    },
+    "released_http_retry": {
+      "failed_job": 36,
+      "failure": "180-second startup readiness expired during first graph capture after weights loaded",
+      "http_request_assertions_reached": false,
+      "retry_job": 41,
+      "startup_wait_seconds": 600,
+      "request_timeout_seconds": 60,
+      "first_use_request_timeout_seconds": 180,
+      "correctness_assertions_or_workload_changed": false,
+      "baseline_source": "phase8-committed-v1-source",
+      "report": "phase8-released-http-cold-start-policy-v1.json",
+      "accepted": false
+    },
+    "optimization_trial": {
+      "gpuq_job": 41,
+      "status": "queued",
+      "source_snapshot": "phase9-dot-scaled-v1-source",
+      "manifest_sha256": "9f7676e8d036ad186eb37e3b7d67e13746db1596df25614d80c8d05480f8798e",
+      "entry": "k3-phase9-profiled-gate-v1.sh",
+      "entry_hashes": "phase9-profiled-entry-v1.sha256",
+      "runtime_files_changed": 2,
+      "production_adopted": false,
+      "cpu_preflight_passed": true,
+      "gpu_tests_collected": 71,
+      "gpu_tests_executed": false,
+      "same_job_control": true,
+      "adoption_policy": "baseline HTTP four modes, unchanged module tolerances, at least 5 percent B1 and geometric-mean decode speedup with no batch regression over 5 percent, all 1319 cases with at least 1282 correct and no extra invalid/truncated responses, then candidate HTTP four modes"
     }
   },
   "historical_candidates": [

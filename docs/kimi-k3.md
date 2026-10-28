@@ -11,9 +11,10 @@ The committed runtime snapshot is `phase8-committed-v1-source`, commit `8d28bd6`
 manifest SHA256 `9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373`.
 Its complete CPU/Gloo regression passed in `phase8-full-cpu-v9.log` from a clean
 Git worktree. It replaces the model-specific config payload with `hf_config`
-without changing operator math. Earlier GPU rows belong to its parent runtime, including
-`phase8-format-contract-v1-source`; the config refactor still needs GPU startup
-confirmation. Validation followed the environment rebuild on 2026-10-28. Queue IDs
+without changing operator math. Earlier GPU rows belong to its parent runtime,
+including `phase8-format-contract-v1-source`. Job 36 confirms the refactor on
+released weights with graph capture, all 11 prompts and warm batch 1/2/4/8.
+Validation followed the environment rebuild on 2026-10-28. Queue IDs
 below belong to boot `8dcb0ae2-5b59-4693-85f4-f2d9e8ecbd8e`; older queue IDs are
 recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 
@@ -27,13 +28,15 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 | Released BF16 full/chunked prefill | **Failed**: max error 1.3515625, relative L2 0.09507; same first greedy token |
 | Native synthetic HTTP lifecycle | Job 25: serial/overlap × static/unified passed; TP4/DCP2/EP4, native dimensions and graphs enabled |
 | Complete mini GSM8K | Job 25: 1282/1319 correct (97.19%), one invalid answer counted wrong, zero length truncation |
-| Complete paired GSM8K | Job 25 failed in JIT compilation; job 33 stalled in autotune; job 36 resumes all 1319 official cases; comparison pending |
+| Current generic-config Engine | Job 36: 11 full/chunked prompts, 64-token generations and warm batch 1/2/4/8 completed; all first tokens match across full/chunked inputs |
+| Complete paired GSM8K | Job 36: mini 1282/1319 (97.19%), official 1279/1319 (96.97%); identical saved cases and generation protocol |
+| Released-checkpoint HTTP | Job 36 hit the 180-second startup budget during first graph capture; no HTTP assertion reached; four modes await job 41 |
 | Performance parity with full SGLang | Not established |
 
 The generic runtime is committed as `d315aa6`, configuration cleanup as
 `fd6747b`, and reproducible evaluation tools as `0faeee4`. Configuration cleanup
 also produces byte-identical synthetic checkpoint files to the GPU-tested
-fixture. Its actual GPU startup remains a separate confirmation.
+fixture. Job 36 confirms startup and execution of the committed generic payload.
 
 The earlier Engine mismatch was caused by remote expert routes using E where
 the native alignment kernel accepts -1 or [0,E). Both packed execution and the
@@ -55,25 +58,35 @@ The complete mini task run generated 141,845 tokens in 3,767.77 evaluation
 seconds, excluding loading. This includes prefill, decode, CPU transfer and
 state reset, so it is not a fixed-batch decode microbenchmark. Every case ID,
 gold answer, response flag and input hash was checked before archiving the full
-run. It establishes a one-sided task score, not agreement with SGLang.
+run. Job 36 completed the official arm: 1279/1319 correct, one invalid response
+and no truncation. Mini scored three more examples on this fixed protocol;
+1309 valid final answers and 745 complete raw token sequences matched. These
+counts establish neither strict token alignment nor statistical superiority.
 
 Official initialization then failed while JIT-compiling TRTLLM MoE: the same
 `SfLayoutDecl.h` was included through two paths and produced duplicate
-definitions. No official task result or later profile was produced. The separate
+definitions. Job 25 produced no official task result or later profile. The separate
 reference environment now includes matching `flashinfer-jit-cache==0.7.1+cu130`
 and its declared architecture providers. Its SM103a TRTLLM module loads on CPU;
 all nine core package versions and RECORD hashes are unchanged. SGLang source,
 FlashInfer core and mini's environment were not patched. Job 33 crossed the
-previous compilation failure, then made no progress for 549 seconds during TRTLLM MoE tuning. All GPUs were idle; an owned rank-zero
+previous compilation failure, then made no progress for 549 seconds during
+TRTLLM MoE tuning. All GPUs were idle; an owned rank-zero
 faulthandler trace locates its wait in the autotuner's distributed timing
 `all_reduce`. The precise root cause remains unestablished. Core dumps were
 disabled before manually aborting the owned process; SGLang cleaned its peers.
 
-Job 36 first runs real-checkpoint HTTP and mini profiling, then resumes the
-complete official arm. The public `flashinfer_autotune_skip_ops` option skips
+Job 36 completed both diagnostic suites, profiling and the full official task
+arm. The public `flashinfer_autotune_skip_ops` option skips
 only `flashinfer::trtllm_fp4_block_scale_moe`, which uses the official heuristic
 fallback. This reference policy is recorded explicitly and cannot establish
 default-tuned SGLang performance. Neither source nor precision was patched.
+
+Released HTTP startup expired during its first graph capture after a 128-second
+weight load. No HTTP correctness assertion was reached. Job 41 gives this cold
+startup 600 seconds while preserving the 60-second request timeout, first-use
+180-second request timeout, all 8-token assertions and the saved workload.
+Serial/overlap scheduling and static/unified storage remain separate gates.
 
 ## Framework structure
 
@@ -219,12 +232,36 @@ and retains invalid/truncated responses. `compare_accuracy.py` rejects partial
 runs, duplicate IDs, changed gold/case hashes or mismatched generation protocols.
 
 The 11-prompt full-vocabulary/generation suite is separate from GSM8K. Warm mini
-performance uses 64 raw output tokens, three repeats and batch 1/2/4/8; its boundary includes model forward, greedy selection and token transfer,
+performance uses 64 raw output tokens, three repeats and batch 1/2/4/8; its
+boundary includes model forward, greedy selection and token transfer,
 excluding loading and first-use compilation. The optional official
 `--benchmark-batch-sizes 1 2 4 8` gate records the same fixed-length workload
 through synchronous `Engine.generate`, including prefill, scheduler and IPC,
 without logprobs. These timing boundaries differ and are reported separately.
 Raw and stopped token agreement are also reported separately.
+
+Job 36 measured the following warm baselines. The columns have different timing
+boundaries; they do not establish a directly comparable decode speed ratio.
+
+| Batch | Mini decode tokens/s | Official whole-generation tokens/s |
+| --- | ---: | ---: |
+| 1 | 13.45 | 83.53 |
+| 2 | 24.75 | 166.63 |
+| 4 | 47.99 | 333.38 |
+| 8 | 91.68 | 616.60 |
+
+Mini duplicate requests and the singleton reference matched through the stop
+in every batch. Across the two engines, all 11 first tokens matched and eight
+generations matched through the stop. Python, reasoning and explanation wording
+differed; raw 64-token sequences matched on none of the prompts.
+
+The trace separates prefill from graph replay. MoE gate/up and down account for
+26.53% of decode kernel time. Job 41 evaluates an isolated shared MXFP4 matrix
+helper after the four baseline HTTP modes. It uses a same-job control and keeps
+the existing module tolerances, all 1319 task examples and all candidate HTTP
+modes. Adoption requires at least 5% batch-1 and geometric-mean decode speedup,
+no batch regression over 5%, and no loss from 1282 correct answers or additional
+invalid/truncated responses. The candidate is not adopted in production.
 
 Historical job 166 measured 6.64/13.17/26.38/52.77 tokens/s for paged eager decode
 at batch 1/2/4/8, versus 13.44/22.44/43.48/83.49 with graphs. All 11 diagnostic
