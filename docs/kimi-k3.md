@@ -30,7 +30,8 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 | Complete mini GSM8K | Job 25: 1282/1319 correct (97.19%), one invalid answer counted wrong, zero length truncation |
 | Current generic-config Engine | Job 36: 11 full/chunked prompts, 64-token generations and warm batch 1/2/4/8 completed; all first tokens match across full/chunked inputs |
 | Complete paired GSM8K | Job 36: mini 1282/1319 (97.19%), official 1279/1319 (96.97%); identical saved cases and generation protocol |
-| Released-checkpoint HTTP | Job 36 hit the 180-second startup budget during first graph capture; no HTTP assertion reached; four modes await job 41 |
+| Released-checkpoint HTTP | Job 41: serial/overlap × static/unified all passed on the committed runtime; prefix reuse, fork, concurrency, cancellation, slot reuse and streaming budgets verified |
+| MXFP4 matrix optimization trial | Job 41: rejected; 1280/1319 versus the required baseline 1282/1319, despite 12.75% geometric-mean decode speedup; no runtime change adopted |
 | Performance parity with full SGLang | Not established |
 
 The generic runtime is committed as `d315aa6`, configuration cleanup as
@@ -82,11 +83,14 @@ only `flashinfer::trtllm_fp4_block_scale_moe`, which uses the official heuristic
 fallback. This reference policy is recorded explicitly and cannot establish
 default-tuned SGLang performance. Neither source nor precision was patched.
 
-Released HTTP startup expired during its first graph capture after a 128-second
-weight load. No HTTP correctness assertion was reached. Job 41 gives this cold
-startup 600 seconds while preserving the 60-second request timeout, first-use
-180-second request timeout, all 8-token assertions and the saved workload.
-Serial/overlap scheduling and static/unified storage remain separate gates.
+Job 36 expired its 180-second HTTP startup budget during first graph capture
+after a 128-second weight load; no request assertion was reached. Job 41 passed
+all four serial/overlap × static/unified released-checkpoint modes with a
+600-second cold-start wait. The 60-second request timeout, first-use 180-second
+timeout, all 8-token assertions and saved 468-token workload were unchanged.
+Prefix repeat/fork, four concurrent clients, cancellation, slot reuse, zero and
+invalid budgets, and streaming budgets 1/2/5 passed. All four modes generated
+`甲乙丙丁戊己庚辛壬` for the shared 8-token check.
 
 ## Framework structure
 
@@ -256,12 +260,30 @@ generations matched through the stop. Python, reasoning and explanation wording
 differed; raw 64-token sequences matched on none of the prompts.
 
 The trace separates prefill from graph replay. MoE gate/up and down account for
-26.53% of decode kernel time. Job 41 evaluates an isolated shared MXFP4 matrix
-helper after the four baseline HTTP modes. It uses a same-job control and keeps
-the existing module tolerances, all 1319 task examples and all candidate HTTP
-modes. Adoption requires at least 5% batch-1 and geometric-mean decode speedup,
-no batch regression over 5%, and no loss from 1282 correct answers or additional
-invalid/truncated responses. The candidate is not adopted in production.
+26.53% of baseline decode kernel time. Job 41 tests one shared MXFP4 matrix helper
+used by dense and grouped expert layers; it adds no model-specific branch. Its
+71 module checks passed at unchanged tolerances. Same-job batch 1/2/4/8 decode
+measured 15.22/27.73/54.09/103.82 tokens/s, improving 13.06/11.93/12.74/13.27%
+(12.75% geometric mean). All 11 first tokens matched the baseline; eight
+continuations matched through stop. BF16 bitwise equivalence is not claimed.
+
+The complete candidate task run finished with 1280/1319 correct (97.04%), no
+invalid answers and no truncation. Relative to the production baseline, four
+examples changed from correct to wrong (73/322/951/1288) and two from wrong to
+correct (425/675). The predeclared minimum was 1282 correct, so the trial was
+rejected. This is a failed acceptance rule, not evidence of statistical
+degradation. The shared matrix helper and its test changes were not merged.
+Production throughput remains the baseline reported above.
+
+Candidate HTTP and the additional strict FP32 checkpoint gate were not run,
+because complete task acceptance failed first. No follow-up GPU task was
+submitted. The isolated candidate passed 444 CPU/Gloo checks (188 skips and two
+existing expected disagreements) and 71 module checks, which do not override
+the full-task gate. Its FP32/FP16 fallback keeps the mathematical expression,
+but CPU compilation produced different instruction layouts; no binary
+equivalence or additional whole-checkpoint FP32 result is claimed. The saved
+full responses, comparisons, source hashes and rejection record preserve the
+experiment for further analysis without changing the accepted runtime.
 
 Historical job 166 measured 6.64/13.17/26.38/52.77 tokens/s for paged eager decode
 at batch 1/2/4/8, versus 13.44/22.44/43.48/83.49 with graphs. All 11 diagnostic

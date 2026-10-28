@@ -1,5 +1,5 @@
 {
-  "scope": "staged validation, not full accuracy or throughput acceptance",
+  "scope": "versioned validation evidence; current fixed-protocol task scores accepted; strict BF16 numerical agreement and full SGLang performance parity remain unaccepted",
   "hardware": "8 x NVIDIA B300",
   "official_sglang": "baa9befa381511cd4d56f83980951e5a45fffc6d",
   "environment": {
@@ -990,10 +990,10 @@
       }
     ],
     "local_evidence_backup": {
-      "archive": "phase8-recovery-evidence-v8.tar.gz",
-      "sha256": "529a43c3866002769636d510a26cf14e15961ff808c855176d67235d2ad483cf",
+      "archive": "phase9-rejected-task-result-v1.tar.gz",
+      "sha256": "d0d0749e2f54ba2ca1cdbbcbb832db5f09945de70067dd0e631cc13888f33478",
       "live_stage_outputs_included": false,
-      "verified_local_items": 26
+      "verified_local_items": 30
     },
     "configuration_cleanup": {
       "commit": "fd6747bc8838427bf34874df3826927c830bee67",
@@ -1058,7 +1058,7 @@
     ],
     "runtime_commit": "d315aa6e68a19af740059a8da64b2b7049bcd9e9",
     "validation_commit": "0faeee4a7676ae478a8293bac9bf150b6b670013",
-    "status": "complete paired task scores and current generic-config Engine suite verified; four-mode HTTP cold-start retry and isolated matrix pilot queued",
+    "status": "current generic runtime passed paired full-task scores, Engine and all four released HTTP modes; matrix optimization rejected by predeclared complete-task gate",
     "source_commit": "8d28bd639925bc821825cbfd15b2fc2bd4146876",
     "completed_mini_task_run": {
       "gpuq_job": 25,
@@ -1221,11 +1221,26 @@
       "correctness_assertions_or_workload_changed": false,
       "baseline_source": "phase8-committed-v1-source",
       "report": "phase8-released-http-cold-start-policy-v1.json",
-      "accepted": false
+      "accepted": true,
+      "completed_job": 41,
+      "scheduler_modes": [
+        "serial",
+        "overlap"
+      ],
+      "pool_modes": [
+        "static",
+        "unified"
+      ],
+      "reports": [
+        "phase8-released-http-committed-serial-v2/report.json",
+        "phase8-released-http-committed-overlap-v2/report.json"
+      ],
+      "prompt_tokens": 468,
+      "output_tokens": 8
     },
     "optimization_trial": {
       "gpuq_job": 41,
-      "status": "queued",
+      "status": "rejected: complete task score below predeclared baseline minimum",
       "source_snapshot": "phase9-dot-scaled-v1-source",
       "manifest_sha256": "9f7676e8d036ad186eb37e3b7d67e13746db1596df25614d80c8d05480f8798e",
       "entry": "k3-phase9-profiled-gate-v1.sh",
@@ -1234,9 +1249,82 @@
       "production_adopted": false,
       "cpu_preflight_passed": true,
       "gpu_tests_collected": 71,
-      "gpu_tests_executed": false,
+      "gpu_tests_executed": true,
       "same_job_control": true,
-      "adoption_policy": "baseline HTTP four modes, unchanged module tolerances, at least 5 percent B1 and geometric-mean decode speedup with no batch regression over 5 percent, all 1319 cases with at least 1282 correct and no extra invalid/truncated responses, then candidate HTTP four modes"
+      "adoption_policy": "baseline HTTP four modes, unchanged module tolerances, at least 5 percent B1 and geometric-mean decode speedup with no batch regression over 5 percent, all 1319 cases with at least 1282 correct and no extra invalid/truncated responses, then candidate HTTP four modes, plus strict whole-checkpoint FP32 against the saved independent reference and full/chunk at unchanged rtol/atol 1e-4",
+      "gpu_tests_passed": 71,
+      "pilot_passed": true,
+      "decode_speedups": [
+        1.1305882256240078,
+        1.1193343736336883,
+        1.127440730266789,
+        1.132669652414469
+      ],
+      "geometric_mean_speedup": 1.127496807761075,
+      "decode_tokens_per_second": [
+        15.220040866244927,
+        27.725753472494297,
+        54.09072830047525,
+        103.82100345561746
+      ],
+      "first_token_matches": 11,
+      "through_stop_matches": 8,
+      "bf16_bitwise_equivalence_claimed": false,
+      "strict_fp32_additional_gate_required": true,
+      "pilot_report": "phase9-dot-scaled-pilot-v1.json",
+      "cpu_regression": {
+        "passed": 444,
+        "skipped": 188,
+        "expected_semantic_disagreements": 2,
+        "seconds": 32.76,
+        "source": "phase9-production-cpu-v1-source",
+        "parent_commit": "c0df29411097c9459ad334a5cd21057e02259c2a",
+        "report": "phase9-production-full-cpu-v2.log",
+        "report_sha256": "6926ff4d43924df67f886244b8261c220e7f618002462ef2baaa03541884cc33",
+        "initial_environment_failure": "virtualenv PATH omitted ninja; 17 failures retained in v1; unchanged source and assertions passed after PATH correction"
+      },
+      "gpuq_exit": 1,
+      "complete_task_run": {
+        "complete": true,
+        "examples": 1319,
+        "correct": 1280,
+        "accuracy": 0.9704321455648218,
+        "invalid_answers": 0,
+        "truncated": 0,
+        "generated_tokens": 142618,
+        "evaluation_seconds": 2796.9690502419835,
+        "required_minimum_correct": 1282,
+        "accepted": false,
+        "baseline_only_correct": [
+          73,
+          322,
+          951,
+          1288
+        ],
+        "candidate_only_correct": [
+          425,
+          675
+        ],
+        "report": "phase9-dot-scaled-gsm8k-v1/report.json",
+        "comparison": "phase9-dot-scaled-accuracy-v1.json",
+        "official_comparison": "phase9-dot-scaled-official-accuracy-v1.json"
+      },
+      "candidate_http_executed": false,
+      "strict_fp32_additional_gate_executed": false,
+      "followup_gpu_job_submitted": false,
+      "rejection_report": "phase9-dot-scaled-rejection-v1.json",
+      "statistical_degradation_claimed": false,
+      "result_archive": {
+        "name": "phase9-rejected-task-result-v1.tar.gz",
+        "sha256": "d0d0749e2f54ba2ca1cdbbcbb832db5f09945de70067dd0e631cc13888f33478",
+        "all_saved_responses_rescored_remotely_and_locally": true
+      }
+    },
+    "production_runtime_identity": {
+      "reference_commit": "8d28bd639925bc821825cbfd15b2fc2bd4146876",
+      "tracked_runtime_files": 136,
+      "all_files_byte_identical": true,
+      "rejected_candidate_applied": false
     }
   },
   "historical_candidates": [
