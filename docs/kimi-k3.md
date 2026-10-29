@@ -313,6 +313,19 @@ in every batch. The candidate was rejected and its complete GSM8K run stopped;
 partial task results are not accuracy acceptance. Exact-output MXFP4 bit-decoding
 and larger expert tiles also failed paired performance tests and were rejected.
 
+Job 92 added a generic fixed-layout causal MLA prefill kernel. Its 196 GPU
+component checks and four dense/MoE/hybrid graph gates passed. The complete
+93-layer BF16 model again matched exactly for 13+14 tokens, and FP32 retained
+the original tolerance. Splitting the same prompt into 13+13+1 tokens still
+failed, with a maximum logit difference of 0.46875. This candidate was not adopted.
+
+All eight ranks of the subsequent operator trace (job 96) first diverged at
+layer 0's attention output all-reduce: identical recorded inputs produced a
+maximum BF16 difference of 0.00048828125 on the singleton tail. The preceding
+two 13-token chunks agreed. This localizes that failure to the collective;
+the reduction mechanism and an FP32 accumulation remedy still require the
+independent collective control and complete-model acceptance.
+
 Job 86 additionally ran the pinned official native `one_batch.py` benchmark
 with the same saved 27-token input, 64 raw output tokens and three repeats.
 Median batch 1/2/4/8 decode throughput was 101.84/199.63/395.19/718.34 tokens/s.

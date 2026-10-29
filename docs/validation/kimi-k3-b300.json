@@ -1564,5 +1564,109 @@
     "sglang_default_tuned": false,
     "performance_parity_established": false,
     "report": "phase10-normalization-official-one-batch-v1.jsonl"
+  },
+  "phase10_singleton_tail_diagnostic": {
+    "gpuq_jobs": [
+      89,
+      92,
+      96
+    ],
+    "plain_accumulation_trial": {
+      "gpuq_job": 89,
+      "gpu_components_passed": 182,
+      "gpu_components_failed": 5,
+      "accepted": false,
+      "reason": "Original FP64-oracle tolerances failed; Kahan accumulation was restored."
+    },
+    "fixed_layout_mla_trial": {
+      "gpuq_job": 92,
+      "source_manifest_sha256": "a7a8ff4ac8ac6762a687f850fc759820c07f5055f57593100c9c29a3c94dcc2f",
+      "gpu_components_passed": 196,
+      "generic_graph_gates_passed": 4,
+      "bf16_93_layer_full_vs_13_plus_14_max_abs": 0.0,
+      "fp32_93_layer_max_abs": 1.2159347534179688e-05,
+      "bf16_13_plus_13_plus_1_max_abs": 0.46875,
+      "first_case_pointwise_violations": 6173,
+      "vocab_size": 163840,
+      "expanded_suite_stopped_at_first_case": true,
+      "accepted": false
+    },
+    "operator_trace": {
+      "gpuq_job": 96,
+      "layers_traced": [
+        5,
+        32
+      ],
+      "prompt_tokens": 27,
+      "chunks": [
+        13,
+        13,
+        1
+      ],
+      "all_rank_first_difference": [
+        {
+          "rank": 0,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        },
+        {
+          "rank": 1,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        },
+        {
+          "rank": 2,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        },
+        {
+          "rank": 3,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        },
+        {
+          "rank": 4,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        },
+        {
+          "rank": 5,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        },
+        {
+          "rank": 6,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        },
+        {
+          "rank": 7,
+          "first_changed_operator": "layer.0.self_attn.finish",
+          "inputs_changed": false,
+          "output_max_abs": 0.00048828125
+        }
+      ],
+      "scope": "The observed first divergence is at the TP collective; NCCL reduction strategy or rounding is not yet independently established."
+    },
+    "same_runtime_consistency_established": false,
+    "strict_sglang_numerical_alignment_established": false,
+    "performance_parity_established": false,
+    "runtime_change_adopted": false,
+    "evidence_archive": {
+      "name": "phase10-through-job96-compact-v1.tar.gz",
+      "bytes": 25789950,
+      "sha256": "0a54ed2255a9c40f3944729ef1b40517dbef1a6f25d0942e2d8be78fb14e2f88",
+      "verified_remote_and_local": true,
+      "included_files_verified": 2638,
+      "omitted_files": 17,
+      "omission_scope": "Large raw operator captures and files remain on the server and are listed in compact-inventory.json."
+    }
   }
 }
