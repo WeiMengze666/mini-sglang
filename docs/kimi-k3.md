@@ -308,6 +308,28 @@ unchanged paired validation.
 
 ## Current BF16 investigation
 
+Job 135 found an unresolved reference-calibration issue. The same 27 input
+tokens in the pinned official runner, with one versus sixteen warmup steps,
+changed 161,192 of 163,840 first-position logits. Maximum error was 1.30859375;
+79,396 entries exceeded the original `rtol=0.05, atol=0.1`, while the greedy token
+was unchanged. Historical cross-engine differences remain recorded below, but
+they do not isolate mini's numerical error until the reference controls pass.
+
+All three mini arms in that job stopped before model loading: diagnostic
+imports initialized CUDA before the Engine selected its device. The startup
+assertion remains intact. Repaired diagnostics defer vendor imports and passed
+15 CPU checks, including CUDA-visible import guards, stored-callable snapshots,
+fresh-state initialization, independent warmup length and negative controls.
+Job 143 tests the repaired collectors and the actual generic API integration.
+It also checks selected initial states on all eight ranks and uses the pool's
+normal `clear_slots` API to establish cold benchmark requests. These prepared
+controls are not GPU numerical, full-task or performance acceptance.
+
+The complete job-135 evidence archive contains 1,201 verified files, including
+eight-rank official captures, failed controls and repaired CPU proofs. Frozen
+job-143 inputs are included; its live outputs are excluded. The ledger records
+the archive hash and preserves all earlier failures.
+
 Frozen operator traces isolate batch-dependent rounding in dense projections,
 absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels
 and a sequential FP32 recurrence eliminated full/chunk logit differences for one

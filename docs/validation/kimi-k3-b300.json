@@ -2028,5 +2028,71 @@
     },
     "runtime_adopted": false,
     "full_task_accepted": false
+  },
+  "phase10_reference_calibration_135": {
+    "scope": "historical official reference calibration and repaired diagnostic CPU proofs; no runtime adoption",
+    "job": 135,
+    "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "entry_sha256": "8e9ea8683744586b503d4ed7b7ef4ff642f83ec52771f7b1c2c542fddf8f356e",
+    "official_capture": {
+      "ranks": 8,
+      "prompt_tokens": 27,
+      "measured_steps": 1,
+      "completed": true
+    },
+    "historical_reference_control": {
+      "previous_job": 113,
+      "same_input_tokens": true,
+      "warmup_steps": [
+        1,
+        16
+      ],
+      "bitwise_passed": false,
+      "changed": 161192,
+      "vocab_size": 163840,
+      "max_abs": 1.30859375,
+      "relative_l2": 0.10979373753070831,
+      "rtol": 0.05,
+      "atol": 0.1,
+      "pointwise_violations": 79396,
+      "greedy_tokens": [
+        33845,
+        33845
+      ],
+      "interpretation": "Reference-control calibration remains unresolved. Historical cross-engine error counts cannot by themselves isolate mini implementation error."
+    },
+    "mini_arms": {
+      "mini": "failed before model loading: CUDA initialized by diagnostic imports",
+      "mini_tiny": "failed before model loading: same startup invariant",
+      "public_model": "failed before model loading: same startup invariant",
+      "numerical_result": "not run"
+    },
+    "repaired_cpu_proofs": {
+      "cases": 15,
+      "passed": 15,
+      "gpu_visible_import_guards": true,
+      "old_import_negative_controls": true,
+      "stored_callable_and_native_capture": true,
+      "fresh_request_state_and_warmup_isolation": true,
+      "gpu_numerical_accepted": false
+    },
+    "next_submission": {
+      "job": 143,
+      "submitted_utc": "2026-10-29T21:52:52.885677+00:00",
+      "entry_sha256": "85b4b6b4b12c44bd9b0e16c31a50e509e9c7c151a68651c40a561ecf75604a30",
+      "files": 4045,
+      "scope": "prepared cold-reference controls and actual generic-source numerical validation; no acceptance result in this entry"
+    },
+    "verified_archive": {
+      "name": "phase10-through-job135-compact-v1.tar.gz",
+      "bytes": 23348935,
+      "sha256": "fc8767cc3eadd2c008b573dde94cf09a86aba530306327376aeebad2b0252cdc",
+      "included_files_verified": 1201,
+      "omitted_files": 0,
+      "verified_remote_and_local": true,
+      "live_job143_outputs_included": false
+    },
+    "runtime_adopted": false,
+    "full_task_accepted": false
   }
 }
