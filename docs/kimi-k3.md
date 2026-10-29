@@ -333,8 +333,32 @@ All eight ranks of the subsequent operator trace (job 96) first diverged at
 layer 0's attention output all-reduce: identical recorded inputs produced a
 maximum BF16 difference of 0.00048828125 on the singleton tail. The preceding
 two 13-token chunks agreed. This localizes that failure to the collective;
-the reduction mechanism and an FP32 accumulation remedy still require the
-independent collective control and complete-model acceptance.
+the subsequent controls below distinguish low-precision and FP32 reductions.
+
+Jobs 103 and 109 independently reproduced shape-dependent NCCL accumulation:
+six of twelve BF16 comparisons changed, while FP32 accumulation followed by
+BF16 rounding matched in all twelve. FP32 NCCL sums themselves still differed
+by up to 1.1920928955078125e-7. Promoting only BF16 reductions therefore did
+not fix the complete model. Its first remaining operator difference occurred
+after the FP32 routed/shared-expert collective on all eight ranks.
+
+A generic optional FlashInfer FP32 one-shot collective, composed with the
+fixed-layout arithmetic candidate, passed all eleven released-model full versus
+chunked prefill cases in job 109: every full-vocabulary logit matched exactly,
+and every first greedy token matched. This includes the 13+13+1 singleton tail
+and prompts through 1,950 tokens. The actual communicator factory, CUDA Graph
+replay and teardown also passed; 24 primitive full/chunk comparisons matched.
+These results belong to frozen manifest
+8482dad719376d00b211deddc7b4f3099af06dcb67cb5b21b69a20c9022fa27f.
+They do not yet establish independent BF16 alignment, complete task quality or
+whole-model performance, and the candidate has not been adopted.
+
+The attempted official FlashInfer BF16 reference produced no capture: its
+workers reported an unavailable MXFP4 × BF16 SiTU kernel, although the benchmark
+parent returned zero. Artifact inventory checks now reject this false success.
+The official Marlin backend's BF16/SiTU source contract is being evaluated as a
+separate reference. Existing official default-precision timings remain MXFP8
+activation measurements.
 
 Job 86 additionally ran the pinned official native `one_batch.py` benchmark
 with the same saved 27-token input, 64 raw output tokens and three repeats.
@@ -346,7 +370,8 @@ default-tuned SGLang nor proof of identical measurement boundaries. Strict BF16
 alignment and performance parity remain open.
 
 Use `checkpoint_suite.py --strict-chunked-prefill` to assert full-vocabulary
-consistency for every prompt before performance measurements. The released
+consistency and exact first greedy-token equality for every prompt before
+performance measurements. The released
 checkpoint gate also accepts `--chunk-size` and prepares attention metadata for
 each chunk, including singleton tails. Both retain the original tolerances.
 

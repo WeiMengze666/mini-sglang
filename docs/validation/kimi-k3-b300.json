@@ -1694,5 +1694,93 @@
       "omitted_files": 17,
       "omission_scope": "Large raw operator captures and files remain on the server and are listed in compact-inventory.json."
     }
+  },
+  "phase10_stable_collective_trial": {
+    "gpuq_jobs": [
+      103,
+      109
+    ],
+    "candidate_source": "phase10-promoted-native-v1-source",
+    "candidate_manifest_sha256": "8482dad719376d00b211deddc7b4f3099af06dcb67cb5b21b69a20c9022fa27f",
+    "native_cpu": {
+      "passed": 467,
+      "skipped": 263,
+      "xfailed": 2
+    },
+    "native_collective": {
+      "completed_with_exit_code": 0,
+      "full_chunk_comparisons": 24,
+      "changed_comparisons": 0,
+      "graph_microbenchmark_speedup_range": [
+        1.6405075491748577,
+        3.1303570520993587
+      ],
+      "scope": "Actual factory, FP32 one-shot accumulation, alias-preserving copy, CUDA Graph replay and teardown; operator timing only"
+    },
+    "released_self_chunk_gate": {
+      "case_count": 11,
+      "prompt_tokens_range": [
+        27,
+        1950
+      ],
+      "entire_vocabulary": 163840,
+      "max_abs_logits": 0.0,
+      "exact_first_greedy_matches": 11,
+      "includes_singleton_tail": true,
+      "rtol": 0.05,
+      "atol": 0.1
+    },
+    "minimal_controls": {
+      "bf16_to_fp32_promotion_only_greeting_max_abs": 1.201171875,
+      "native_collective_without_fixed_arithmetic_greeting_max_abs": 1.47265625,
+      "scope": "Neither the collective nor local arithmetic changes alone passed the complete-model chunk gate"
+    },
+    "independent_reference": {
+      "reference_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+      "attempted_moe_backend": "flashinfer_mxfp4",
+      "attempted_activation_precision": "bf16",
+      "parent_exit_code": 0,
+      "capture_complete": false,
+      "worker_error": "No kernel found for MXFP4 x BF16 SiTU in installed TRTLLM artifact",
+      "numerical_comparison_performed": false,
+      "subsequent_guard": "Require complete case inventory, provenance, teacher prefixes, shape and finite logits after benchmark parent returns"
+    },
+    "projection_schedule_trial": {
+      "component_checks": 29,
+      "microbenchmark_shapes": 28,
+      "max_abs_vs_baseline": 0.0,
+      "adopted": false,
+      "scope": "N=64 tile and unrolled Kahan loop; mixed geometry-dependent performance, no complete-model acceptance"
+    },
+    "expert_mma_trial": {
+      "component_checks": 14,
+      "microbenchmark_rows_printed": 24,
+      "benchmark_report_complete": false,
+      "report_failure": "Namespace package has no __file__; final provenance serialization failed",
+      "bf16_sparse_batch1_speedup": 1.1537715078479691,
+      "fp8_relative_l2_range": [
+        0.052984870970249176,
+        0.05857864394783974
+      ],
+      "adopted": false,
+      "scope": "Synthetic operator trials; some BF16 samples exceeded the old pointwise tolerance, FP8 changes activation precision"
+    },
+    "full_gsm8k_executed": false,
+    "http_executed": false,
+    "strict_sglang_numerical_alignment_established": false,
+    "performance_parity_established": false,
+    "runtime_change_adopted": false,
+    "harness_regression": {
+      "checks_passed": 5,
+      "change": "Strict chunk gate also requires exact first greedy token equality"
+    },
+    "evidence_archive": {
+      "name": "phase10-through-job109-compact-v2.tar.gz",
+      "bytes": 74208162,
+      "sha256": "a0743c10c395d5c3bc1bd7fdf06e687351d6b625e849e0f7113efe665cf4fe3f",
+      "included_files": 3157,
+      "omitted_files": 8,
+      "verified_remote_and_local": true
+    }
   }
 }
