@@ -28,9 +28,12 @@ def create_recurrent_backend(config: ModelConfig):
 
 @SUPPORTED_ATTENTION_BACKENDS.register("recurrent-fi")
 def create_recurrent_fi_backend(config: ModelConfig):
+    from .mla_fi import FlashInferMLA
     from .recurrent import RecurrentAttentionBackend
 
-    return RecurrentAttentionBackend(config, kda_implementation="flashinfer")
+    return RecurrentAttentionBackend(
+        config, kda_implementation="flashinfer", mla_attention=FlashInferMLA()
+    )
 
 
 @SUPPORTED_ATTENTION_BACKENDS.register("trtllm")

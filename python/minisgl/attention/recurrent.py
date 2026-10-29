@@ -29,16 +29,12 @@ class RecurrentAttentionBackend(BaseAttnBackend):
     # retain eager execution for sizes that were not captured.
     supports_graph_padding = False
 
-    def __init__(self, config, *, kda_implementation="torch"):
+    def __init__(self, config, *, kda_implementation="torch", mla_attention=None):
         self.config = config
         self.kda_implementation = kda_implementation
-        from .mla import mla_attention
+        from .mla import mla_attention as portable_mla
 
-        self.mla_attention = mla_attention
-        if kda_implementation == "flashinfer":
-            from .mla_fi import FlashInferMLA
-
-            self.mla_attention = FlashInferMLA()
+        self.mla_attention = portable_mla if mla_attention is None else mla_attention
         self.kvcache = get_global_ctx().kv_cache
         self._capture_metadata = {}
         self._capture_reqs = []
@@ -180,7 +176,7 @@ def forward_layer(
             latent,
             key,
             batch.out_loc[: len(x)],
-            implementation="triton" if kda_implementation == "flashinfer" else "torch",
+            implementation="triton" if hasattr(mla_attention, "decode") else "torch",
         )
         paged = getattr(metadata, "mla_decode", None)
         if paged is not None and hasattr(mla_attention, "decode"):
