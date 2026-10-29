@@ -22,6 +22,15 @@ from minisgl.utils import get_stop_token_ids, load_tokenizer
 from provenance import execution_identity
 
 
+def assert_chunked_prefill(full, chunked, dtype):
+    tolerance = (1e-4, 1e-4) if dtype == "float32" else (0.05, 0.1)
+    torch.testing.assert_close(
+        full["logits"], chunked["logits"], rtol=tolerance[0], atol=tolerance[1]
+    )
+    if full["token_ids"][0] != chunked["token_ids"][0]:
+        raise AssertionError("Full and chunked prefill chose different greedy tokens")
+
+
 def cases(tokenizer):
     prompts = [
         ("greeting", "请只回答：你好。"),
@@ -241,10 +250,7 @@ def main():
                 )
                 print(json.dumps(results[-1], ensure_ascii=False), flush=True)
             if args.strict_chunked_prefill:
-                tolerance = (1e-4, 1e-4) if args.dtype == "float32" else (0.05, 0.1)
-                torch.testing.assert_close(
-                    full["logits"], chunked["logits"], rtol=tolerance[0], atol=tolerance[1]
-                )
+                assert_chunked_prefill(full, chunked, args.dtype)
         # Warm repetitions use the same prompt, with private state reset each time.
         batches = []
         for batch_size in dict.fromkeys(args.batch_sizes):
