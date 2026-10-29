@@ -1563,7 +1563,17 @@
     "identical_timing_boundaries": false,
     "sglang_default_tuned": false,
     "performance_parity_established": false,
-    "report": "phase10-normalization-official-one-batch-v1.jsonl"
+    "report": "phase10-normalization-official-one-batch-v1.jsonl",
+    "activation_precision": {
+      "mini_accepted_baseline": "BF16 MoE activations, MXFP4 weights",
+      "official_recorded_default": "MXFP8 MoE activations, MXFP4 weights",
+      "same_activation_precision": false,
+      "official_bf16_option": "--flashinfer-mxfp4-moe-precision bf16",
+      "option_verified_in_cpu_cli_help": true,
+      "same_precision_gpu_capture_executed": false,
+      "primary_source": "baa9befa:python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py:1077",
+      "scope": "The default benchmark and task reference are not same-activation-precision numerical or performance acceptance."
+    }
   },
   "phase10_singleton_tail_diagnostic": {
     "gpuq_jobs": [
@@ -1589,7 +1599,23 @@
       "first_case_pointwise_violations": 6173,
       "vocab_size": 163840,
       "expanded_suite_stopped_at_first_case": true,
-      "accepted": false
+      "accepted": false,
+      "independent_all_torch_fp32": {
+        "passed": true,
+        "max_abs": 1.2874603271484375e-05,
+        "relative_l2": 9.85346332527115e-07,
+        "rtol": 0.0001,
+        "atol": 0.0001,
+        "greedy_match": true,
+        "shape": [
+          1,
+          163840
+        ],
+        "actual_sha256": "9fb71c0589b6a09152c6b5520054db897d48b7a57c8a6fcf4e181629e7374404",
+        "reference_sha256": "6d709e91e989f65cc8aa06d43067941151b0994b736ed766e12038481d472504",
+        "report": "phase10-uniform4-independent-fp32-v1.json",
+        "scope": "Independent all-Torch mini FP32 reference; not SGLang BF16 alignment."
+      }
     },
     "operator_trace": {
       "gpuq_job": 96,

@@ -266,6 +266,13 @@ in every batch. Across the two engines, all 11 first tokens matched and eight
 generations matched through the stop. Python, reasoning and explanation wording
 differed; raw 64-token sequences matched on none of the prompts.
 
+These official default runs also use a different MoE activation format: the
+pinned SM100 runner quantizes activations to MXFP8, while mini retains BF16.
+The official public `--flashinfer-mxfp4-moe-precision bf16` option supplies
+BF16 inputs with no activation scale. That setting was not used for the
+recorded default timings or GSM8K reference; same-precision raw-logit and
+performance measurements remain required.
+
 The trace separates prefill from graph replay. MoE gate/up and down account for
 26.53% of baseline decode kernel time. Job 41 tests one shared MXFP4 matrix helper
 used by dense and grouped expert layers; it adds no model-specific branch. Its
@@ -318,6 +325,9 @@ component checks and four dense/MoE/hybrid graph gates passed. The complete
 93-layer BF16 model again matched exactly for 13+14 tokens, and FP32 retained
 the original tolerance. Splitting the same prompt into 13+13+1 tokens still
 failed, with a maximum logit difference of 0.46875. This candidate was not adopted.
+An additional CPU comparison of its saved full-vocabulary FP32 output against
+the independent all-Torch reference passed at the original `1e-4` tolerance:
+maximum error `1.2874603271484375e-5`, with identical greedy tokens.
 
 All eight ranks of the subsequent operator trace (job 96) first diverged at
 layer 0's attention output all-reduce: identical recorded inputs produced a
