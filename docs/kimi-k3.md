@@ -9,8 +9,8 @@ correctness precede further performance work.
 
 The latest runtime change, `5b810ac`, explicitly composes recurrent and MLA
 backends. KDA keeps its FlashInfer default; the MLA executor determines its own
-paged-cache capability. The clean CPU/Gloo regression passed 450 checks, with
-183 skips and two existing expected semantic disagreements. No experimental
+paged-cache capability. The clean CPU/Gloo regression passed 453 checks, with
+183 skips and two existing expected semantic disagreements at `f6cea5a`. No experimental
 precision kernels have been adopted. Released-weight GPU evidence below belongs
 to the recorded earlier snapshots.
 
@@ -27,7 +27,7 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 
 | Gate | Current evidence |
 | --- | --- |
-| CPU and Gloo regression | 450 passed, 183 skipped, two expected reference semantic disagreements; backend composition snapshot |
+| CPU and Gloo regression | 453 passed, 183 skipped, two expected reference semantic disagreements; `f6cea5a` |
 | Native/distributed components | 173 passed, job 18; includes ordinary and packed single-expert routing regressions |
 | Hybrid eager versus graph | Job 10: four request-slot batches, static/unified pools, reordered requests and compaction; logits and convolution/recurrent state bitwise equal |
 | Ordinary model compatibility | Job 22: Qwen3 TP4 and Qwen3-MoE TP4/EP4; four batches each, including padded batch 3; zero logit error |
@@ -356,9 +356,42 @@ whole-model performance, and the candidate has not been adopted.
 The attempted official FlashInfer BF16 reference produced no capture: its
 workers reported an unavailable MXFP4 × BF16 SiTU kernel, although the benchmark
 parent returned zero. Artifact inventory checks now reject this false success.
-The official Marlin backend's BF16/SiTU source contract is being evaluated as a
-separate reference. Existing official default-precision timings remain MXFP8
+Job 113 subsequently captured all eleven prompts at sixteen teacher-forced
+positions using the official Marlin BF16 backend. The unchanged raw-logit gate
+failed: 170 of 176 greedy tokens matched, with 9,424,600 pointwise violations.
+Its complete matched-boundary native benchmark measured
+70.45/134.41/245.44/418.46 tokens/s at batch 1/2/4/8. The fixed-layout mini
+candidate measured 10.38/20.47/40.43/78.68, compared with the production baseline's
+13.46/24.77/48.02/91.71 under the same mini timer. Exact ordinary/native token
+parity passed for all twelve 64-token runs. Both alignment and performance gates
+therefore rejected this candidate. Its task evaluation was stopped at eight
+completed cases; no complete GSM8K or HTTP acceptance is claimed.
+
+The candidate retained FP32 correctness: maximum full-vocabulary error
+1.1086463928222656e-5 against the independent all-Torch reference at the original
+1e-4 tolerance. Its 213 component checks and four dense/MoE/hybrid graph gates
+also passed. Existing official default-precision timings remain separate MXFP8
 activation measurements.
+
+Job 120's observational stage capture establishes the first independent BF16
+semantic difference. Layer 0 has identical inputs, weights and epsilon, but
+51,303 of 193,536 normalized values differ, with maximum error 0.015625. Mini
+matches the FP64 formula with rounding before weight multiplication exactly;
+SGLang matches rounding after multiplication exactly. Correcting later stages
+still requires whole-model evidence; this observation is not an alignment pass.
+Job 123 completed both eleven-prompt, sixteen-step normalization ablations with
+graphs disabled. Rounding after multiplication matched 169/176 greedy positions;
+additionally rounding each local expert mixture matched 173/176. Both retained
+over nine million raw-logit tolerance violations, so neither was adopted.
+
+A generic pointer-table projection group was also tested in job 118. It reuses
+existing weight allocations and linear arithmetic, adding 24 persistent bytes
+for three projections. Its complete eleven-prompt, sixteen-step raw logits
+matched the prior candidate bitwise, and full/chunked logits remained exact.
+Paired whole-model decode improved only 2.6%, below the adoption gate. The
+prototype remains outside the production runtime. A separate batched library
+GEMM trial failed twelve original accuracy/chunk-invariance checks and was
+rejected without relaxing tolerances.
 
 Job 86 additionally ran the pinned official native `one_batch.py` benchmark
 with the same saved 27-token input, 64 raw output tokens and three repeats.

@@ -1782,5 +1782,179 @@
       "omitted_files": 8,
       "verified_remote_and_local": true
     }
+  },
+  "phase10_independent_bf16_and_performance": {
+    "gpuq_job": 113,
+    "candidate_manifest_sha256": "8482dad719376d00b211deddc7b4f3099af06dcb67cb5b21b69a20c9022fa27f",
+    "reference_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "reference_backend": "marlin",
+    "activation_precision": "bfloat16",
+    "raw_alignment": {
+      "complete": true,
+      "prompts": 11,
+      "steps_per_prompt": 16,
+      "vocab_size": 163840,
+      "rtol": 0.05,
+      "atol": 0.1,
+      "pointwise_violations": 9424600,
+      "exact_greedy_matches": 170,
+      "greedy_positions": 176,
+      "passed": false,
+      "offset_or_normalization_applied": false
+    },
+    "fp32": {
+      "passed": true,
+      "independent_max_abs": 1.1086463928222656e-05,
+      "independent_relative_l2": 9.667668336987845e-07,
+      "greedy_match": true,
+      "self_chunk_max_abs": 1.3828277587890625e-05,
+      "rtol": 0.0001,
+      "atol": 0.0001,
+      "reference_sha256": "6d709e91e989f65cc8aa06d43067941151b0994b736ed766e12038481d472504",
+      "actual_sha256": "6321a00c0f1aa342e25fa153ba438f31b34163e0bbfff68f2f349a1ec89909b6"
+    },
+    "components": 213,
+    "generic_graph_gates": 4,
+    "native_performance": {
+      "boundary": "metadata, forward/graph replay, GPU greedy sampling and synchronization; no per-step CPU token materialization or scheduler",
+      "prompt_tokens": 27,
+      "raw_output_tokens": 64,
+      "batch_sizes": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "repeats": 3,
+      "ordinary_native_token_parity": true,
+      "candidate_tokens_per_second": [
+        10.376690143758577,
+        20.46718624487867,
+        40.42909300768017,
+        78.67527209423795
+      ],
+      "production_baseline_tokens_per_second": [
+        13.455805749519095,
+        24.770894921545207,
+        48.018547106598824,
+        91.70657441377661
+      ],
+      "official_marlin_bf16_tokens_per_second": [
+        70.4454494209918,
+        134.41110462617362,
+        245.43555759286716,
+        418.4551701001859
+      ],
+      "candidate_baseline_geometric_speedup": 0.823658315494373,
+      "accepted": false,
+      "scope": "Marlin BF16 curve is distinct from the earlier default-MXFP8 official curve"
+    },
+    "rejection": {
+      "both_alignment_and_performance_failed": true,
+      "gsm8k_completed": 8,
+      "gsm8k_expected": 1319,
+      "complete_task_accepted": false,
+      "http_accepted": false,
+      "runtime_adopted": false
+    },
+    "evidence_archive": {
+      "name": "phase10-through-job113-compact-v1.tar.gz",
+      "bytes": 70490684,
+      "sha256": "81f32129cdbc4fb6997a657f2048ba8eee298c4d3e717c716e5c36e2515b3af2",
+      "verified_remote_and_local": true,
+      "included_files_verified": 715,
+      "omitted_files": 0
+    }
+  },
+  "phase10_projection_and_rounding_diagnostics": {
+    "gpuq_jobs": [
+      118,
+      120
+    ],
+    "grouped_projection": {
+      "manifest_sha256": "0578ffe72c9a182021b35f2b69609c1862b1ec4a143d544229fe869cce1b6caa",
+      "cpu_passed": 473,
+      "cpu_skipped": 266,
+      "cpu_xfailed": 2,
+      "gpu_component_checks": 3,
+      "additional_persistent_bytes": 24,
+      "weight_storage_duplicated": false,
+      "full_chunk_cases_exact": 11,
+      "teacher_forced_cases_exact": 11,
+      "steps_per_case_exact": 16,
+      "native_token_parity": true,
+      "paired_geometric_speedup": 1.0260750516255261,
+      "runtime_adopted": false
+    },
+    "first_independent_norm_difference": {
+      "layer": 0,
+      "stage": "attention_input",
+      "shape": [
+        27,
+        7168
+      ],
+      "inputs_equal": true,
+      "weights_equal": true,
+      "epsilon_equal": true,
+      "changed_entries": 51303,
+      "max_abs": 0.015625,
+      "relative_l2": 0.002843775786459446,
+      "mini_fp64_cast_before_weight_changed_entries": 0,
+      "official_fp64_cast_after_weight_changed_entries": 0,
+      "scope": "Actual observed normalized stage output; not whole-model raw-logit alignment"
+    },
+    "batched_library_projection": {
+      "gpu_passed": 17,
+      "gpu_failed": 12,
+      "scope": "Original FP64-oracle and exact batch/chunk checks; no timing accepted after failure",
+      "adopted": false
+    },
+    "harness_failures": {
+      "job118": "Decorated entry globals did not point to the original function; corrected with inspect.unwrap and actual module-import CPU preflight",
+      "job120_rounding_ablation": "Frozen EngineConfig assignment rejected before model load; no ablation numerical result was generated",
+      "job120_stage_observation": "Complete and valid; independent of failed ablation setup"
+    },
+    "strict_sglang_alignment_established": false,
+    "runtime_adopted": false,
+    "evidence_archive": {
+      "name": "phase10-through-job120-compact-v1.tar.gz",
+      "bytes": 74038674,
+      "sha256": "8e20e68ec96338eafe7453004372a5558341ccb56ffe468b21fdc68d4dabbb75",
+      "included_files_verified": 700,
+      "omitted_files": 0,
+      "verified_remote_and_local": true
+    }
+  },
+  "phase10_complete_rounding_controls": {
+    "gpuq_job": 123,
+    "entry_sha256": "474cc06e7ecd3ffd98b9bd2b4655d0aa093f903311a104a2dcc2ed5463f5213f",
+    "prompts": 11,
+    "steps_per_prompt": 16,
+    "vocab_size": 163840,
+    "rtol": 0.05,
+    "atol": 0.1,
+    "graphs_disabled": true,
+    "norm_after": {
+      "pointwise_violations": 9439409,
+      "exact_greedy_matches": 169,
+      "greedy_positions": 176,
+      "passed": false
+    },
+    "norm_after_local": {
+      "pointwise_violations": 9405308,
+      "exact_greedy_matches": 173,
+      "greedy_positions": 176,
+      "passed": false
+    },
+    "runtime_adopted": false,
+    "scope": "Complete independent raw-logit controls; first-norm semantic correction alone does not establish whole-model alignment",
+    "evidence_archive": {
+      "name": "phase10-through-job123-compact-v1.tar.gz",
+      "bytes": 106581044,
+      "sha256": "7d3c610507d4bcbb33974f67917c243421c132ab8b2529f55e97ff28860ce3a2",
+      "included_files_verified": 183,
+      "omitted_files": 0,
+      "verified_remote_and_local": true
+    }
   }
 }
