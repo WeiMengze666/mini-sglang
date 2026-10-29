@@ -384,6 +384,23 @@ graphs disabled. Rounding after multiplication matched 169/176 greedy positions;
 additionally rounding each local expert mixture matched 173/176. Both retained
 over nine million raw-logit tolerance violations, so neither was adopted.
 
+Job 131 confirmed that the corrected layer-0 attention input is bitwise equal
+across implementations; its observational runs also reproduced the earlier
+complete capture's first logits exactly. The next difference is the layer-0
+FFN input. A generic normalized residual readout reduced early-layer errors,
+but both complete eleven-prompt, sixteen-position controls still failed:
+171/176 and 168/176 greedy matches, respectively, with over nine million raw
+pointwise violations. Its 64 FP64-oracle, exact chunk and graph component cases
+passed. The frozen controller summary incorrectly labels these as 128 cases;
+the component inventory contains 64.
+
+The public FlashInfer TinyGEMM adapter passed the original 29 projection checks
+and 28 graph timings. Some decode geometries improved about 1.2–3x; a long-prefill
+geometry fell to 0.50x. These are component timings, with no whole-model speedup
+or accuracy acceptance. A separate generic API integration passed 477 CPU/Gloo
+checks, with 335 skips and two existing expected disagreements; it remains an
+isolated candidate and has not been GPU-accepted or adopted.
+
 A generic pointer-table projection group was also tested in job 118. It reuses
 existing weight allocations and linear arithmetic, adding 24 persistent bytes
 for three projections. Its complete eleven-prompt, sixteen-step raw logits

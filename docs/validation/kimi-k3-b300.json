@@ -1956,5 +1956,77 @@
       "omitted_files": 0,
       "verified_remote_and_local": true
     }
+  },
+  "phase10_normalized_readout_and_public_gemm": {
+    "gpuq_job": 131,
+    "entry_sha256": "0b9cdc352dcd8b4be7b9dfa617db7a73580bdb54d8160f3a196c08f082e613f3",
+    "observations": {
+      "first_norm_output_changed": 0,
+      "first_norm_max_abs": 0.0,
+      "raw_first_position_control_changed": 0,
+      "first_remaining_stage": "layer.0.mlp_input",
+      "first_remaining_max_abs": 0.00048828125,
+      "first_remaining_relative_l2": 0.005429678130894899,
+      "first_remaining_changed": 129202,
+      "scope": "Single greeting prefill with observed outputs; later-stage raw inputs may include pending residual state"
+    },
+    "normalized_readout_components": {
+      "passed": 64,
+      "fp64_rtol": 0.008,
+      "fp64_atol": 1e-05,
+      "exact_chunk_checks": true,
+      "scalar_graph_checks": true,
+      "frozen_summary_count_incorrect": 128,
+      "actual_count_from_component_inventory": 64
+    },
+    "complete_raw_controls": {
+      "prompts": 11,
+      "steps_per_prompt": 16,
+      "vocab_size": 163840,
+      "rtol": 0.05,
+      "atol": 0.1,
+      "norm_after": {
+        "pointwise_violations": 9448191,
+        "exact_greedy_matches": 171,
+        "positions": 176,
+        "passed": false
+      },
+      "norm_after_local": {
+        "pointwise_violations": 9585735,
+        "exact_greedy_matches": 168,
+        "positions": 176,
+        "passed": false
+      },
+      "scope": "No offset or probability normalization; both complete independent controls failed"
+    },
+    "public_tinygemm": {
+      "gpu_projection_checks_passed": 29,
+      "graph_timed_geometries": 28,
+      "batch1_speedup_n576_k7168": 2.9968841126308354,
+      "batch1_speedup_n3584_k7168": 1.8172744409450234,
+      "batch1_speedup_n7168_k3584": 1.1636774194733654,
+      "tokens149_speedup_n7168_k3584": 0.5024837586836641,
+      "scope": "Independent component measurements only; includes prefill regressions; no whole-model performance acceptance"
+    },
+    "isolated_api_integration": {
+      "manifest_sha256": "2d2e4a5b3a66540623804a87b99262d07d965e7506101f236f8cfc1353611ec5",
+      "cpu_passed": 477,
+      "cpu_skipped": 335,
+      "cpu_xfailed": 2,
+      "seconds": 40.6,
+      "gpu_accepted": false,
+      "runtime_adopted": false,
+      "scope": "Generic output-normalization composition and explicit legacy rounding support; separate from the GPU-tested diagnostic wrappers"
+    },
+    "evidence_archive": {
+      "name": "phase10-through-job131-compact-v1.tar.gz",
+      "bytes": 132520385,
+      "sha256": "14e0b79ecc1777d9d75d94c09ce2d5f7364f125b1fad9e1c9dc54bf15b6ef45d",
+      "included_files_verified": 252,
+      "omitted_files": 0,
+      "verified_remote_and_local": true
+    },
+    "runtime_adopted": false,
+    "full_task_accepted": false
   }
 }
