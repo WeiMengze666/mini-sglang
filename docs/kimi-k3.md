@@ -7,7 +7,14 @@ correctness precede further performance work.
 
 ## Current validation
 
-The committed runtime snapshot is `phase8-committed-v1-source`, commit `8d28bd6`,
+The latest runtime change, `5b810ac`, explicitly composes recurrent and MLA
+backends. KDA keeps its FlashInfer default; the MLA executor determines its own
+paged-cache capability. The clean CPU/Gloo regression passed 450 checks, with
+183 skips and two existing expected semantic disagreements. No experimental
+precision kernels have been adopted. Released-weight GPU evidence below belongs
+to the recorded earlier snapshots.
+
+The accepted numerical baseline is `phase8-committed-v1-source`, commit `8d28bd6`,
 manifest SHA256 `9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373`.
 Its complete CPU/Gloo regression passed in `phase8-full-cpu-v9.log` from a clean
 Git worktree. It replaces the model-specific config payload with `hf_config`
@@ -20,7 +27,7 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 
 | Gate | Current evidence |
 | --- | --- |
-| CPU and Gloo regression | 444 passed, 183 skipped, two expected reference semantic disagreements |
+| CPU and Gloo regression | 450 passed, 183 skipped, two expected reference semantic disagreements; backend composition snapshot |
 | Native/distributed components | 173 passed, job 18; includes ordinary and packed single-expert routing regressions |
 | Hybrid eager versus graph | Job 10: four request-slot batches, static/unified pools, reordered requests and compaction; logits and convolution/recurrent state bitwise equal |
 | Ordinary model compatibility | Job 22: Qwen3 TP4 and Qwen3-MoE TP4/EP4; four batches each, including padded batch 3; zero logit error |
@@ -291,6 +298,34 @@ prompts had identical eager/graph generations. These older snapshot measurements
 are retained in the ledger; they establish neither current accuracy nor parity
 with SGLang. Further optimization requires current correctness, a profile and
 unchanged paired validation.
+
+## Current BF16 investigation
+
+Frozen operator traces isolate batch-dependent rounding in dense projections,
+absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels
+and a sequential FP32 recurrence eliminated full/chunk logit differences for one
+27-token, 93-layer run split into 13+14 tokens (job 86). This bounded result does
+not establish strict agreement with SGLang.
+
+The expanded test then failed unchanged pointwise tolerance on seven of eleven
+prompts, including singleton tails and long prefills. Paired decode also slowed
+in every batch. The candidate was rejected and its complete GSM8K run stopped;
+partial task results are not accuracy acceptance. Exact-output MXFP4 bit-decoding
+and larger expert tiles also failed paired performance tests and were rejected.
+
+Job 86 additionally ran the pinned official native `one_batch.py` benchmark
+with the same saved 27-token input, 64 raw output tokens and three repeats.
+Median batch 1/2/4/8 decode throughput was 101.84/199.63/395.19/718.34 tokens/s.
+Its timer covers metadata, forward, GPU greedy sampling and synchronization;
+mini also prepares CPU requests and transfers sampled tokens to the CPU.
+The official run retains the declared single-op autotuning skip. It is neither
+default-tuned SGLang nor proof of identical measurement boundaries. Strict BF16
+alignment and performance parity remain open.
+
+Use `checkpoint_suite.py --strict-chunked-prefill` to assert full-vocabulary
+consistency for every prompt before performance measurements. The released
+checkpoint gate also accepts `--chunk-size` and prepares attention metadata for
+each chunk, including singleton tails. Both retain the original tolerances.
 
 ## Reproduction
 

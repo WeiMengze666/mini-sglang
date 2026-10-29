@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--dtype", choices=["bfloat16", "float32"], default="bfloat16")
     parser.add_argument("--memory-ratio", type=float, default=0.9)
     parser.add_argument("--tokens", type=int, default=8)
+    parser.add_argument("--chunk-size", type=int)
     parser.add_argument("--dcp-size", type=int, default=1)
     parser.add_argument("--ep-size", type=int, default=1)
     parser.add_argument("--unified-memory", action="store_true")
@@ -39,6 +40,8 @@ def main():
     parser.add_argument("--reference-logits", type=Path)
     parser.add_argument("--prompt", default="请只回答：你好。")
     args = parser.parse_args()
+    if args.chunk_size is not None and args.chunk_size < 1:
+        parser.error("chunk-size must be positive")
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.set_float32_matmul_precision("highest")
     rank, size = int(os.environ.get("RANK", "0")), int(os.environ.get("WORLD_SIZE", "1"))
@@ -160,11 +163,18 @@ def main():
                 reference_logits, expected, rtol=tolerance[0], atol=tolerance[1]
             )
         trace_mode[0] = "chunked"
-        # Replay the same prompt in two chunks, from a clean request state.
+        # Replay the same prompt with clean state and independently prepared metadata.
         engine.kv_cache.release_request(0, 100)
         split = max(1, len(prompt) // 2)
+        if args.chunk_size is not None:
+            chunks = [
+                (i, min(i + args.chunk_size, len(prompt)))
+                for i in range(0, len(prompt), args.chunk_size)
+            ]
+        else:
+            chunks = [(0, split), (split, len(prompt))]
         last = None
-        for start, stop in ((0, split), (split, len(prompt))):
+        for start, stop in chunks:
             if start == stop:
                 continue
             chunk = Req(prompt[:stop], 0, start, 1, 101, SamplingParams(max_tokens=1), None)
@@ -173,6 +183,7 @@ def main():
             batch.input_ids = prompt[start:stop].to(engine.device)
             batch.positions = torch.arange(start, stop, device=engine.device)
             batch.out_loc = table[0, start:stop]
+            engine.attn_backend.prepare_metadata(batch)
             with engine.ctx.forward_batch(batch):
                 last = engine.model.forward()
         if rank == 0:

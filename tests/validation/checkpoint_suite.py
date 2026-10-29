@@ -68,6 +68,7 @@ def main():
     parser.add_argument("--max-context", type=int, default=4096)
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--strict-chunked-prefill", action="store_true")
     parser.add_argument("--cuda-graph-max-bs", type=int)
     parser.add_argument("--batch-sizes", type=int, nargs="+", default=[1])
     args = parser.parse_args()
@@ -230,12 +231,20 @@ def main():
                         "text": tokenizer.decode(full["token_ids"]),
                         "step_seconds": full["step_seconds"],
                         "chunked_first_token": chunked["token_ids"][0],
+                        "chunked_max_abs_logits": float(
+                            (full["logits"] - chunked["logits"]).abs().max()
+                        ),
                     }
                 )
                 (args.output / "report.json").write_text(
                     json.dumps(results, ensure_ascii=False, indent=2) + "\n"
                 )
                 print(json.dumps(results[-1], ensure_ascii=False), flush=True)
+            if args.strict_chunked_prefill:
+                tolerance = (1e-4, 1e-4) if args.dtype == "float32" else (0.05, 0.1)
+                torch.testing.assert_close(
+                    full["logits"], chunked["logits"], rtol=tolerance[0], atol=tolerance[1]
+                )
         # Warm repetitions use the same prompt, with private state reset each time.
         batches = []
         for batch_size in dict.fromkeys(args.batch_sizes):

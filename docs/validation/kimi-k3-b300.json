@@ -1324,7 +1324,9 @@
       "reference_commit": "8d28bd639925bc821825cbfd15b2fc2bd4146876",
       "tracked_runtime_files": 136,
       "all_files_byte_identical": true,
-      "rejected_candidate_applied": false
+      "rejected_candidate_applied": false,
+      "audited_at_commit": "30e5297116c94cd0c1f6de9726e30f0520ad2ea3",
+      "scope": "Historical byte comparison before the separately recorded backend composition refactor."
     }
   },
   "historical_candidates": [
@@ -1379,5 +1381,188 @@
       },
       "stream_binding_root_cause_confirmed": false
     }
-  ]
+  ],
+  "phase10_backend_composition": {
+    "commit": "5b810ac85bbbc7c332a4e4184f3a261c5da1cbdd",
+    "source_snapshot": "phase10-composition-v1-source",
+    "manifest_sha256": "58994c3ec863bbc22d40ce26992d2f327c7f1505520924e056ef31489259c5e0",
+    "change": "Inject the MLA executor explicitly; recurrent-state backend selection does not select MLA or its cache-store capability.",
+    "default_backends": {
+      "kda": "flashinfer",
+      "mla": "FlashInferMLA"
+    },
+    "cpu": {
+      "passed": 450,
+      "skipped": 183,
+      "expected_semantic_disagreements": 2,
+      "report": "phase10-composition-full-cpu-v1.log"
+    },
+    "runtime_files_changed_since_8d28bd6": [
+      "python/minisgl/attention/__init__.py",
+      "python/minisgl/attention/recurrent.py"
+    ],
+    "operator_math_changed": false,
+    "new_released_gpu_gate_executed": false
+  },
+  "phase10_numerical_diagnostics": {
+    "date": "2026-10-29",
+    "production_applied": false,
+    "thresholds": {
+      "bf16_rtol": 0.05,
+      "bf16_atol": 0.1,
+      "fp32_atol": 0.0001,
+      "gsm8k_min_correct": 1282,
+      "gsm8k_cases": 1319,
+      "max_invalid": 1,
+      "max_truncated": 0
+    },
+    "observed_causes": [
+      {
+        "job": 53,
+        "operation": "Dense BF16 projection",
+        "observation": "Identical input rows can change rounding with batch shape, including with reduced-precision reductions disabled."
+      },
+      {
+        "job": 73,
+        "operation": "Absorbed MLA query/value projections",
+        "observation": "Fixed headwise projection and sequential FP32 recurrence make the first twelve-layer diagnostic exact; the complete model still fails."
+      },
+      {
+        "job": 82,
+        "operation": "Routed-expert RMSNorm at layer 27",
+        "observation": "Identical captured inputs produce max output error 0.0001220703125 before the next recurrence; this precedes the recorded later layer divergence."
+      }
+    ],
+    "normalization_trial": {
+      "gpuq_job": 86,
+      "source_snapshot": "phase10-normalization-v1-source",
+      "manifest_sha256": "4d4a9cbd1c1dc6da3c1fbcb394e71e7f22c2e06f8f8aecf2384a9fe0cca33b23",
+      "cpu": {
+        "passed": 450,
+        "skipped": 248,
+        "expected_semantic_disagreements": 2
+      },
+      "gpu_components_passed": 115,
+      "ordinary_dense_moe_and_hybrid_pool_graph_gates_passed": 4,
+      "bounded_93_layer_full_chunk_gate": {
+        "prompt_tokens": 27,
+        "chunks": [
+          13,
+          14
+        ],
+        "max_abs_logits": 0.0,
+        "passed": true,
+        "report": "phase10-whole-normalization-v1/strict-gate.json"
+      },
+      "expanded_11_case_full_vocabulary_failures": 7,
+      "expanded_failures": {
+        "greeting": 0.375,
+        "translation": 0.640625,
+        "reasoning": 0.2515239715576172,
+        "unicode": 0.34375,
+        "retrieval_16": 1.0625,
+        "retrieval_64": 1.828125,
+        "retrieval_128": 1.5
+      },
+      "expanded_scope": "Includes singleton tails and longer prompts. All eleven first tokens agree, but seven fail unchanged pointwise tolerance.",
+      "batch_sizes": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "candidate_decode_tokens_per_second": [
+        10.63745831019555,
+        21.020466716131047,
+        41.50752768725691,
+        81.03160195459051
+      ],
+      "paired_baseline_decode_tokens_per_second": [
+        13.458262418208374,
+        24.760262780104426,
+        47.99944087769205,
+        91.64750321186801
+      ],
+      "status": "Rejected for expanded numerical failures and slower paired decode in every batch. Own task stopped before complete GSM8K.",
+      "complete_task_accuracy": false,
+      "rejection_report": "phase10-normalization-rejection-v1.json"
+    },
+    "rejected_exact_operator_trials": [
+      {
+        "gpuq_job": 72,
+        "change": "Pure IEEE bit reconstruction of MXFP4 weights/scales",
+        "gpu_components_passed": 67,
+        "real_geometry_cases": 8,
+        "outputs_bitwise_equal": true,
+        "speedup_range": [
+          0.89,
+          0.99
+        ],
+        "accepted": false
+      },
+      {
+        "gpuq_job": 76,
+        "change": "Larger grouped expert tiles",
+        "gpu_components_passed_each": 66,
+        "real_geometry_cases_each": 8,
+        "outputs_bitwise_equal": true,
+        "geometric_mean_speedups": [
+          0.875859,
+          0.518775
+        ],
+        "accepted": false
+      }
+    ],
+    "strict_sglang_numerical_alignment_established": false,
+    "scope": "Same-runtime full/chunk diagnostics are prerequisites and do not establish independent SGLang numerical alignment.",
+    "harness_contract": {
+      "full_vocabulary_flag": "checkpoint_suite.py --strict-chunked-prefill",
+      "assertion_stage": "Every saved prompt is checked before warm benchmarks; a failed prompt raises.",
+      "chunk_boundary_flag": "released_k3.py --chunk-size",
+      "each_chunk_prepares_attention_metadata": true,
+      "tolerances_changed": false,
+      "cpu_cli_checks": "Both help flags and invalid chunk-size rejection passed with CUDA hidden; phase10-harness-cpu-v1/cli-v2.log."
+    },
+    "evidence_archive": {
+      "name": "phase10-through-job86-evidence-v1.tar.gz",
+      "bytes": 1808423989,
+      "sha256": "4d6384569229be479e32b55ddcc5e43627cbcfda80052ddc6ef99ea5412b7084",
+      "verified_remote_and_local": true
+    }
+  },
+  "phase10_official_native_decode": {
+    "gpuq_job": 86,
+    "reference_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "entry": "sglang/benchmark/one_batch.py",
+    "adapter": "k3-phase10-official-one-batch-v1.py",
+    "saved_input": "phase10-fair-decode-cases-v1.pt",
+    "prompt_tokens": 27,
+    "raw_output_tokens": 64,
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "batch_sizes": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "repeats": 3,
+    "records": 12,
+    "median_decode_tokens_per_second": [
+      101.83884284680359,
+      199.6341297199916,
+      395.18592216491766,
+      718.3391964976223
+    ],
+    "public_autotune_skip_ops": [
+      "flashinfer::trtllm_fp4_block_scale_moe"
+    ],
+    "official_boundary": "Metadata preparation, model forward/graph replay, GPU greedy sampling and synchronization.",
+    "mini_boundary_difference": "Mini also constructs CPU request metadata and materializes sampled tokens on CPU each step.",
+    "identical_timing_boundaries": false,
+    "sglang_default_tuned": false,
+    "performance_parity_established": false,
+    "report": "phase10-normalization-official-one-batch-v1.jsonl"
+  }
 }
