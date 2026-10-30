@@ -669,16 +669,33 @@ failed records and calibrated full-model reference remain unchanged. The four
 FP32-output cases were not executed in this control. These results neither
 claim universal official operator invariance nor accept the Mini candidate.
 
-The next isolated candidate adds generic full-context expanded MLA prefill over
+The isolated job247 candidate adds generic full-context expanded MLA prefill over
 compressed persistent KV, round-robin context gathering, and explicit fused-KDA
 convolution/readout storage boundaries. Compressed MLA decode retains its native
 attention kernel and merges compressed readouts before the value projection.
 The final prepared source also fixes expert ID order. It passes 509 CPU/Gloo
 checks (349 skips and two existing expected failures), eight SM103
 cross-compilations and real entry/configuration preflights.
-These are preparation results, not GPU arithmetic or complete-model acceptance.
-The candidate remains unshipped until the original numerical and quality gates
-pass; performance acceptance remains separate.
+Its 109 GPU component cases, 144 expanded-MLA cases, same-input collectives,
+compressed-latent DCP graph checks, four transport graph paths and independent
+FP32 gate pass. The first layer's complete KDA output is bitwise equal to the
+canonical official global output. Its following normalized residual readout
+still differs in 13 BF16 elements, with maximum error `0.00006103515625`.
+
+Whole-model acceptance fails: 167/176 exact greedy positions, 9,621,692 raw-logit
+violations and maximum error 11.5 at the original `rtol=0.05, atol=0.1`.
+The first full/chunk comparison also fails (76,481/163,840 violations, maximum
+error about 1.579). The depth observer preserves the unobserved raw outputs
+bitwise. No quality, performance or runtime adoption follows this rejection.
+The next diagnostic replays the residual readout on identical operands, keeping
+the calibrated reference and acceptance thresholds unchanged.
+
+Completed job247 results are preserved and checksum-verified on the server:
+`phase10-job247-results-v1.tar.gz`, 175,186,824 bytes,
+SHA256 `9c65ba213d4b25a3bdfaeff85f00d65d249861704799c36bc47311acb9ac16fb`.
+All 114 included files were verified there; 18 exact trace/raw deduplications
+retain original identities and every differing tensor. This is server-side
+preservation; only aggregate JSON reports were copied locally.
 
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
