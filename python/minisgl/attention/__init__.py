@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from minisgl.utils import Registry, init_logger
@@ -16,17 +17,39 @@ class BackendCreator(Protocol):
     def __call__(self, config: ModelConfig) -> BaseAttnBackend: ...
 
 
-SUPPORTED_ATTENTION_BACKENDS = Registry[BackendCreator]("Attention Backend")
+@dataclass(frozen=True)
+class AttentionBackendSpec:
+    create: BackendCreator
+    stateful_layers: bool = False
+    cuda_graphs: bool = True
+
+    def __call__(self, config: ModelConfig) -> BaseAttnBackend:
+        return self.create(config)
 
 
-@SUPPORTED_ATTENTION_BACKENDS.register("recurrent")
+SUPPORTED_ATTENTION_BACKENDS = Registry[AttentionBackendSpec]("Attention Backend")
+
+
+def register_attention_backend(name, *, stateful_layers=False, cuda_graphs=True):
+    """Declare configuration-time capabilities without constructing GPU resources."""
+
+    def register(create):
+        SUPPORTED_ATTENTION_BACKENDS.register(name)(
+            AttentionBackendSpec(create, stateful_layers, cuda_graphs)
+        )
+        return create
+
+    return register
+
+
+@register_attention_backend("recurrent", stateful_layers=True, cuda_graphs=False)
 def create_recurrent_backend(config: ModelConfig):
     from .recurrent import RecurrentAttentionBackend
 
     return RecurrentAttentionBackend(config)
 
 
-@SUPPORTED_ATTENTION_BACKENDS.register("recurrent-fi")
+@register_attention_backend("recurrent-fi", stateful_layers=True)
 def create_recurrent_fi_backend(config: ModelConfig):
     from .mla_fi import FlashInferMLA
     from .recurrent import RecurrentAttentionBackend
@@ -36,21 +59,21 @@ def create_recurrent_fi_backend(config: ModelConfig):
     )
 
 
-@SUPPORTED_ATTENTION_BACKENDS.register("trtllm")
+@register_attention_backend("trtllm")
 def create_trtllm_backend(config: ModelConfig):
     from .trtllm import TensorRTLLMBackend
 
     return TensorRTLLMBackend(config)
 
 
-@SUPPORTED_ATTENTION_BACKENDS.register("fi")
+@register_attention_backend("fi")
 def create_fi_backend(config: ModelConfig):
     from .fi import FlashInferBackend
 
     return FlashInferBackend(config)
 
 
-@SUPPORTED_ATTENTION_BACKENDS.register("fa")
+@register_attention_backend("fa")
 def create_fa_backend(config: ModelConfig):
     from .fa import FlashAttentionBackend
 
@@ -90,5 +113,6 @@ __all__ = [
     "BaseAttnBackend",
     "create_attention_backend",
     "SUPPORTED_ATTENTION_BACKENDS",
+    "register_attention_backend",
     "validate_attn_backend",
 ]

@@ -2664,6 +2664,14 @@
           "sha256": "92466216b446347079920c962db69d9869dec6124a274526a8af216b6ce11d09",
           "all_member_files_verified": 42,
           "scope": "Frozen inputs only; excludes GPU205 results"
+        },
+        "job205210_localization": {
+          "archive": "phase10-job205210-localization-v1.tar.gz",
+          "bytes": 268123587,
+          "sha256": "2b479a59051b470995b55a0107c9b141a9bc590adb57165fb6dd15bc158564f1",
+          "all_member_files_verified": 108,
+          "omitted_originals_with_exact_dedup_proof": 56,
+          "scope": "Complete localization values with canonical197/rank0 dependencies; all differing records and all rank collectives retained; no model acceptance"
         }
       },
       "spawn_wrapper_correction_cpu": {
@@ -2950,5 +2958,30 @@
       "runtime_adopted": false,
       "scope": "Three generic precision/transport corrections are insufficient; reject candidate under unchanged original gates"
     }
+  },
+  "phase10_attention_backend_capabilities": {
+    "scope": "Generic registration-time stateful-layer and graph capabilities replace Engine backend-name whitelists; no default numerical/operator change",
+    "parent_commit": "3f10973",
+    "cpu_passed": 505,
+    "cpu_skipped": 187,
+    "cpu_expected_semantic_disagreements": 2,
+    "cpu_seconds": 32.04,
+    "cpu_driver_sha256": "8e1b459ffca450cc22f545d3a303a5519c0d6b0cc488154df9a6683f570ae8cc",
+    "overlay_sha256": "9ca0b8b9dd27f74eb143b2b9f9ed9bd1fa06f30e7a9136371b15996dc90c1265",
+    "gpu_graph_compatibility": {
+      "job": 218,
+      "entry_sha256": "afc5eeb883a1d40531abe51fd47504216d3aefb76872868cabe1094e4811e77f",
+      "passed_paths": [
+        "ordinary_dense_tp4",
+        "ordinary_moe_tp4_ep4",
+        "hybrid_static_tp4",
+        "hybrid_unified_tp4"
+      ],
+      "cases_per_path": 4,
+      "max_abs_logits": 0.0,
+      "hybrid_states_bitwise_equal": true,
+      "scope": "Independent shipping-tree compatibility gates; separate from experimental FLA numerical candidate"
+    },
+    "experimental_fla_runtime_adopted": false
   }
 }

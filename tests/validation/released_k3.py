@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import torch
+from minisgl.attention import validate_attn_backend
 from minisgl.core import Batch, Req, SamplingParams
 from minisgl.distributed import DistributedInfo
 from minisgl.engine import Engine, EngineConfig
@@ -34,9 +35,7 @@ def main():
     parser.add_argument("--unified-memory", action="store_true")
     parser.add_argument("--num-pages", type=int, default=512)
     parser.add_argument("--mxfp4-backend", choices=["torch", "triton"], default="torch")
-    parser.add_argument(
-        "--attention-backend", choices=["recurrent", "recurrent-fi"], default="recurrent"
-    )
+    parser.add_argument("--attention-backend", type=validate_attn_backend, default="recurrent")
     parser.add_argument("--reference-logits", type=Path)
     parser.add_argument("--prompt", default="请只回答：你好。")
     args = parser.parse_args()

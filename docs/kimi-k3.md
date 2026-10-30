@@ -16,6 +16,15 @@ disagreements. Its four GPU Graph tests and real local Marlin replay passed in
 job 189. No experimental precision kernels have been adopted. Released-weight
 GPU evidence below belongs to the recorded earlier snapshots.
 
+Attention backend registration declares stateful-layer and CUDA-graph capabilities.
+Engine configuration checks those declarations for each selected stage and uses
+the decode stage's graph capability. New stateful backends no longer require
+adding names to an Engine whitelist. The independent shipping-tree CPU/Gloo
+regression passes 505 checks (187 skips, two existing expected disagreements);
+job 218 passed all four dense/MoE/static-hybrid/unified-hybrid GPU graph
+compatibility paths: zero logit error and bitwise equal hybrid state. This refactor
+changes startup validation and keeps the existing operator choices.
+
 The accepted functional baseline is `phase8-committed-v1-source`, commit `8d28bd6`,
 manifest SHA256 `9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373`.
 Its complete CPU/Gloo regression passed in `phase8-full-cpu-v9.log` from a clean
@@ -29,7 +38,7 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 
 | Gate | Current evidence |
 | --- | --- |
-| CPU and Gloo regression | 493 passed, 187 skipped, two expected reference semantic disagreements; generic stable grouping increment at `46ffbab` |
+| CPU and Gloo regression | 505 passed, 187 skipped, two expected reference semantic disagreements; generic attention capability registration |
 | Native/distributed components | 173 passed, job 18; includes ordinary and packed single-expert routing regressions |
 | Hybrid eager versus graph | Job 10: four request-slot batches, static/unified pools, reordered requests and compaction; logits and convolution/recurrent state bitwise equal |
 | Ordinary model compatibility | Job 22: Qwen3 TP4 and Qwen3-MoE TP4/EP4; four batches each, including padded batch 3; zero logit error |

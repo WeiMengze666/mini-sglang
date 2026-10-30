@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import Any, Dict, Iterator, NamedTuple, Tuple
 
 import torch
-from minisgl.attention import create_attention_backend
+from minisgl.attention import SUPPORTED_ATTENTION_BACKENDS, create_attention_backend
 from minisgl.core import Batch, Context, Req, set_global_ctx
 from minisgl.distributed import destroy_distributed, enable_pynccl_distributed, set_tp_info
 from minisgl.distributed.context import init_context_parallel
@@ -354,18 +354,18 @@ def _adjust_config(config: EngineConfig):
         config.model_config.cache_config.state_bytes_per_request(config.dtype, config.tp_info.size)
         if config.model_config.num_qo_heads % config.tp_info.size:
             raise ValueError("MLA heads must be divisible by TP size")
-        if config.attention_backend != "auto" and any(
-            name not in ("recurrent", "recurrent-fi")
-            for name in config.attention_backend.split(",")
-        ):
-            raise ValueError("Hybrid state requires the recurrent attention backend")
         if config.attention_backend == "auto":
             override("attention_backend", "recurrent")
+        backends = [
+            SUPPORTED_ATTENTION_BACKENDS[name] for name in config.attention_backend.split(",")
+        ]
+        if any(not backend.stateful_layers for backend in backends):
+            raise ValueError("Selected attention backend does not support stateful layers")
         requested_graphs = bool(config.cuda_graph_bs) or (
             config.cuda_graph_bs is None and (config.cuda_graph_max_bs or 0) > 0
         )
-        if requested_graphs and config.attention_backend.split(",")[-1] != "recurrent-fi":
-            raise ValueError("Hybrid CUDA graphs require a native recurrent decode backend")
+        if requested_graphs and not backends[-1].cuda_graphs:
+            raise ValueError("Selected decode attention backend does not support CUDA graphs")
         if not requested_graphs:
             override("cuda_graph_bs", [])
             override("cuda_graph_max_bs", 0)
