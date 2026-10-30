@@ -16,7 +16,7 @@ disagreements. Its four GPU Graph tests and real local Marlin replay passed in
 job 189. No experimental precision kernels have been adopted. Released-weight
 GPU evidence below belongs to the recorded earlier snapshots.
 
-The accepted numerical baseline is `phase8-committed-v1-source`, commit `8d28bd6`,
+The accepted functional baseline is `phase8-committed-v1-source`, commit `8d28bd6`,
 manifest SHA256 `9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373`.
 Its complete CPU/Gloo regression passed in `phase8-full-cpu-v9.log` from a clean
 Git worktree. It replaces the model-specific config payload with `hf_config`
@@ -516,12 +516,15 @@ Each engine's timed output matched its ordinary execution token controls.
 Matched full SGLang BF16/Marlin achieved
 70.38/134.61/239.75/404.00 tokens/s; the candidate reaches only
 22.6–30.3% of it. This passes the candidate improvement gate but remains far
-from the requested full-SGLang performance target. Complete 1,319-question
-GSM8K evaluation is running. One truncated response has already been observed,
-so the candidate cannot pass the original zero-truncation gate; the complete
-run is retained for diagnosis. Partial accuracy is not task-quality acceptance.
-The optimized runtime remains isolated pending strict alignment and complete
-quality gates.
+from the requested full-SGLang performance target. Complete GSM8K scored
+1279/1319 (96.97%), versus the accepted baseline's 1282/1319 (97.19%), with one
+invalid answer and one length truncation. It fails both the accuracy floor and
+zero-truncation gate. The complete paired comparison records four recovered
+and seven lost correct cases; raw token sequences matched on 757 cases.
+The isolated source uses Triton KDA and fixed-layout MLA prefill with FlashInfer
+MLA decode, despite its experimental `recurrent-fi` registry alias. The shipping
+backend's FlashInfer KDA default remains unchanged. The optimized runtime is
+rejected for adoption under the strict alignment and task-quality gates.
 
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).

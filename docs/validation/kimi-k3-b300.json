@@ -2640,6 +2640,16 @@
           "safe_internal_symlinks_verified": 2,
           "full_depth_tensors_retained_remote": 16,
           "scope": "Failed attempted reference; old variant label invalidated by actual spawn controls; no stable-reference acceptance"
+        },
+        "job197_calibrated_reference": {
+          "archive": "phase10-job197-calibrated-reference-v1.tar.gz",
+          "bytes": 655860271,
+          "sha256": "920ec6718459cdca90e25343862a209392ae14d32fa7c19dc3b74ae323a5f959",
+          "all_member_files_verified": 104,
+          "full_canonical_depth_ranks": 8,
+          "all_raw_cases_preserved": 33,
+          "omitted_arm_a_full_depth_ranks": 8,
+          "scope": "Complete calibrated canonical reference; full model/quality archive separate"
         }
       },
       "spawn_wrapper_correction_cpu": {
@@ -2670,7 +2680,7 @@
         "sequence_cpu_passed": true,
         "sequence_sha256": "5c27575e5632bf72ca598bc84441cc58a7d5e4134badda6d1d7757fd3395a188",
         "audit_sha256": "7a4d2a7abc10b1b05c481caafaaafb6df65e9d5e82d693ce938354a1b99677e4",
-        "gpu_results_pending": true,
+        "gpu_results_pending": false,
         "runtime_adopted": false,
         "reference_calibration_passed": true
       },
@@ -2789,10 +2799,94 @@
             "8": 0.302790359334376
           }
         },
-        "full_gsm8k_complete": false,
-        "full_gsm8k_acceptance": "cannot pass zero-truncation gate: at least one observed truncated response; full run continues for diagnosis",
+        "full_gsm8k_complete": true,
+        "full_gsm8k_acceptance": "failed original accuracy floor and zero-truncation gates",
         "strict_bf16_alignment_passed": false,
-        "runtime_adopted": false
+        "runtime_adopted": false,
+        "full_gsm8k": {
+          "complete": true,
+          "engine": "mini",
+          "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+          "configuration": {
+            "model": "/data/models/Kimi-K3",
+            "cases": "/home/axis/mengze/mini-sglang-k3/experiment/phase5-gsm8k-cases-v2.json",
+            "prepare": false,
+            "dataset": null,
+            "output": "/home/axis/mengze/mini-sglang-k3/experiment/phase10-phase-aware-persistent-model-v1-gsm8k",
+            "engine": "mini",
+            "limit": 0,
+            "batch_size": 8,
+            "max_new_tokens": 1024,
+            "max_context": 4096,
+            "tp_size": 8,
+            "dcp_size": 2,
+            "ep_size": 8,
+            "attention_backend": "recurrent-fi",
+            "cuda_graph": true,
+            "flashinfer_autotune_skip_ops": []
+          },
+          "completed": 1319,
+          "expected": 1319,
+          "correct": 1279,
+          "accuracy": 0.9696739954510993,
+          "invalid_answers": 1,
+          "truncated": 1,
+          "generated_tokens": 142811,
+          "evaluation_seconds": 3343.757064578007,
+          "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading"
+        },
+        "baseline_quality_comparison": {
+          "left": "/home/axis/mengze/mini-sglang-k3/experiment/phase10-phase-aware-persistent-model-v1-gsm8k",
+          "right": "/home/axis/mengze/mini-sglang-k3/experiment/phase8-gsm8k-mini-v3",
+          "examples": 1319,
+          "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+          "left_accuracy": 0.9696739954510993,
+          "right_accuracy": 0.9719484457922669,
+          "accuracy_delta_percentage_points": -0.22744503411675512,
+          "both_correct": 1275,
+          "both_wrong": 33,
+          "left_only_correct": [
+            187,
+            423,
+            425,
+            796
+          ],
+          "right_only_correct": [
+            12,
+            73,
+            205,
+            322,
+            926,
+            1038,
+            1288
+          ],
+          "same_valid_answer": 1305,
+          "identical_token_ids": 757,
+          "left_invalid": 1,
+          "right_invalid": 1,
+          "left_truncated": 1,
+          "right_truncated": 0
+        },
+        "actual_kernels": {
+          "kda": "Triton sequential prefill and phase-aware native decode",
+          "mla_prefill": "fixed-layout Triton",
+          "mla_decode": "FlashInfer native",
+          "registry_alias": "recurrent-fi (experimental snapshot only; shipping KDA default unchanged)"
+        },
+        "quality_divergence_audit": {
+          "all_examples_audited": 1319,
+          "driver_sha256": "73819804cd774669118983a49150a8da5bf203a0d59dbd197c5897d815eddaf6",
+          "lost_correct_first_different_generated_positions": {
+            "12": 75,
+            "73": 83,
+            "205": 30,
+            "322": 0,
+            "926": 8,
+            "1038": 24,
+            "1288": 0
+          },
+          "scope": "Saved complete paired response tokens; no causal operator attribution or changed answers"
+        }
       }
     },
     "prepared_normalized_collective_diagnostic": {
@@ -2802,7 +2896,14 @@
       "cpu_pass_through_controls_passed": true,
       "cpu_actual_spawn_main_path_passed": true,
       "gpu_executed": false,
-      "scope": "Only corresponding normalized returns and actual collective input/output; complete raw bitwise transparency mandatory before interpreting observations"
+      "scope": "First normalized-return and collective localization with two full raw bitwise transparency gates, then fixed-order projection component/graph control; no runtime adoption",
+      "files": 2427,
+      "entry_sha256": "73f34b7e0cdae3f48b259bc48814b38df043a0391c146a546fe8b63fcc23ea42",
+      "prepared_utc": "2026-10-30T11:39:45.693986+00:00",
+      "job": "205",
+      "submitted_utc": "2026-10-30T11:39:45.698953+00:00",
+      "status": "queued; GPU result not established",
+      "public_kda_contract_replay_scope": "Future public adapter control only; current candidate KDA actually uses Triton; no present error attribution"
     }
   }
 }
