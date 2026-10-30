@@ -2211,6 +2211,14 @@
         "included_files_verified": 527,
         "omitted_files": 0,
         "job160_gpu_outputs_included": false
+      },
+      {
+        "name": "phase10-through-job160-compact-v1.tar.gz",
+        "bytes": 67233198,
+        "sha256": "51aedc4f7306c2a17bfdcf1239a9374439a10ac59d20997163e0b5c7a89a0f97",
+        "included_files_verified": 343,
+        "omitted_files": 0,
+        "job163_gpu_outputs_included": false
       }
     ],
     "runtime_adopted": false,
@@ -2268,6 +2276,42 @@
       "candidate_component_cases_prepared": 43,
       "observer_transparency_required": true,
       "gpu_result_recorded_here": false
+    },
+    "job160": {
+      "entry_sha256": "910f07dacf293a53fc8f82179745d4bdd3272de228cd817f272885fdc01eb66f",
+      "source_manifest_sha256": "3c43da5c300432171cc8e7c3c48421f870ec5ec57496551a9e36763e7b03a974",
+      "gpu_components_passed": 43,
+      "full_chunk_cases": 11,
+      "full_chunk_max_abs": 0.0,
+      "independent_fp32_passed": true,
+      "raw_cases": 11,
+      "raw_positions_per_case": 16,
+      "graph_gates_passed": [
+        "dense",
+        "moe",
+        "static_hybrid",
+        "unified_hybrid"
+      ],
+      "official_reference_loaded": false,
+      "reference_probe_failure": "raw ServerArgs fields do not include resolution declarations; public resolved_view must be read",
+      "runtime_adopted": false,
+      "whole_model_speed_accepted": false,
+      "full_task_accepted": false
+    },
+    "effective_view_cpu_correction": {
+      "public_api": "sglang.srt.arg_groups.model_override_base.resolved_view",
+      "actual_api_overlay_and_negative_control_passed": true,
+      "cuda_initialized": false,
+      "probe_sha256": "7d02787cbcb2067e24aa7e620a0632e277443fd6f8d0148533cec5c35de72092"
+    },
+    "next_effective_reference_submission": {
+      "job": 163,
+      "entry_sha256": "ecbb93f962f28f914f5b93b3b99ca0a14ecea985f1deb69103093b1d7dddb26f",
+      "submitted_utc": "2026-10-30T02:58:35.071046+00:00",
+      "candidate_proofs_reused_from_job": 160,
+      "source_unchanged": true,
+      "observer_transparency_required": true,
+      "gpu_results_recorded_here": false
     }
   }
 }

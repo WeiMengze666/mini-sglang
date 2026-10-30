@@ -327,7 +327,12 @@ Unknown-phase standalone callers retain the portable update. This changes no
 arithmetic kernel. Six phase/capability regressions passed, and executing the
 actual old function body reproduced failures for singleton prefill and missing
 phase. The complete CPU regression passed 484 tests, with 341 skips and two
-expected semantic disagreements. GPU model acceptance remains pending.
+expected semantic disagreements. Job 160 then passed 43 GPU components, all
+eleven complete-model full/chunk comparisons with exact full-vocabulary equality,
+the independent FP32 gate and four dense/MoE/static/unified graph gates. Complete
+11-by-16 raw captures are preserved. These results establish candidate basis
+checks; independent SGLang BF16, whole-model speed and task-quality gates remain
+open, and production runtime is unchanged.
 
 A separate mathematical control shares convolution arithmetic and explicit
 FP32 rounding across phases. It passed 478 CPU regressions, 23 cross-compilations
