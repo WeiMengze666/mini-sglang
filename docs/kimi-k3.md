@@ -565,6 +565,39 @@ The FP32 run also exposed an unsupported FlashInfer one-shot launch when a flat
 290,304-element communication buffer was interpreted as one matrix row.
 This candidate is rejected; timing and complete quality were not run.
 
+Job 215 guarded the generic FlashInfer collective adapter against unsupported
+one-dimensional buffers. The independent all-Torch FP32 reference passed again;
+full/chunk maximum error was `1.5974e-5` at the unchanged `1e-4` tolerance.
+This does not fix the rejected BF16 candidate.
+
+Job 218 tested an optional public `fla-core==0.6.0` KDA adapter. Its 99 CUDA
+components and independent FP32 model check passed, and its observed raw logits
+were bitwise equal to its unobserved run. Complete BF16 acceptance failed:
+first-prompt full/chunk had 72,717 violations and maximum error 1.5625; the
+11-by-16 raw comparison had 9,186,643 violations, 168/176 greedy matches and
+maximum error 9.5. The recorded component FP64-state and continuation controls
+also fail. No timing, complete quality run or adapter adoption follows.
+The four independent shipping-tree graph passes in the same allocation validate
+only the generic capability-registration refactor described above.
+
+Job 219 replayed ten actual official collective inputs across all eight ranks,
+using registered staging, direct caller input and Torch NCCL under the same
+Tree/eight-channel policy. Direct input and Torch matched the captured official
+outputs bitwise at all ten boundaries, with four bitwise repeats. All tested
+2D inputs also matched their own full execution after 1/13-token splitting.
+Registered staging differed at all nine non-embedding boundaries, including
+107,697 elements in the first KDA reduction. This establishes a local transport
+contribution to the mismatch. It does not establish complete-model alignment;
+a direct-input native-KDA candidate must still pass the original model gates.
+
+Job 221 tested direct-input NCCL with explicit native sequential KDA. All eleven
+full/chunk prompts matched bitwise, including the 1,950-token case; 99 CUDA
+components, the independent FP32 reference and four transport/four native graph
+paths passed. Its observed 11-by-16 raw sweep was bitwise transparent. Strict
+cross-engine BF16 still failed: 9,627,196 violations, 169/176 greedy matches and
+maximum error 11.5. The first normalized FFN input still differs. Performance
+and complete quality were not run; the candidate remains unadopted.
+
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
