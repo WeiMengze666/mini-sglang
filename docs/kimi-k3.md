@@ -308,6 +308,20 @@ unchanged paired validation.
 
 ## Current BF16 investigation
 
+The isolated fused KDA decode candidate combines convolution, SiLU and the
+FP32 delta update without mutating borrowed prefix state. GPU job 149 passed
+six independent FP64, batch-isolation and graph-replay cases, together with
+24 normalization cases (31 tests including the CPU fallback). This component
+result does not establish consistency with the existing prefill path.
+
+Job 153 failed the complete-model check: its first complete-model full/chunk check
+had 35,607 of 163,840 logits outside the unchanged BF16 tolerance, with maximum
+absolute difference 0.912109375. Its independent FP32 checkpoint check passed,
+but graph, model performance and GSM8K stages were skipped. The fused decode
+API therefore remains isolated and is not added to the production engine.
+The next candidate shares convolution arithmetic and FP32 intermediate
+boundaries between prefill and decode; it still requires GPU validation.
+
 Job 135 found an unresolved reference-calibration issue. The same 27 input
 tokens in the pinned official runner, with one versus sixteen warmup steps,
 changed 161,192 of 163,840 first-position logits. Maximum error was 1.30859375;
@@ -320,15 +334,41 @@ imports initialized CUDA before the Engine selected its device. The startup
 assertion remains intact. Repaired diagnostics defer vendor imports and passed
 15 CPU checks, including CUDA-visible import guards, stored-callable snapshots,
 fresh-state initialization, independent warmup length and negative controls.
-Job 143 tests the repaired collectors and the actual generic API integration.
-It also checks selected initial states on all eight ranks and uses the pool's
-normal `clear_slots` API to establish cold benchmark requests. These prepared
-controls are not GPU numerical, full-task or performance acceptance.
+Job 143 completed the repaired collectors and generic-source integration:
+334 GPU components passed, all eleven complete-model full/chunk comparisons
+were exact, and the independent FP32 checkpoint gate passed. Initial recurrent
+state was finite and zero on all eight official ranks, including the legacy
+warmup protocol. Eighteen common first-layer boundaries also matched bitwise
+across official warmup controls. These observations do not support a first-layer
+state-leak explanation. Its complete official sweep was rejected because the
+controller requested only one input length; the single-case traces remain valid.
 
-The complete job-135 evidence archive contains 1,201 verified files, including
-eight-rank official captures, failed controls and repaired CPU proofs. Frozen
-job-143 inputs are included; its live outputs are excluded. The ledger records
-the archive hash and preserves all earlier failures.
+Job 146 repaired that input schedule and captured two independently loaded
+official runs with identical source, configuration, sixteen-step warmup and all
+eleven prompts. Their complete 176-position self-comparison still failed:
+9,235,864 raw-logit violations, with 169 of 176 greedy tokens matching. The first
+six captured readouts matched bitwise on every rank; layer 3's attention readout
+first changed 255 of 193,536 entries, with maximum difference 0.001953125.
+That boundary precedes the first MLA layer's computation and does not identify
+whether the cause lies in the preceding feed-forward computation, residual
+aggregation or communication. Cross-engine counts remain diagnostic until
+this reference control is calibrated.
+
+The original four-warp generic persistent-expert candidate passed 44 independent
+GPU tests and sixteen bitwise baseline/chunk/graph cases in job 149. Its BF16
+component decode geometric-mean speedup was 1.269, with minimum BF16 speedup
+0.991 across the tested decode/prefill cases. Eight-warp variants regressed
+other shapes and were rejected. None of these measurements is a whole-model
+speedup or a production adoption.
+
+The evidence archives through jobs 143 and 149 contain 906 and 590 locally
+verified files. The latter inventory explicitly retains sixteen large complete
+layer traces remotely and includes original first-four-layer excerpts with
+provenance. Complete raw-logit sweeps and all failures are preserved. The first
+deterministic-reference attempt in job 153 failed before model loading because
+its DCP decode backend was unsupported. The corrected campaign adds an explicit
+supported decode backend and requires actual `resolve_once()` before loading;
+argument parsing alone is no longer treated as configuration validation.
 
 Frozen operator traces isolate batch-dependent rounding in dense projections,
 absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels

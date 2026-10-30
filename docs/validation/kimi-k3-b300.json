@@ -2094,5 +2094,111 @@
     },
     "runtime_adopted": false,
     "full_task_accepted": false
+  },
+  "phase10_complete_reference_and_decode_143_153": {
+    "scope": "diagnostic candidates and unchanged numerical gates; no runtime adoption or current whole-model speed acceptance",
+    "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "job143": {
+      "entry_sha256": "85b4b6b4b12c44bd9b0e16c31a50e509e9c7c151a68651c40a561ecf75604a30",
+      "integrated_source_manifest_sha256": "9e785d7030e28197d31cbc876552f9113fbccde2662350d3f1fae1ea431edc6e",
+      "gpu_components_passed": 334,
+      "full_chunk_cases": 11,
+      "full_chunk_max_abs": 0.0,
+      "independent_fp32_passed": true,
+      "raw_capture_cases": 11,
+      "raw_positions_per_case": 16,
+      "official_complete_sweep_accepted": false,
+      "official_sweep_failure": "controller supplied one input length; completeness check rejected capture",
+      "initial_state_finite_and_zero_all_eight_ranks": true,
+      "official_first_layer_common_boundaries_bitwise": 18
+    },
+    "job146": {
+      "entry_sha256": "278c25c0213e73cff605572c09daab14bd12e543c01b6e963f57d3a9cddf1c0a",
+      "official_runs": 2,
+      "identical_source_configuration_warmup_and_inputs": true,
+      "cases_per_run": 11,
+      "positions_per_case": 16,
+      "self_repetition_passed": false,
+      "rtol": 0.05,
+      "atol": 0.1,
+      "raw_pointwise_violations": 9235864,
+      "greedy_matches": 169,
+      "greedy_compared": 176,
+      "first_differing_captured_readout": "003.attention_readout",
+      "first_difference_all_ranks": {
+        "changed": 255,
+        "elements": 193536,
+        "max_abs": 0.001953125
+      },
+      "causal_operator_identified": false,
+      "library_prefill_candidate": {
+        "source_manifest_sha256": "b8001408f00dccbbef279c77c3249b73409ac2ecd667e27a00ca8bee0910b1c2",
+        "first_full_chunk_passed": false,
+        "pointwise_violations": 67821,
+        "compared": 163840,
+        "max_abs": 1.416015625,
+        "raw_capture_complete": true,
+        "independent_fp32_passed": true
+      }
+    },
+    "job149": {
+      "entry_sha256": "43775c4cebe517bf6044e7c201a7a2b2ee05822dd07bcfe9d8d02e7d5861accc",
+      "decode_source_manifest_sha256": "7f0ebc51936823232c832ac8166b32ec8b04f0b3fb92a59f27c5ad045c93088b",
+      "decode_and_norm_tests_passed": 31,
+      "independent_fp64_decode_geometries": 6,
+      "persistent_expert_tests_passed": 44,
+      "bitwise_baseline_chunk_graph_cases": 16,
+      "bf16_component_decode_geometric_mean_speedup": 1.26933197,
+      "minimum_bf16_component_speedup": 0.99105955,
+      "whole_model_speed_tested": false,
+      "eight_warp_variants_rejected": true
+    },
+    "job153": {
+      "entry_sha256": "82e2bff324af6446c124c2680dd11d4d2462e34b68d3920cd358bb9879d5a811",
+      "source_manifest_sha256": "bf972aa0d0f5edce55a94551a154f9fb3de75776359af9257de50aaf69fd0a0a",
+      "first_full_chunk_passed": false,
+      "pointwise_violations": 35607,
+      "compared": 163840,
+      "max_abs": 0.912109375,
+      "rtol": 0.05,
+      "atol": 0.1,
+      "raw_capture_complete": true,
+      "independent_fp32_passed": true,
+      "official_reference_model_loaded": false,
+      "official_reference_failure": "DCP does not support inherited triton decode backend",
+      "configuration_probe_limitation": "from_cli_args parsed parameters but omitted resolve_once; its success is not configuration acceptance",
+      "graphs_executed": false,
+      "whole_model_performance_executed": false,
+      "full_gsm8k_executed": false
+    },
+    "corrected_reference_submission": {
+      "job": 157,
+      "entry_sha256": "6a03a5ec5548f9e800eb0f03464f3ae6fb449833d88a5a9b35a1e7ce5af5fe83",
+      "submitted_utc": "2026-10-30T00:45:32.288418+00:00",
+      "cpu_schedule_and_observer_proof_passed": true,
+      "model_configuration_requires_actual_resolve_once": true,
+      "gpu_result_recorded_here": false
+    },
+    "verified_archives": [
+      {
+        "name": "phase10-through-job143-compact-v1.tar.gz",
+        "bytes": 284598874,
+        "sha256": "515198a8ff9bf858cdee1a07fac374363e2ed1991e7e5c50627fddaf29305da0",
+        "included_files_verified": 906,
+        "omitted_files": 0
+      },
+      {
+        "name": "phase10-through-job149-compact-v1.tar.gz",
+        "bytes": 208044970,
+        "sha256": "6ac0206654106e9379233d5c9b7596004133a7daaff16038340990d785ef3f8f",
+        "included_files_verified": 590,
+        "omitted_full_layer_traces_retained_remote": 16,
+        "job153_outputs_included": false
+      }
+    ],
+    "runtime_adopted": false,
+    "strict_independent_bf16_accepted": false,
+    "whole_model_speed_accepted": false,
+    "full_task_accepted": false
   }
 }
