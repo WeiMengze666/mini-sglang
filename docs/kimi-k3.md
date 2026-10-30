@@ -754,6 +754,14 @@ Job258 then rejects native approximate tanh for FP32 inputs against the new
 independent FP64 activation test: 4/129 values exceed `rtol=3e-6, atol=1e-6`.
 That run is stopped and retained. The next source restricts native fusion to
 FP16/BF16 and preserves the original FP32 arithmetic, with the test unchanged.
+Job261 passes all 48 new independent activation precision/chunk/graph cases
+and all eight preliminary stages, then rejects the original large-expert
+component case: 4/7,168 outputs exceed its unchanged `0.015/0.015` tolerance;
+273 cases pass before the failure. That test forms its expected activation by
+calling the public SiTU, while the packed executor retains its old accurate
+tanh. The run is stopped before full-model validation. Explicit same-input
+expert controls and independently labelled FP32/FP64 activation oracles are
+prepared to distinguish arithmetic and oracle coupling; no failure is waived.
 
 Job252's complete tensor results remain on the server in
 `phase10-job252-server-results-v1.tar.gz` (175,169,512 bytes, SHA256
