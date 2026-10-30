@@ -319,13 +319,22 @@ had 35,607 of 163,840 logits outside the unchanged BF16 tolerance, with maximum
 absolute difference 0.912109375. Its independent FP32 checkpoint check passed,
 but graph, model performance and GSM8K stages were skipped. The fused decode
 API therefore remains isolated and is not added to the production engine.
-The next candidate shares convolution arithmetic and explicit FP32 rounding
-boundaries between prefill and decode. It passed 478 CPU regressions and 23
-kernel cross-compilations. Two twelve-case CPU-interpreter checks additionally
-cover short histories, batch layouts, complete versus single-step state and an
-independent FP64 oracle, using FP32 host buffers quantized to BF16 values. These
-host checks do not establish GPU rounding, model alignment or speed. The new
-candidate still requires GPU validation.
+The next primary candidate uses the batch's declared phase to select the
+algorithm. The failed integration chose decode whenever every request contained
+one token, which also covers a singleton prefill tail. Prefill now retains
+`layer.update`; only an explicit decode batch may select `layer.decode`.
+Unknown-phase standalone callers retain the portable update. This changes no
+arithmetic kernel. Six phase/capability regressions passed, and executing the
+actual old function body reproduced failures for singleton prefill and missing
+phase. The complete CPU regression passed 484 tests, with 341 skips and two
+expected semantic disagreements. GPU model acceptance remains pending.
+
+A separate mathematical control shares convolution arithmetic and explicit
+FP32 rounding across phases. It passed 478 CPU regressions, 23 cross-compilations
+and two twelve-case host-interpreter checks, including an independent FP64
+oracle with quantized FP32 buffers. Those host results do not establish GPU
+rounding, model alignment or speed. This larger control remains isolated.
+
 
 Job 135 found an unresolved reference-calibration issue. The same 27 input
 tokens in the pinned official runner, with one versus sixteen warmup steps,
@@ -371,9 +380,13 @@ verified files. The latter inventory explicitly retains sixteen large complete
 layer traces remotely and includes original first-four-layer excerpts with
 provenance. Complete raw-logit sweeps and all failures are preserved. The first
 deterministic-reference attempt in job 153 failed before model loading because
-its DCP decode backend was unsupported. The corrected campaign adds an explicit
-supported decode backend and requires actual `resolve_once()` before loading;
-argument parsing alone is no longer treated as configuration validation.
+its DCP decode backend was unsupported. Job 157 reached actual `resolve_once()` and configured deterministic NCCL, but
+its expected prefill-backend assertion failed before model loading. Job 160
+explicitly sets both supported phase backends and saves configuration values
+before checking them. It combines complete repeated references, a normal-run
+observer-transparency control and the phase-aware candidate in one GPU task.
+Argument parsing alone is not configuration validation. No new runtime,
+independent BF16 or whole-model performance acceptance is recorded here.
 
 Frozen operator traces isolate batch-dependent rounding in dense projections,
 absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels

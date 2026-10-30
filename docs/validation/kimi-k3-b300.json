@@ -2203,6 +2203,14 @@
         "omitted_files": 0,
         "job157_gpu_outputs_included": false,
         "later_host_interpreter_checks_included": false
+      },
+      {
+        "name": "phase10-through-job157-cpu-v1.tar.gz",
+        "bytes": 1475245,
+        "sha256": "2d8904d56ec1c0ab0c48b80ce251b74c25e6e309b31d41252d45f835a5629f38",
+        "included_files_verified": 527,
+        "omitted_files": 0,
+        "job160_gpu_outputs_included": false
       }
     ],
     "runtime_adopted": false,
@@ -2221,6 +2229,45 @@
       "host_scope": "indexing, batch/history layout and independent FP64 checks only; not GPU arithmetic, rounding or performance acceptance",
       "gpu_accepted": false,
       "runtime_adopted": false
+    },
+    "job157": {
+      "entry_sha256": "6a03a5ec5548f9e800eb0f03464f3ae6fb449833d88a5a9b35a1e7ce5af5fe83",
+      "resolve_once_executed": true,
+      "nccl_tree_configured": true,
+      "configuration_accepted": false,
+      "failure": "prefill backend expectation failed after resolve_once; actual value was not saved by this probe",
+      "official_model_loaded": false,
+      "official_raw_capture_complete": false
+    },
+    "phase_aware_decode_cpu": {
+      "source_manifest_sha256": "3c43da5c300432171cc8e7c3c48421f870ec5ec57496551a9e36763e7b03a974",
+      "runtime_change": "explicit decode phase selects layer.decode; singleton prefill and unknown phase retain layer.update",
+      "changed_files_relative_to_v2": [
+        "python/minisgl/attention/recurrent.py",
+        "tests/core/test_recurrent_backend_selection.py"
+      ],
+      "new_phase_contract_cases": 6,
+      "cpu_passed": 484,
+      "skipped": 341,
+      "expected_semantic_disagreements": 2,
+      "old_function_negative_failures": [
+        "singleton prefill with native decode capability",
+        "unknown phase with native decode capability"
+      ],
+      "gpu_proven_arithmetic_kernels_byte_identical": true,
+      "gpu_model_accepted": false,
+      "runtime_adopted": false
+    },
+    "next_serial_submission": {
+      "job": 160,
+      "entry_sha256": "910f07dacf293a53fc8f82179745d4bdd3272de228cd817f272885fdc01eb66f",
+      "submitted_utc": "2026-10-30T02:39:01.274008+00:00",
+      "source_manifest_sha256": "3c43da5c300432171cc8e7c3c48421f870ec5ec57496551a9e36763e7b03a974",
+      "explicit_prefill_backend": "trtllm_mla",
+      "explicit_decode_backend": "cutedsl_mla",
+      "candidate_component_cases_prepared": 43,
+      "observer_transparency_required": true,
+      "gpu_result_recorded_here": false
     }
   }
 }
