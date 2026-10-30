@@ -2312,6 +2312,66 @@
       "source_unchanged": true,
       "observer_transparency_required": true,
       "gpu_results_recorded_here": false
+    },
+    "job163": {
+      "entry_sha256": "ecbb93f962f28f914f5b93b3b99ca0a14ecea985f1deb69103093b1d7dddb26f",
+      "effective_configuration_passed": true,
+      "official_runs_complete": 2,
+      "cases_per_run": 11,
+      "positions_per_case": 16,
+      "all_layer_initial_state_finite_and_zero_both_runs": true,
+      "official_self_repetition": {
+        "passed": false,
+        "rtol": 0.05,
+        "atol": 0.1,
+        "violations": 9704318,
+        "greedy_matches": 169,
+        "greedy_compared": 176
+      },
+      "first_captured_divergence": {
+        "stage": "003.attention_readout.input",
+        "all_eight_ranks_agree": true,
+        "earlier_captured_tensors_bitwise_per_rank": 8,
+        "changed": 440,
+        "elements": 193536,
+        "max_abs": 0.00048828125,
+        "following_readout_changed": 576,
+        "following_readout_max_abs": 0.00390625,
+        "causal_operator_identified": false
+      },
+      "candidate_comparison": {
+        "passed": false,
+        "violations": 9785819,
+        "greedy_matches": 166,
+        "greedy_compared": 176,
+        "qualified_by_failed_reference_self_repetition": true
+      },
+      "unobserved_reference_control_executed": false,
+      "model_performance_executed": false,
+      "complete_gsm8k_executed": false,
+      "runtime_adopted": false,
+      "verified_archive": {
+        "archive": "phase10-through-job163-compact-v1.tar.gz",
+        "bytes": 161836392,
+        "sha256": "b8c3f277f080402483a5369b0dea4d9da501ac599fdabd9e014667b10d118e00",
+        "included_files": 367,
+        "omitted_files": 16,
+        "all_member_bytes_and_sha256_verified": true,
+        "full_depth_captures_retained_remote": 16
+      }
+    },
+    "prepared_followup_ffn_diagnostic": {
+      "scope": "one 27-token prompt, 16 positions; router/FFN/residual snapshots; no arithmetic replacement",
+      "observer_cpu_checks_passed": true,
+      "actual_official_cli_cpu_check_passed": true,
+      "driver_sha256": "b7c852696bd6c07dbd61bdbee2c9d2e5f7f084a611a5558c8e6b8250f67c2878",
+      "cases_sha256": "d2f8600655671290a794902bd4bf80eb61940bf9a684a82a053bfb59e4ca3944",
+      "gpu_submitted": true,
+      "further_server_time_authorization": "user explicitly approved continuing all remaining localization and final acceptance",
+      "job": 172,
+      "entry_sha256": "920d0d451adeec01cf2a01a4ac79c48448502b7ec0500f9a012c7494c5a20291",
+      "submitted_utc": "2026-10-30T04:40:24.009345+00:00",
+      "gpu_results_recorded_here": false
     }
   }
 }

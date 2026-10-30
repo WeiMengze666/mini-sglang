@@ -393,6 +393,27 @@ observer-transparency control and the phase-aware candidate in one GPU task.
 Argument parsing alone is not configuration validation. No new runtime,
 independent BF16 or whole-model performance acceptance is recorded here.
 
+Job 163 completed effective-view configuration and two independent complete
+official runs, including all-layer zero-state checks. The unchanged raw gate
+still rejected official self-repetition: 9,704,318 pointwise violations and
+169/176 greedy matches. All eight ranks first differed in the incoming tensor
+at `003.attention_readout.input`: 440/193,536 changed entries, maximum
+0.00048828125. The eight earlier captured tensors on each rank matched bitwise.
+The following readout changed 576 entries with maximum 0.00390625. This narrows
+the unobserved region to the preceding FFN, its communication and residual
+writeback; it does not identify a specific faulty operator or implicate MLA
+computation that has not yet executed.
+
+The phase-aware candidate's complete comparison against this reference failed
+with 9,785,819 pointwise violations and 166/176 greedy matches. Independent BF16
+alignment is not accepted, and the reference instability prevents attribution
+of those cross-engine differences to mini alone. The normal-run observer
+control, model performance and complete GSM8K stages were skipped. No runtime
+candidate was adopted. A one-prompt FFN/router/residual snapshot diagnostic has
+passed CPU import, identity, snapshot and official-CLI checks. The user has
+authorized continued server use for the remaining localization and final
+acceptance after this completed round.
+
 Frozen operator traces isolate batch-dependent rounding in dense projections,
 absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels
 and a sequential FP32 recurrence eliminated full/chunk logit differences for one
