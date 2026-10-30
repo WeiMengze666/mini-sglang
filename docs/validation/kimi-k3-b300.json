@@ -2539,7 +2539,7 @@
         "seconds": 32.37,
         "cuda_initialized": false,
         "only_generic_routing_delta": true,
-        "gpu_checked": false
+        "gpu_checked": true
       },
       "full_reference_calibrated": false,
       "strict_bf16_accepted": false,
@@ -2550,6 +2550,63 @@
         "files": 1997,
         "submitted_utc": "2026-10-30T08:04:30.316996+00:00",
         "scope": "Generic integer route graph plus real Marlin repeatability; no full reference calibration"
+      },
+      "job189": {
+        "exit_code": 0,
+        "elapsed_seconds": 34.343086,
+        "graph_tests_passed": 4,
+        "graph_seconds": 12.65,
+        "real_marlin_stable_repetitions": 32,
+        "real_marlin_bitwise_repeated": true,
+        "integer_oracle_passed": true,
+        "native_repetitions": 32,
+        "native_bitwise_repeated": false,
+        "model_calibrated": false
+      },
+      "reference_submission": {
+        "job": 190,
+        "entry_sha256": "07b3823cd37629c2c22367e366ac48db74ab3c28832184af12c253c0033f678f",
+        "files": 2008,
+        "submitted_utc": "2026-10-30T08:11:32.369558+00:00",
+        "statuses": {
+          "configuration": 1
+        },
+        "model_loaded": false,
+        "reference_valid": false,
+        "failure": "Configuration stage hid CUDA although public effective resolution requires device discovery; no model loaded; frozen failure retained"
+      },
+      "reference_submission_v2": {
+        "job": 191,
+        "entry_sha256": "9bd29587c67c279293c9dc655e85955ec6afd887f76e4a443dd213ed574cd406",
+        "files": 2016,
+        "submitted_utc": "2026-10-30T08:16:44.205902+00:00",
+        "configuration_passed": true,
+        "model_results_pending": true
+      },
+      "generic_routing_shipping_cpu": {
+        "parent_commit": "3fded4c",
+        "passed": 493,
+        "skipped": 187,
+        "xfailed": 2,
+        "seconds": 31.7,
+        "cuda_initialized": false,
+        "scope": "Only optional generic routing utility and tests; default route grouping unchanged; optimized full-model runtime candidate remains unshipped"
+      },
+      "verified_local_evidence": {
+        "job174": {
+          "archive": "phase10-through-job174-compact-v1.tar.gz",
+          "bytes": 309442240,
+          "sha256": "97e7b006ef246e2382e5dd797542528db28032fd1a0588f2e40205a1947ed2c5",
+          "all_member_files_verified": 368
+        },
+        "job183": {
+          "archive": "phase10-through-job183-compact-v1.tar.gz",
+          "bytes": 69824187,
+          "sha256": "661635b6df4fdc752326acf96324d6d5dba244f828b8e13d8cf308063be5188f",
+          "all_member_files_verified": 43,
+          "checkpoint_weight_omitted": true,
+          "small_activations_routes_endpoints_and_each_weight_sha_preserved": true
+        }
       }
     }
   }

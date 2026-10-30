@@ -467,8 +467,18 @@ reference instability remains recorded separately. Raw-logit tolerances
 optional stable grouping candidate, built on the phase-aware persistent source,
 passed 524 CPU/Gloo tests (345 skips, two expected failures). Its independent
 bucket oracle covers integer dtypes, empty and noncontiguous inputs, remote
-routes and fully initialized padding; GPU graph and real Marlin gates are still
-pending in queued job 189 (entry `ac617759462ccf2facf48f7a741692c2ef51aa07c945ddcb0f6f7f4a26710a96`). No runtime adoption or strict BF16 acceptance is claimed.
+routes and fully initialized padding. Job 189 then passed all four CUDA Graph
+checks (12.65 seconds) and the real local Marlin replay: 32 stable-route calls
+were bitwise equal and matched the independent integer-plan oracle, while 32
+native-route calls remained unstable. Complete reference calibration remains
+pending. Job 190 stopped before model loading because its configuration stage
+hid CUDA, which public effective resolution requires for device discovery.
+That failure is retained; corrected job 191 passed effective configuration and
+is loading the full checkpoint. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
+tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
+It is available through `moe_align_block_size(..., stable=True)`; the default
+route grouping remains unchanged. This utility is independent of the unshipped
+optimized runtime candidate. Strict BF16 acceptance remains pending.
 
 A separate performance composition adds only the already component-tested
 four-warp persistent expert work grid to the phase-aware source. It passed

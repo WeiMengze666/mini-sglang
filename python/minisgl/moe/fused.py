@@ -30,7 +30,7 @@ def fused_topk(
 
 
 def moe_align_block_size(
-    topk_ids: torch.Tensor, block_size: int, num_experts: int
+    topk_ids: torch.Tensor, block_size: int, num_experts: int, *, stable: bool = False
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Aligns the token distribution across experts to be compatible with block
@@ -69,6 +69,10 @@ def moe_align_block_size(
     - The padding ensures that the total number of tokens is now divisible
         by block_size for proper block matrix operations.
     """
+    if stable:
+        from .routing import align_routes
+
+        return align_routes(topk_ids, block_size, num_experts)
     from sgl_kernel import moe_align_block_size as sgl_moe_align_block_size
 
     max_num_tokens_padded = topk_ids.numel() + (num_experts + 1) * (block_size - 1)
