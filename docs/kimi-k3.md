@@ -426,6 +426,50 @@ inferred. Job 174 will observe the actual fused producers and reduction path.
 Its stacked import, tuple identity, out-buffer snapshots and official CLI passed
 CPU checks; uninitialized output buffers are omitted before their producers.
 
+Job 174 observed the actual fused branch. Captured routed inputs, top-k IDs,
+mixing weights and shared outputs matched bitwise on every rank. A few local
+routed outputs already differed before communication: six elements in layer 1
+on rank 7, and one/two/two elements in layer 2 on ranks 2/3/6. The first local
+changes need not survive BF16 collective rounding; after layer 2's sum, one
+latent element changed and the FFN return changed 191 elements. This places the
+remaining region inside the routed executor without identifying a particular
+Marlin GEMM, activation or mixture kernel. It does not establish a communication
+bug. Raw repetition still failed with 1,353,818 violations and 15/16 greedy
+matches; maximum raw error was 13.25.
+
+A frozen local replay contains the real rank-3/layer-2 activations, routes and
+112 native local experts (1,965,979,589 bytes), avoiding another full-model load.
+Actual CPU import/signature and material checks passed. Job 178 stopped during
+JIT setup because its submission omitted the existing `ninja` directory from
+`PATH`; it produced no numerical report. The environment correction reuses the
+same frozen replay and data, with the failure retained separately.
+
+Job 180 completed that unchanged replay with the corrected build environment.
+Repeated local outputs were not bitwise stable over 32 calls (maximum difference
+0.0000152587890625), and at least one call matched captured official endpoint B
+bitwise. Both observed GEMMs actually used `use_atomic_add=False` and
+`use_fp32_reduce=True`. After excluding unused and remote routing entries, all
+77 local routes remained the same set while their order changed. This is a
+reproduced local instability. Job 182 fixed two captured plans: each repeated
+32 times bitwise, but their outputs matched each other, so that control did not
+establish a causal order effect. Job 183 instead froze two plans with different
+captured endpoints. Each repeated 32 times bitwise and reproduced its endpoint
+exactly; changing the plan changed 149 output elements (maximum
+0.0000152587890625). The result held with native alignment work and allocations
+retained before using the fixed plan. This establishes an order effect for this
+real local workload, with unchanged GEMMs, precision, inputs and expert bytes.
+It does not establish full-model repeatability or cross-engine alignment.
+
+The user approved a deterministic official reference with fixed route order,
+unchanged official GEMMs and precision, subject to complete calibration. Stock
+reference instability remains recorded separately. Raw-logit tolerances
+(`rtol=0.05`, `atol=0.1`) and exact greedy matching remain unchanged. A generic
+optional stable grouping candidate, built on the phase-aware persistent source,
+passed 524 CPU/Gloo tests (345 skips, two expected failures). Its independent
+bucket oracle covers integer dtypes, empty and noncontiguous inputs, remote
+routes and fully initialized padding; GPU graph and real Marlin gates are still
+pending in queued job 189 (entry `ac617759462ccf2facf48f7a741692c2ef51aa07c945ddcb0f6f7f4a26710a96`). No runtime adoption or strict BF16 acceptance is claimed.
+
 A separate performance composition adds only the already component-tested
 four-warp persistent expert work grid to the phase-aware source. It passed
 484 CPU/Gloo checks, with 341 skips and two expected disagreements; its full

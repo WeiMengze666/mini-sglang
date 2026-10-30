@@ -2397,7 +2397,15 @@
       },
       "full_gsm8k_executed": false,
       "model_performance_executed": false,
-      "runtime_adopted": false
+      "runtime_adopted": false,
+      "verified_archive": {
+        "archive": "phase10-through-job172-compact-v1.tar.gz",
+        "bytes": 144461183,
+        "sha256": "6710891cef3812eff3913c21221c12ca290f9e80e5034b7214465cfbc7094c18",
+        "included_files": 603,
+        "all_member_bytes_and_sha256_verified": true,
+        "full_depth_files_retained_remote": 16
+      }
     },
     "next_fused_ffn_diagnostic": {
       "job": 174,
@@ -2422,6 +2430,127 @@
       "combined_gpu_accepted": false,
       "whole_model_speed_accepted": false,
       "runtime_adopted": false
+    },
+    "job174": {
+      "scope": "one prompt, two complete official16-position captures; no model/performance acceptance",
+      "entry_sha256": "d6afb7e7cfa7ec92ebbee8d85c8058747e0bdb5a587070b355b8e0b60a77e49a",
+      "configuration_and_initial_state_passed": true,
+      "self_repetition_passed": false,
+      "raw_violations": 1353818,
+      "greedy_matches": 15,
+      "greedy_compared": 16,
+      "max_raw_abs": 13.25,
+      "all_captured_routed_inputs_topk_ids_weights_and_shared_outputs_bitwise": true,
+      "local_routed_differences": [
+        {
+          "rank": 2,
+          "layer": 2,
+          "changed": 1,
+          "max_abs": 3.725290298461914e-09
+        },
+        {
+          "rank": 3,
+          "layer": 2,
+          "changed": 2,
+          "max_abs": 1.52587890625e-05
+        },
+        {
+          "rank": 6,
+          "layer": 2,
+          "changed": 2,
+          "max_abs": 7.62939453125e-06
+        },
+        {
+          "rank": 7,
+          "layer": 1,
+          "changed": 6,
+          "max_abs": 3.814697265625e-06
+        }
+      ],
+      "exact_internal_kernel_identified": false,
+      "communication_bug_claimed": false,
+      "runtime_adopted": false
+    },
+    "local_routed_replay": {
+      "data_bytes": 1965979589,
+      "data_sha256": "d44a646d8fa409f12b196c3ea9f67b5583f42fe6f1e5a93c072ad504dceb8366",
+      "cpu_signature_and_material_checks_passed": true,
+      "experts": 112,
+      "rank": 3,
+      "layer": 2,
+      "job178": {
+        "entry_sha256": "8268025509f6774f58947ca40be753f2d220558b502fc5be97d012c0bb98eebb",
+        "numeric_report_created": false,
+        "failure": "JIT build could not find ninja because submission omitted existing build-tool PATH"
+      },
+      "unchanged_replay_with_corrected_environment_pending": false,
+      "model_or_performance_accepted": false,
+      "job180": {
+        "entry_sha256": "8c29fc082f4e5aa1e0220e805a7da7aa79f7594297166fb5e1ef29c33657947b",
+        "numeric_report_created": true,
+        "native_repetitions": 32,
+        "native_bitwise_repeated": false,
+        "max_repeat_abs": 1.52587890625e-05,
+        "min_changed_against_official_capture_b": 0,
+        "actual_atomic_add": false,
+        "actual_fp32_reduce": true,
+        "masked_local_routes": 77,
+        "masked_route_order_changes": [
+          0,
+          53,
+          61,
+          58
+        ],
+        "masked_route_sets_equal": true,
+        "sole_causal_kernel_identified": false
+      }
+    },
+    "stable_routing_reference": {
+      "user_accepted": true,
+      "condition": "Full calibrated deterministic official reference; only integer route grouping changes; official GEMMs and precision unchanged; stock instability retained separately",
+      "raw_rtol": 0.05,
+      "raw_atol": 0.1,
+      "greedy_exact": true,
+      "job182": {
+        "fixed_plans_bitwise_repeated": true,
+        "repetitions_per_plan": 32,
+        "between_plans_changed": 0,
+        "causal_order_effect_established": false
+      },
+      "job183": {
+        "entry_sha256": "92fefe72f27016c50b5e885100fb084386906468779bc6dedbfa66707c0d63a3",
+        "fixed_plans": 2,
+        "modes": [
+          "fixed_only",
+          "with_native_alignment_work"
+        ],
+        "repetitions_per_plan_per_mode": 32,
+        "all_bitwise_repeated": true,
+        "all_original_endpoint_matches_bitwise": true,
+        "between_plans_changed": 149,
+        "between_plans_max_abs": 1.52587890625e-05,
+        "scope": "Causal route-order effect on this real local Marlin workload; no full model calibration"
+      },
+      "generic_stable_routing_cpu": {
+        "source_manifest_sha256": "e4e9184411f42db8e801bc5cea720ceaebe5b0287c169f821992330a9e292a52",
+        "passed": 524,
+        "skipped": 345,
+        "xfailed": 2,
+        "seconds": 32.37,
+        "cuda_initialized": false,
+        "only_generic_routing_delta": true,
+        "gpu_checked": false
+      },
+      "full_reference_calibrated": false,
+      "strict_bf16_accepted": false,
+      "runtime_adopted": false,
+      "generic_gpu_submission": {
+        "job": 189,
+        "entry_sha256": "ac617759462ccf2facf48f7a741692c2ef51aa07c945ddcb0f6f7f4a26710a96",
+        "files": 1997,
+        "submitted_utc": "2026-10-30T08:04:30.316996+00:00",
+        "scope": "Generic integer route graph plus real Marlin repeatability; no full reference calibration"
+      }
     }
   }
 }
