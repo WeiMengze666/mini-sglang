@@ -619,6 +619,26 @@ for a one-file persistent-grid change against the shipping-tree expert executor.
 The previous job's import failure occurred before CUDA tests and remains
 recorded. No whole-model timing is attributed to this isolated grid change.
 
+Job 230 identified the dense-projection discrepancy: official deterministic
+mode replaces ATen mm/addmm beneath `F.linear`. With that actual dispatch, all
+four captured KDA projections and the output partial match bitwise on all eight
+ranks. The fixed Triton alternative also matches, including 1/13-token splits.
+A new 80-line generic fixed-accumulation kernel independently reproduces those
+endpoints in job 231, without an SGLang dependency. Its original independent
+projection suite reports 24 passes and five FP64-oracle near-zero tolerance
+failures; these are retained, not relaxed or treated as adoption.
+
+Job 233 computes the delta-rule intra stage with an independent panel Gram,
+triangular inverse and W/U transform. Across all eight actual 27-token payloads,
+both K tile widths (32/64), with four bitwise repetitions, computed W/U, gated
+keys, valid Aqk, output and final FP32 state all match the canonical reference
+bitwise. This computes every intermediate, unlike the earlier stage-substitution
+control. It uses public FLA state/output primitives; no SGLang import is added
+to the implementation. Independent FP64 algebra and 18 SM103 cross-compilations
+also pass. Longer sequences, nonzero state, complete-model BF16 and performance
+remain separate gates. The official projection-oracle control in this allocation
+failed at dependency import before tests and supplies no numerical result.
+
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default

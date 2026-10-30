@@ -2254,6 +2254,22 @@
         "safe_internal_symlinks_verified": 1,
         "omitted_files": 0,
         "scope": "Completed225/227 only; all new frozen inputs and actual stage data included without omissions. No229/230/231 outputs."
+      },
+      {
+        "name": "phase10-job229231-results-v1.tar.gz",
+        "bytes": 99575139,
+        "sha256": "4ee993a1ad079058cb9a2cbf0cf358933c2cb2babb60350e5a0eaeaa7c16c3ec",
+        "included_files_verified": 405,
+        "omitted_files": 0,
+        "scope": "Completed229231 results only; no omissions and every member verified locally. No later whole-model results."
+      },
+      {
+        "name": "phase10-job233-results-v1.tar.gz",
+        "bytes": 569462,
+        "sha256": "57367d92a4cb83129a17463ec5052f46cc0a95583b843049c9eeb24f36e294b6",
+        "included_files_verified": 38,
+        "omitted_files": 0,
+        "scope": "Completed233 results only; no omissions and every member verified locally. No later whole-model results."
       }
     ],
     "runtime_adopted": false,
@@ -3113,6 +3129,48 @@
       "timing_executed": false,
       "runtime_adopted": false,
       "scope": "Intra intermediate substitution is causal diagnosis by construction, not a new algorithm, full-model acceptance or new canonical reference. Pure grid gain not inferred from composed197 timing."
+    },
+    "deterministic_dense_dispatch_230": {
+      "job": 230,
+      "entry_sha256": "3d68119578003b367edf5ad7f5b9c83c806f29b97203afc9598d3bff22615eeb",
+      "actual_dispatch": "ATen mm/addmm replaced by batch-invariant deterministic mode; wide and padded BFA use DeepGEMM, strided f_b uses fixed Triton",
+      "ranks": 8,
+      "official_and_forced_triton_projection_and_partial_bitwise_all8": true,
+      "chunks_1_13_bitwise_all8": true,
+      "scope": "Same actual inputs and checkpoint weights, not full-model acceptance or a changed reference"
+    },
+    "generic_fixed_gemm_231": {
+      "job": 231,
+      "entry_sha256": "81581bcef1d96ad9bfa6b190f9c7bb2040957acbda4bbf5e1145d2b823a975c2",
+      "independent_kernel_lines": 80,
+      "vendor_runtime_dependency": false,
+      "canonical_projection_and_output_partial_bitwise_all8": true,
+      "chunks_1_13_bitwise_all8": true,
+      "independent_component_tests_passed": 24,
+      "independent_component_tests_failed": 5,
+      "failure_scope": "3 BF16 and 2 FP32-output near-zero FP64-oracle tolerance failures; unchanged assertions retained",
+      "runtime_adopted": false
+    },
+    "original_blocked_delta_233": {
+      "job": 233,
+      "entry_sha256": "e0a24066bff5caff5626a489686be21ea5171d4516abfecbedf61034a38a4143",
+      "independent_fp64_recurrence_cases": 7,
+      "independent_fp64_recurrence_rtol": 1e-10,
+      "independent_fp64_recurrence_atol": 1e-10,
+      "sm103_cross_compilations": 18,
+      "actual_computation": true,
+      "captured_output_injection": false,
+      "ranks": 8,
+      "bk_controls": [
+        32,
+        64
+      ],
+      "repeats": 4,
+      "w_u_kg_defined_aqk_output_and_final_state_bitwise_all8": true,
+      "tested_gpu_input": "actual canonical 27-token KDA payload",
+      "official_oracle_control_failure": "msgpack import before any tests; numerical result unavailable",
+      "runtime_adopted": false,
+      "scope": "Original generic panel algorithm with public FLA state/output primitives, no SGLang imports in implementation; no long/whole-model/performance acceptance"
     }
   },
   "phase10_attention_backend_capabilities": {
