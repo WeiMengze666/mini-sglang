@@ -2372,6 +2372,56 @@
       "entry_sha256": "920d0d451adeec01cf2a01a4ac79c48448502b7ec0500f9a012c7494c5a20291",
       "submitted_utc": "2026-10-30T04:40:24.009345+00:00",
       "gpu_results_recorded_here": false
+    },
+    "job172": {
+      "scope": "one27tokenprompt,16positions; not full eleven-case acceptance",
+      "entry_sha256": "920d0d451adeec01cf2a01a4ac79c48448502b7ec0500f9a012c7494c5a20291",
+      "official_runs_complete": 2,
+      "effective_configuration_passed": true,
+      "initial_states_passed": true,
+      "self_repetition_passed": false,
+      "raw_violations": 1269834,
+      "greedy_matches": 16,
+      "greedy_compared": 16,
+      "max_raw_abs": 11.75,
+      "ffn2_first_divergence": {
+        "all_eight_ranks_agree": true,
+        "ffn_input_bitwise": true,
+        "prefix_sum_input_bitwise": true,
+        "ffn_return_changed": 107,
+        "elements": 193536,
+        "max_abs": 0.00048828125,
+        "producer_consumer_links_all_bitwise": true,
+        "independent_gate_forward_observed": false,
+        "scope": "inside fused FFN before finish; exact producer unisolated"
+      },
+      "full_gsm8k_executed": false,
+      "model_performance_executed": false,
+      "runtime_adopted": false
+    },
+    "next_fused_ffn_diagnostic": {
+      "job": 174,
+      "entry_sha256": "d6afb7e7cfa7ec92ebbee8d85c8058747e0bdb5a587070b355b8e0b60a77e49a",
+      "submitted_utc": "2026-10-30T05:31:24.063711+00:00",
+      "driver_sha256": "0258f0a6acacba978a1745d823063e0d6f4d4e4ad573191006ef9b2a2189ddcd",
+      "actual_stacked_import_and_snapshot_cpu_passed": true,
+      "actual_official_cli_cpu_passed": true,
+      "gpu_results_recorded_here": false
+    },
+    "phase_aware_persistent_composition_cpu": {
+      "source_manifest_sha256": "e6ef62bbbd47679c58a97c5705f7f13c14f3f5975feb30123b2c1d7eb26b6fef",
+      "source_files": 242,
+      "changed_runtime_files_relative_to_phase_aware_v7": [
+        "python/minisgl/quantization/mxfp4_moe.py"
+      ],
+      "scheduling_bytes_identical_to_gpu149": true,
+      "cpu_passed": 484,
+      "cpu_skipped": 341,
+      "cpu_xfailed": 2,
+      "cpu_elapsed_seconds": 32.97,
+      "combined_gpu_accepted": false,
+      "whole_model_speed_accepted": false,
+      "runtime_adopted": false
     }
   }
 }

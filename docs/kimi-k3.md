@@ -414,6 +414,24 @@ passed CPU import, identity, snapshot and official-CLI checks. The user has
 authorized continued server use for the remaining localization and final
 acceptance after this completed round.
 
+Job 172 repeated the single 27-token prompt with sixteen raw positions. Both
+runs and all initial-state checks completed, but raw repetition still failed:
+1,269,834 violations, maximum 11.75; all sixteen greedy tokens matched. On all
+eight ranks, layer 2's FFN input and pending residual matched bitwise, while its
+return changed 107/193,536 BF16 elements (maximum 0.00048828125). Captured links
+from readout to FFN, FFN to finish and finish to the next readout were bitwise.
+This places the first observed difference inside the FFN before finish. The
+independent gate hook was bypassed by the fused front; no router stability is
+inferred. Job 174 will observe the actual fused producers and reduction path.
+Its stacked import, tuple identity, out-buffer snapshots and official CLI passed
+CPU checks; uninitialized output buffers are omitted before their producers.
+
+A separate performance composition adds only the already component-tested
+four-warp persistent expert work grid to the phase-aware source. It passed
+484 CPU/Gloo checks, with 341 skips and two expected disagreements; its full
+manifest is `e6ef62bbbd47679c58a97c5705f7f13c14f3f5975feb30123b2c1d7eb26b6fef`.
+No combined GPU/model/performance acceptance or runtime adoption is claimed.
+
 Frozen operator traces isolate batch-dependent rounding in dense projections,
 absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels
 and a sequential FP32 recurrence eliminated full/chunk logit differences for one
