@@ -319,8 +319,13 @@ had 35,607 of 163,840 logits outside the unchanged BF16 tolerance, with maximum
 absolute difference 0.912109375. Its independent FP32 checkpoint check passed,
 but graph, model performance and GSM8K stages were skipped. The fused decode
 API therefore remains isolated and is not added to the production engine.
-The next candidate shares convolution arithmetic and FP32 intermediate
-boundaries between prefill and decode; it still requires GPU validation.
+The next candidate shares convolution arithmetic and explicit FP32 rounding
+boundaries between prefill and decode. It passed 478 CPU regressions and 23
+kernel cross-compilations. Two twelve-case CPU-interpreter checks additionally
+cover short histories, batch layouts, complete versus single-step state and an
+independent FP64 oracle, using FP32 host buffers quantized to BF16 values. These
+host checks do not establish GPU rounding, model alignment or speed. The new
+candidate still requires GPU validation.
 
 Job 135 found an unresolved reference-calibration issue. The same 27 input
 tokens in the pinned official runner, with one versus sixteen warmup steps,

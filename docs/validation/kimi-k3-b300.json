@@ -2194,11 +2194,33 @@
         "included_files_verified": 590,
         "omitted_full_layer_traces_retained_remote": 16,
         "job153_outputs_included": false
+      },
+      {
+        "name": "phase10-through-job153-compact-v1.tar.gz",
+        "bytes": 64892351,
+        "sha256": "3cc1b78efb5c96bdcc4f6768bf1d2946aa05b0eacaf649b090b9f1c0be842ca5",
+        "included_files_verified": 1363,
+        "omitted_files": 0,
+        "job157_gpu_outputs_included": false,
+        "later_host_interpreter_checks_included": false
       }
     ],
     "runtime_adopted": false,
     "strict_independent_bf16_accepted": false,
     "whole_model_speed_accepted": false,
-    "full_task_accepted": false
+    "full_task_accepted": false,
+    "phase_consistent_candidate_cpu": {
+      "source_manifest_sha256": "d712c95ebd9e16e726f8c0a6aa316d0af95dd5af95b207d0315a7f528447bda9",
+      "cpu_passed": 478,
+      "cuda_skipped": 346,
+      "expected_semantic_disagreements": 2,
+      "cross_compiled_kernels": 23,
+      "host_interpreter_conv_cases": 12,
+      "host_interpreter_recurrence_cases": 12,
+      "host_buffer_dtype": "FP32 values quantized to BF16",
+      "host_scope": "indexing, batch/history layout and independent FP64 checks only; not GPU arithmetic, rounding or performance acceptance",
+      "gpu_accepted": false,
+      "runtime_adopted": false
+    }
   }
 }
