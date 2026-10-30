@@ -2236,6 +2236,24 @@
         "safe_internal_symlinks_verified": 1,
         "omitted_files": 18,
         "scope": "Completed218/219; exact tensor/raw dedup and prior-archive dependencies; excludes221 and later results"
+      },
+      {
+        "name": "phase10-job221223-results-v1.tar.gz",
+        "bytes": 193189313,
+        "sha256": "9b0c767f5d77cb0222eb559bf30038955094450edbfe8be302447bd6ec04d09a",
+        "included_files_verified": 628,
+        "safe_internal_symlinks_verified": 1,
+        "omitted_files": 26,
+        "scope": "Completed221223 results; all included logical file hashes verified locally. Originals retained remotely; omitted checkpoint weights have per-tensor identities and all non-weight fields retained."
+      },
+      {
+        "name": "phase10-job225227-results-v1.tar.gz",
+        "bytes": 77332001,
+        "sha256": "d6dc3bcb60f5e349f98b20e6e63bf5692ce0dfd2367d6c33b16fdfa44cbc4e33",
+        "included_files_verified": 298,
+        "safe_internal_symlinks_verified": 1,
+        "omitted_files": 0,
+        "scope": "Completed225/227 only; all new frozen inputs and actual stage data included without omissions. No229/230/231 outputs."
       }
     ],
     "runtime_adopted": false,
@@ -3057,6 +3075,44 @@
       "full_quality_executed": false,
       "runtime_adopted": false,
       "scope": "Direct input NCCL with native sequential KDA restores all tested full/chunk bitwise consistency but fails unchanged strict independent BF16 gate"
+    },
+    "clean_direct_collective_and_projection_223": {
+      "job": 223,
+      "entry_sha256": "867b3cbdefc99862685610962aed2eeae3dab78f2d4f46ffe858d4fc9c8ddd6b",
+      "clean_collective_cpu_passed": 505,
+      "all8_actual_collective_inputs_bitwise": true,
+      "dtype_gather_dcp_passed": true,
+      "ordinary_and_hybrid_graph_paths_passed": 4,
+      "projection_strategies": 5,
+      "separate_and_merged_projection_bitwise_each_provider": true,
+      "fusion_eliminates_projection_error": false,
+      "runtime_adopted": false,
+      "scope": "Generic three-argument direct NCCL and arithmetic localization; no full-model accuracy/performance acceptance"
+    },
+    "kda_intermediates_225": {
+      "job": 225,
+      "entry_sha256": "8a1eb2ba937c778d91970879db2b2e1f2ddbd1cd9b1ba216e3caa82337a6c476",
+      "canonical_replay_and_observer_transparency_bitwise_all8": true,
+      "qk_norm_gate_cumsum_and_kg_bitwise_all8": true,
+      "first_significant_difference": "intra W/U and defined lower-triangular Aqk",
+      "aqk_valid_elements_per_rank": 4536,
+      "aqk_unused_elements_per_rank": 16200,
+      "public_disable_recompute_changes_result": false,
+      "paired_grid_stage_failure": "ImportError before CUDA tests; corrected independently in227",
+      "runtime_adopted": false
+    },
+    "generic_grid_and_causal_intra_227": {
+      "job": 227,
+      "entry_sha256": "393a6227c238b745de16425de3d02c2d4a497c8945d22ca1d9695eee7e286522",
+      "pure_grid_cpu_passed": 505,
+      "independent_expert_cases": 44,
+      "bitwise_paired_expert_calls": 128,
+      "public_baseline_bitwise_previous_all8": true,
+      "exact_beta_changes_output_or_state": false,
+      "exact_intra_restores_output_and_state_bitwise_all8": true,
+      "timing_executed": false,
+      "runtime_adopted": false,
+      "scope": "Intra intermediate substitution is causal diagnosis by construction, not a new algorithm, full-model acceptance or new canonical reference. Pure grid gain not inferred from composed197 timing."
     }
   },
   "phase10_attention_backend_capabilities": {

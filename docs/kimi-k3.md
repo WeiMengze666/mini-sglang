@@ -598,6 +598,27 @@ cross-engine BF16 still failed: 9,627,196 violations, 169/176 greedy matches and
 maximum error 11.5. The first normalized FFN input still differs. Performance
 and complete quality were not run; the candidate remains unadopted.
 
+Job 223 also validated a smaller generic direct-NCCL API without the unused
+staging allocation/window budget. Its 505 CPU checks, eight-rank dtype/gather/DCP
+controls, all ten actual-input replays and four ordinary/hybrid graph paths
+passed. Five projection controls showed that fusion alone does not remove the
+first KDA projection difference. This remains separate from whole-model adoption.
+
+Jobs 225/227 replayed the canonical KDA input on all eight ranks. Repeated
+outputs/states and observer transparency were bitwise exact. Public FLA 0.6.0
+matches the normalized Q/K, cumulative gates and gated keys; significant
+arithmetic differences start in the intra-chunk W/U construction. Aqk comparisons
+use only its 4,536 defined lower-triangular entries, excluding 16,200 unused
+entries. Replacing beta alone changes neither output nor state. Replacing the
+intra intermediates restores both bitwise on all eight ranks. This causal
+substitution identifies the stage; it is not an implemented algorithm or model
+acceptance, and does not change the canonical reference.
+
+Job 227 separately passed 44 independent expert cases and 128 bitwise comparisons
+for a one-file persistent-grid change against the shipping-tree expert executor.
+The previous job's import failure occurred before CUDA tests and remains
+recorded. No whole-model timing is attributed to this isolated grid change.
+
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
