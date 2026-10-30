@@ -697,6 +697,36 @@ All 114 included files were verified there; 18 exact trace/raw deduplications
 retain original identities and every differing tensor. This is server-side
 preservation; only aggregate JSON reports were copied locally.
 
+Job250 reconstructs seven residual readout operand sets across the first four
+layers. Direct official TMA replay matches all seven observed canonical returns
+bitwise, independently checking the reconstructed heads and bank contents.
+One generic policy, using ordered FP32 FMAs, an unnormalized mixture and a final
+combined RMS normalization, matches all seven. Its 32 generated cases pass the
+unchanged FP64 tolerance, exact chunking, repeated execution and graph checks.
+This establishes local arithmetic agreement, not whole-model acceptance.
+
+The same allocation runs the four original official FP32-output projection
+checks: two pass, two fail, with zero skips. The failing shapes are `576x7168`
+and `896x7168`, the same two FP32 cases rejected for the candidate. Together with
+job239, all five candidate FP64 near-zero failures have matching official
+failures. The four biased official full/chunk failures remain a separate result.
+Neither the independent tolerances nor calibrated raw reference have changed.
+
+Routing activation and reduction-order controls still differ by FP32 ULPs.
+The effective official router is the native radix fast path, which sums chosen
+weights sequentially in expert-ID order and uses precise normalization division.
+The ranked-order Triton hypothesis does not explain that effective path.
+An integrated generic residual/routing candidate passes 509 CPU/Gloo tests,
+36 SM103 cross-compilations and actual configuration/CLI preflights. Its queued
+job252 requires all eight ranks' seven readouts and route weights, 223 GPU
+component checks, and the original complete-model gates before adoption.
+
+Job250's complete server-side archive is `phase10-job250-server-results-v1.tar.gz`
+(8,996,445 bytes, SHA256
+`001bf372ef5858f9aff80f1342605717b2f3bae699a297c59e957bc10e434706`).
+All 48 members were verified on the server, with no omissions. Only aggregate
+JSON reports were transferred locally; the tensor archive remains on the server.
+
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
