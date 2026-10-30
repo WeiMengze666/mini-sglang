@@ -716,10 +716,51 @@ Routing activation and reduction-order controls still differ by FP32 ULPs.
 The effective official router is the native radix fast path, which sums chosen
 weights sequentially in expert-ID order and uses precise normalization division.
 The ranked-order Triton hypothesis does not explain that effective path.
-An integrated generic residual/routing candidate passes 509 CPU/Gloo tests,
-36 SM103 cross-compilations and actual configuration/CLI preflights. Its queued
-job252 requires all eight ranks' seven readouts and route weights, 223 GPU
-component checks, and the original complete-model gates before adoption.
+The integrated generic residual/routing candidate passes 509 CPU/Gloo tests,
+36 SM103 cross-compilations and actual configuration/CLI preflights. Completed
+job252 matches all eight ranks' seven residual readouts and 432 route weights
+bitwise. All 223 GPU component checks, compressed-latent DCP, four transport
+graph paths and the independent FP32 gate pass.
+
+Strict whole-model acceptance still fails: 169/176 greedy matches, 9,356,817
+raw-logit violations and maximum error 3.46875. The 27-token pure-prefill
+13-token chunk comparison has 71,252/163,840 violations and maximum error 1.375.
+Its observer is bitwise transparent. The first normalized divergence moves to
+layer 1's attention input, after the first dense FFN; layer 0's FFN input is
+now exact. No quality/performance run or runtime adoption follows this failure.
+
+Job255 recomputes that dense FFN on canonical identical inputs and checkpoint
+weights. All eight ranks' gate, up and down projections agree bitwise with the
+official BF16 arithmetic. The remaining difference is SiTU's tanh evaluation.
+A generic fused CUDA activation using native tanh restores bitwise equality of
+the complete local FFN on all eight ranks. The explicit FP32-gate diagnostic
+does not reproduce the canonical output and is not selected as a new reference.
+
+An independent prefill-only control in the same job reconstructs the canonical
+27-token official KDA output and state bitwise on all ranks; Mini also matches
+that complete output/state. The official kernel itself changes when the same
+operands are partitioned into 1-, 13- or 16-token prefill segments. All repeated
+executions are stable. These controls identify partition-dependent arithmetic;
+they do not relax the original Mini full/chunk gate or accept whole-model BF16.
+
+The isolated fused-activation source passes 513 CPU/Gloo checks, six SM103
+cross-compilations and real entry/configuration preflights; 275 component tests
+are collected for GPU validation. Its integrated actual dense replay also
+matches the canonical combined head bitwise on all eight ranks. Job257 was
+stopped after auxiliary scripts reused old report paths and raised
+`FileExistsError`. Its failed logs are retained; corrected scripts use distinct
+output directories with unchanged numerical assertions and model gates.
+Job258 then rejects native approximate tanh for FP32 inputs against the new
+independent FP64 activation test: 4/129 values exceed `rtol=3e-6, atol=1e-6`.
+That run is stopped and retained. The next source restricts native fusion to
+FP16/BF16 and preserves the original FP32 arithmetic, with the test unchanged.
+
+Job252's complete tensor results remain on the server in
+`phase10-job252-server-results-v1.tar.gz` (175,169,512 bytes, SHA256
+`568c6c04e4ac3d2d086469b76db4382bed23813a3a9645c925ea9d2e07cbf20b`).
+All 125 members were verified there; 18 exact deduplications retain original
+identities. Only aggregate reports were copied locally. Job255's tensor inputs
+and weights also remain on the server.
 
 Job250's complete server-side archive is `phase10-job250-server-results-v1.tar.gz`
 (8,996,445 bytes, SHA256
