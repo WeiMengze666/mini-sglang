@@ -2650,6 +2650,20 @@
           "all_raw_cases_preserved": 33,
           "omitted_arm_a_full_depth_ranks": 8,
           "scope": "Complete calibrated canonical reference; full model/quality archive separate"
+        },
+        "job197_model_results": {
+          "archive": "phase10-job197-model-results-v1.tar.gz",
+          "bytes": 85413587,
+          "sha256": "5b94f896fe01b96604daf9ac765cd0c242890a1235accb60864cab84d4542a56",
+          "all_member_files_verified": 607,
+          "scope": "Complete rejected model and quality results"
+        },
+        "job205_frozen_inputs": {
+          "archive": "phase10-job205-frozen-input-delta-v1.tar.gz",
+          "bytes": 26914966,
+          "sha256": "92466216b446347079920c962db69d9869dec6124a274526a8af216b6ce11d09",
+          "all_member_files_verified": 42,
+          "scope": "Frozen inputs only; excludes GPU205 results"
         }
       },
       "spawn_wrapper_correction_cpu": {
@@ -2895,15 +2909,46 @@
       "official_observer_sha256": "e58d3915cce5d06ac3296cd566b64084ca71403ec1366ba228d5f8eb45d7caec",
       "cpu_pass_through_controls_passed": true,
       "cpu_actual_spawn_main_path_passed": true,
-      "gpu_executed": false,
+      "gpu_executed": true,
       "scope": "First normalized-return and collective localization with two full raw bitwise transparency gates, then fixed-order projection component/graph control; no runtime adoption",
       "files": 2427,
       "entry_sha256": "73f34b7e0cdae3f48b259bc48814b38df043a0391c146a546fe8b63fcc23ea42",
       "prepared_utc": "2026-10-30T11:39:45.693986+00:00",
       "job": "205",
       "submitted_utc": "2026-10-30T11:39:45.698953+00:00",
-      "status": "queued; GPU result not established",
-      "public_kda_contract_replay_scope": "Future public adapter control only; current candidate KDA actually uses Triton; no present error attribution"
+      "status": "Completed; both full raw transparency controls bitwise; first normalized difference remains FFN readout after KDA0; diagnostic only",
+      "public_kda_contract_replay_scope": "Future public adapter control only; current candidate KDA actually uses Triton; no present error attribution",
+      "mini_raw_bitwise_transparent": true,
+      "official_raw_bitwise_transparent": true,
+      "projection_component_tests": "29 skipped: missing MINISGL_RUN_CUDA_TESTS; call coverage guard failed; no component acceptance",
+      "projection_graph_timings": "28 graph output comparisons bitwise but latency regressed; rejected"
+    },
+    "actual_triton_kda_capture_210": {
+      "job": 210,
+      "entry_sha256": "b8ba2815447be8120aa19495810be10c0f5f766ebc927355ef74665f507bb857",
+      "full_raw_bitwise_transparent": true,
+      "backend": "TritonKDAKernel.extend",
+      "scope": "Actual current canonical KDA, not the older FI path; all8 first-layer input/output/state captures; no model acceptance"
+    },
+    "generic_dtype_boundary_trial_212": {
+      "job": 212,
+      "entry_sha256": "22453794c6958f4fdd68cac641eb917ed57d38c2b09eea0859e93145e2f97c9b",
+      "source_manifest_sha256": "9a312f73fbf562021181c68c2239e52f773232e947e0612875f9c7cb18daa16a",
+      "cpu_passed": 484,
+      "cuda_components_passed": 99,
+      "model_chunk_passed": false,
+      "first_prompt_chunk_max_abs": 0.3125,
+      "fp32_passed": false,
+      "fp32_failure": "Flat 290304-element MoE transport exceeded FlashInfer one-shot launch geometry; no FP32 math acceptance",
+      "raw_violations": 9333825,
+      "greedy_matches": 166,
+      "greedy_positions": 176,
+      "raw_max_abs": 11.1484375,
+      "observer_raw_bitwise_transparent": true,
+      "timing_executed": false,
+      "full_quality_executed": false,
+      "runtime_adopted": false,
+      "scope": "Three generic precision/transport corrections are insufficient; reject candidate under unchanged original gates"
     }
   }
 }

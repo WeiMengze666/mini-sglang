@@ -500,6 +500,13 @@ planner calls each). Official GEMMs, activation precision and sources remain
 unchanged. This canonical reference is now calibrated under the user-approved
 contract; stock instability is retained separately.
 
+The calibrated reference actually executes `TritonKDAKernel.extend`, with
+Triton attention selected after effective backend resolution. Its configured
+MLA prefill/decode preferences do not identify the effective KDA implementation.
+Job 210 captured the actual KDA inputs, output and selected FP32 state on all
+eight ranks; all 176 observed raw positions remained bitwise equal to canonical
+arm B. The older FlashInfer reference capture is a different execution path.
+
 Against this calibrated reference, source7 still fails the original raw gate:
 9,456,592 violations, 170/176 greedy matches and maximum error 11.2734375.
 Strict Mini BF16 alignment is not established. The independent combined
@@ -525,6 +532,29 @@ The isolated source uses Triton KDA and fixed-layout MLA prefill with FlashInfer
 MLA decode, despite its experimental `recurrent-fi` registry alias. The shipping
 backend's FlashInfer KDA default remains unchanged. The optimized runtime is
 rejected for adoption under the strict alignment and task-quality gates.
+
+Job 205's transparent collective captures show differences both before the
+first KDA output reduction and in its reduction rounding. Independent CPU FP64
+sums of the actual eight local inputs confirm that Mini's promoted reduction
+rounds once to BF16, while the canonical reference has intermediate BF16
+rounding. This localizes differences without identifying a single complete
+cause. The public FlashInfer contract replay matched its older FlashInfer
+capture for all five metadata variants; it does not explain the current
+Triton-reference mismatch. The separate projection prototype was rejected:
+its component tests were skipped by a missing CUDA-test flag, and its graph
+timings regressed despite matching outputs.
+
+Job 212 tested three generic corrections in isolation: cast normalized KDA
+queries/keys to their projection dtype, preserve the caller's collective dtype,
+and pack routed/shared MoE branches contiguously in model dtype. CPU/Gloo passed
+484 checks and CUDA components passed 99, including exact native recurrence
+continuation checks. Complete-model acceptance failed: the first prompt's
+full/chunk difference reached 0.3125, and the independent raw sweep had
+9,333,825 violations, 166/176 greedy matches and maximum error 11.1484375.
+Its transparent normalized trace still differs at the first FFN readout.
+The FP32 run also exposed an unsupported FlashInfer one-shot launch when a flat
+290,304-element communication buffer was interpreted as one matrix row.
+This candidate is rejected; timing and complete quality were not run.
 
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
