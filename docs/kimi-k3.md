@@ -490,7 +490,21 @@ routing. The corrected wrapper keeps the outer spawn entry, installs in every
 worker, and requires actual planner-call counts plus GEMM metadata pointer
 aliases on all ranks. CPU spawn controls reproduced the old negative case and
 passed the new positive case, including Python's real main-path preparation.
-Real worker coverage and complete calibration remain GPU requirements. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
+Job 197 then passed complete calibration with that corrected entry. All three
+11-prompt, 16-position sweeps matched bitwise across the full 163,840-token
+vocabulary: zero raw error and 176/176 greedy matches for both self-repeat and
+observer transparency. All eight ranks' captured layer boundaries matched
+bitwise, all initial states were zero, and all 24 arm/rank coverage records
+passed independent route-plan and actual GEMM-pointer checks (92 measured
+planner calls each). Official GEMMs, activation precision and sources remain
+unchanged. This canonical reference is now calibrated under the user-approved
+contract; stock instability is retained separately.
+
+Against this calibrated reference, source7 still fails the original raw gate:
+9,456,592 violations, 170/176 greedy matches and maximum error 11.2734375.
+Strict Mini BF16 alignment is not established. The independent combined
+candidate passed 87 component checks in 25.21 seconds and is continuing through
+the complete model, graph and performance gates. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
 route grouping remains unchanged. This utility is independent of the unshipped

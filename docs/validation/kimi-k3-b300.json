@@ -2541,7 +2541,7 @@
         "only_generic_routing_delta": true,
         "gpu_checked": true
       },
-      "full_reference_calibrated": false,
+      "full_reference_calibrated": true,
       "strict_bf16_accepted": false,
       "runtime_adopted": false,
       "generic_gpu_submission": {
@@ -2671,7 +2671,8 @@
         "sequence_sha256": "5c27575e5632bf72ca598bc84441cc58a7d5e4134badda6d1d7757fd3395a188",
         "audit_sha256": "7a4d2a7abc10b1b05c481caafaaafb6df65e9d5e82d693ce938354a1b99677e4",
         "gpu_results_pending": true,
-        "runtime_adopted": false
+        "runtime_adopted": false,
+        "reference_calibration_passed": true
       },
       "verified_frozen197_input_delta": {
         "archive": "phase10-job197-frozen-input-delta-v1.tar.gz",
@@ -2679,6 +2680,50 @@
         "sha256": "dbbbd356c0f5e2da8c27651b3ac389a338f41bfb127b3924b3a8c279739add6e",
         "all_member_files_verified": 20,
         "scope": "Only frozen input delta and submission/cancellation records; no GPU results"
+      },
+      "calibrated_canonical_reference": {
+        "job": 197,
+        "prefix": "phase10-stable-reference-v3",
+        "reference_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+        "source_manifest_sha256": "e4e9184411f42db8e801bc5cea720ceaebe5b0287c169f821992330a9e292a52",
+        "cases": 11,
+        "steps_each": 16,
+        "vocab": 163840,
+        "self_repeat": {
+          "passed": true,
+          "violations": 0,
+          "greedy_matches": 176,
+          "max_abs": 0.0,
+          "bitwise": true
+        },
+        "observer_transparency": {
+          "passed": true,
+          "violations": 0,
+          "greedy_matches": 176,
+          "max_abs": 0.0,
+          "bitwise": true
+        },
+        "all_captured_depth_boundaries_bitwise": true,
+        "all_initial_states_zero": true,
+        "actual_worker_coverage_records": 24,
+        "planner_calls_each": 92,
+        "all_gemm_metadata_pointer_aliases_passed": true,
+        "independent_integer_plan_oracle_passed": true,
+        "audit_passed": true,
+        "summary_sha256": "865ae535fc562149f3cd31aa3dc38e423387dbcca0b5d9986b81d8b84128da1c",
+        "reference_provenance_sha256": "6890994ab484b2eba3bf77d787e388d2ca809d791a14b2c5df1ce44893999c4a",
+        "official_gemms_precision_sources_unchanged": true,
+        "rtol": 0.05,
+        "atol": 0.1,
+        "greedy_exact": true
+      },
+      "source7_formal_cross_comparison": {
+        "passed": false,
+        "violations": 9456592,
+        "greedy_matches": 170,
+        "total": 176,
+        "max_abs": 11.2734375,
+        "report": "phase10-stable-reference-v3-source7_comparison.json"
       }
     },
     "phase_aware_persistent_gpu_submission": {
@@ -2690,7 +2735,13 @@
       "actual_cpu_entry_points_passed": 7,
       "scope": "Components/model/chunk/FP32/source7 bitwise/graph gates, paired native and official BF16 timing; quality if own model and timing pass; cross-engine reference remains unaccepted",
       "runtime_adopted": false,
-      "status": "queued-only removal before start; unchanged controller reuses same frozen entry within serial job197"
+      "status": "queued-only removal before start; unchanged controller reuses same frozen entry within serial job197",
+      "job197_component_result": {
+        "passed": 87,
+        "seconds": 25.21,
+        "exit_code": 0,
+        "combined_model_gates_pending": true
+      }
     }
   }
 }
