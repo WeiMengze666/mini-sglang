@@ -656,11 +656,26 @@ was absent. Neither supplies a new passing acceptance record. A new control
 requires 25 actual passing call reports and zero skips; its CPU collection is
 verified, while its GPU numerical result is pending.
 
+Job 239 completes the broader generic KDA component gate: all 48 cases pass
+its original tolerance, including nonzero FP32 states, nonsquare K/V dimensions,
+ragged requests and 1,950-token sequences. Four repetitions are bitwise exact,
+and unselected state slots stay unchanged. This remains component evidence;
+whole-model chunking and canonical BF16 acceptance are independent.
+
+The corrected official GEMM control executes all 25 selected BF16 tests:
+18 pass, seven fail, and none skip. Three fail the FP64 near-zero oracle;
+four biased cases fail exact full/chunk invariance. The original thresholds,
+failed records and calibrated full-model reference remain unchanged. The four
+FP32-output cases were not executed in this control. These results neither
+claim universal official operator invariance nor accept the Mini candidate.
+
 The next isolated candidate adds generic full-context expanded MLA prefill over
 compressed persistent KV, round-robin context gathering, and explicit fused-KDA
-convolution/readout storage boundaries. The compressed MLA decode strategy is
-unchanged. It passes 505 CPU/Gloo checks (349 skips and two existing expected
-failures), eight SM103 cross-compilations and real entry/configuration preflights.
+convolution/readout storage boundaries. Compressed MLA decode retains its native
+attention kernel and merges compressed readouts before the value projection.
+The final prepared source also fixes expert ID order. It passes 509 CPU/Gloo
+checks (349 skips and two existing expected failures), eight SM103
+cross-compilations and real entry/configuration preflights.
 These are preparation results, not GPU arithmetic or complete-model acceptance.
 The candidate remains unshipped until the original numerical and quality gates
 pass; performance acceptance remains separate.
