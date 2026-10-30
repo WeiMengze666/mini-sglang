@@ -639,6 +639,32 @@ also pass. Longer sequences, nonzero state, complete-model BF16 and performance
 remain separate gates. The official projection-oracle control in this allocation
 failed at dependency import before tests and supplies no numerical result.
 
+Job 237 integrated those generic projections and panel KDA in an isolated source.
+Its 101 GPU component cases, independent FP32 check and four transport graph
+paths pass. The first post-attention normalized FFN input differs in 86 elements
+(maximum 0.0001220703125), compared with 122,074 in the previous source. This is
+an input boundary before the FFN, not an observed FFN output. Whole-model BF16
+still fails: 9,410,953 raw-logit violations at the unchanged thresholds,
+168/176 exact greedy positions and maximum error 3.75. The full/chunk check
+also fails its first comparison (71,300/163,840 violations, maximum 1.25).
+No quality, performance or runtime adoption follows this rejection.
+
+Two harness defects are retained separately: the same-input transport helper
+reused existing exclusive output filenames after its comparisons, and the
+second official projection control skipped all 25 tests because its CUDA opt-in
+was absent. Neither supplies a new passing acceptance record. A new control
+requires 25 actual passing call reports and zero skips; its CPU collection is
+verified, while its GPU numerical result is pending.
+
+The next isolated candidate adds generic full-context expanded MLA prefill over
+compressed persistent KV, round-robin context gathering, and explicit fused-KDA
+convolution/readout storage boundaries. The compressed MLA decode strategy is
+unchanged. It passes 505 CPU/Gloo checks (349 skips and two existing expected
+failures), eight SM103 cross-compilations and real entry/configuration preflights.
+These are preparation results, not GPU arithmetic or complete-model acceptance.
+The candidate remains unshipped until the original numerical and quality gates
+pass; performance acceptance remains separate.
+
 The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
