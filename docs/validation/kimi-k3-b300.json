@@ -2652,7 +2652,7 @@
         "cpu_driver_sha256": "f6990d1e0405a17590fe771a9db21044c1ae3166e96731cb0e96be0f39fa4fe8",
         "cuda_initialized": false,
         "gemm_wrapper_metadata_only": "CPU-only CUDA symbol placeholder explicitly used; actual GPU GEMM plan aliases and per-worker >=92 planner calls remain mandatory",
-        "real_gpu_calibration_passed": false
+        "real_gpu_calibration_passed": true
       },
       "spawn_safe_serial_submission": {
         "job": 197,
@@ -2740,8 +2740,69 @@
         "passed": 87,
         "seconds": 25.21,
         "exit_code": 0,
-        "combined_model_gates_pending": true
+        "combined_model_gates_pending": false
+      },
+      "job197_completed_gates": {
+        "components": 87,
+        "all11_full_chunk_passed": true,
+        "independent_fp32_reference": {
+          "passed": true,
+          "max_abs": 1.3709068298339844e-05,
+          "relative_l2": 1.0909858474406064e-06,
+          "original_tolerance": 0.0001
+        },
+        "all4_generic_graph_paths_passed": true,
+        "source7_all11_raw_bitwise_equal": true,
+        "native_ordinary_token_controls_passed": true,
+        "performance": {
+          "scope": "paired native decode timing with exact own-ordinary token controls; reference alignment remains separate",
+          "candidate": {
+            "1": 15.907435251666792,
+            "2": 31.58374341756822,
+            "4": 62.80109592914128,
+            "8": 122.32670085976763
+          },
+          "baseline": {
+            "1": 13.468491609224982,
+            "2": 24.776891527803368,
+            "4": 48.007280798288356,
+            "8": 91.68061661863833
+          },
+          "speedups": [
+            1.1810851365695103,
+            1.2747258219267152,
+            1.3081577395106365,
+            1.334270049345404
+          ],
+          "geometric_mean_speedup": 1.2732112283473942,
+          "accepted": true,
+          "official_stock_bf16_marlin": {
+            "1": 70.37857795452831,
+            "2": 134.6111522286801,
+            "4": 239.7525693336252,
+            "8": 403.99800419233424
+          },
+          "candidate_fraction_of_official": {
+            "1": 0.22602666484600764,
+            "2": 0.23462947084735689,
+            "4": 0.26194128431529373,
+            "8": 0.302790359334376
+          }
+        },
+        "full_gsm8k_complete": false,
+        "full_gsm8k_acceptance": "cannot pass zero-truncation gate: at least one observed truncated response; full run continues for diagnosis",
+        "strict_bf16_alignment_passed": false,
+        "runtime_adopted": false
       }
+    },
+    "prepared_normalized_collective_diagnostic": {
+      "controller_sha256": "756c451a3ad7930e28a420ec95319e594d94af4240cc11c16114dd728b01ec8f",
+      "mini_observer_sha256": "7ece86b6c6c62f730f7ee6d286d03d121a5fe5faeeb6fe78a30e587c68a72ce4",
+      "official_observer_sha256": "e58d3915cce5d06ac3296cd566b64084ca71403ec1366ba228d5f8eb45d7caec",
+      "cpu_pass_through_controls_passed": true,
+      "cpu_actual_spawn_main_path_passed": true,
+      "gpu_executed": false,
+      "scope": "Only corresponding normalized returns and actual collective input/output; complete raw bitwise transparency mandatory before interpreting observations"
     }
   }
 }

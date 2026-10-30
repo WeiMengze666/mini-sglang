@@ -503,8 +503,27 @@ contract; stock instability is retained separately.
 Against this calibrated reference, source7 still fails the original raw gate:
 9,456,592 violations, 170/176 greedy matches and maximum error 11.2734375.
 Strict Mini BF16 alignment is not established. The independent combined
-candidate passed 87 component checks in 25.21 seconds and is continuing through
-the complete model, graph and performance gates. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
+candidate passed 87 component checks in 25.21 seconds, full/chunked execution
+for all 11 prompts, the independent FP32 reference (maximum error about
+`1.37e-5`, original `1e-4` gate), and all four dense/MoE/hybrid graph paths.
+Its complete raw capture is bitwise equal to source7, so persistent expert work
+scheduling introduces no raw-logit difference in these 176 positions.
+
+Matched native decode throughput for batches 1/2/4/8 was
+15.91/31.58/62.80/122.33 tokens/s, versus
+13.47/24.78/48.01/91.68 for the baseline: geometric mean gain 27.3%.
+Each engine's timed output matched its ordinary execution token controls.
+Matched full SGLang BF16/Marlin achieved
+70.38/134.61/239.75/404.00 tokens/s; the candidate reaches only
+22.6–30.3% of it. This passes the candidate improvement gate but remains far
+from the requested full-SGLang performance target. Complete 1,319-question
+GSM8K evaluation is running. One truncated response has already been observed,
+so the candidate cannot pass the original zero-truncation gate; the complete
+run is retained for diagnosis. Partial accuracy is not task-quality acceptance.
+The optimized runtime remains isolated pending strict alignment and complete
+quality gates.
+
+The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
 route grouping remains unchanged. This utility is independent of the unshipped
@@ -520,9 +539,10 @@ spawn-corrected complete reference calibration, independent CPU audit, then the
 unchanged frozen candidate controller. It tests components, full/chunked model,
 independent FP32 reference, bitwise source7 control, four graph paths and paired
 native throughput. Each reference arm must record all eight workers' actual
-planner calls and GEMM metadata aliases; parent installation alone is insufficient. Timing and full-task quality remain independent diagnostics while
-the official reference is uncalibrated. No combined GPU/model/performance
-acceptance or optimized runtime adoption is claimed.
+planner calls and GEMM metadata aliases; parent installation alone is
+insufficient. The corrected reference is calibrated. Timing and full-task
+quality remain separate from strict cross-engine acceptance; the optimized
+runtime has not been adopted.
 
 Frozen operator traces isolate batch-dependent rounding in dense projections,
 absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels
