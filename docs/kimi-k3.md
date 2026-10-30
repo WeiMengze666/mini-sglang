@@ -7,12 +7,14 @@ correctness precede further performance work.
 
 ## Current validation
 
-The latest runtime change, `5b810ac`, explicitly composes recurrent and MLA
+The attention composition at `5b810ac` explicitly combines recurrent and MLA
 backends. KDA keeps its FlashInfer default; the MLA executor determines its own
-paged-cache capability. The clean CPU/Gloo regression passed 453 checks, with
-183 skips and two existing expected semantic disagreements at `f6cea5a`. No experimental
-precision kernels have been adopted. Released-weight GPU evidence below belongs
-to the recorded earlier snapshots.
+paged-cache capability. Commit `46ffbab` adds optional generic stable integer
+route grouping without changing the default. Its shipping-tree CPU/Gloo
+regression passed 493 checks, with 187 skips and two existing expected semantic
+disagreements. Its four GPU Graph tests and real local Marlin replay passed in
+job 189. No experimental precision kernels have been adopted. Released-weight
+GPU evidence below belongs to the recorded earlier snapshots.
 
 The accepted numerical baseline is `phase8-committed-v1-source`, commit `8d28bd6`,
 manifest SHA256 `9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373`.
@@ -27,7 +29,7 @@ recorded separately in [the validation ledger](validation/kimi-k3-b300.json).
 
 | Gate | Current evidence |
 | --- | --- |
-| CPU and Gloo regression | 453 passed, 183 skipped, two expected reference semantic disagreements; `f6cea5a` |
+| CPU and Gloo regression | 493 passed, 187 skipped, two expected reference semantic disagreements; generic stable grouping increment at `46ffbab` |
 | Native/distributed components | 173 passed, job 18; includes ordinary and packed single-expert routing regressions |
 | Hybrid eager versus graph | Job 10: four request-slot batches, static/unified pools, reordered requests and compaction; logits and convolution/recurrent state bitwise equal |
 | Ordinary model compatibility | Job 22: Qwen3 TP4 and Qwen3-MoE TP4/EP4; four batches each, including padded batch 3; zero logit error |
@@ -111,6 +113,7 @@ composition in `models/kimi_*.py`. Reusable mechanisms are organized by operatio
 | Native absorbed MLA plans | `attention/mla_fi.py` |
 | KDA and gated MLA projection layers | `layers/kda.py`, `layers/mla.py` |
 | Grouped routing, shared experts, optional latent mixture | `layers/latent_moe.py` |
+| Optional canonical integer expert grouping | `moe/routing.py`, `moe_align_block_size(..., stable=True)` |
 | SiTU and block attention residuals | `layers/activation.py`, `layers/attn_residual.py` |
 | Hybrid batch metadata and real-row execution | `attention/recurrent.py` |
 | MLA pages and request-owned recurrent state | `kvcache/mla_pool.py`, `kvcache/recurrent_pool.py` |
@@ -473,8 +476,15 @@ were bitwise equal and matched the independent integer-plan oracle, while 32
 native-route calls remained unstable. Complete reference calibration remains
 pending. Job 190 stopped before model loading because its configuration stage
 hid CUDA, which public effective resolution requires for device discovery.
-That failure is retained; corrected job 191 passed effective configuration and
-is loading the full checkpoint. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
+That failure is retained. Corrected job 191 completed all three full sweeps and
+passed all initial-state checks, but reference calibration failed: self-repeat
+had 9,592,964 raw violations with 171/176 greedy matches; observer transparency
+had 9,641,738 violations with 169/176 greedy matches. Every rank's earliest
+changed captured input was the layer-3 attention input (146/193,536 elements,
+maximum 0.0009765625). The separate CPU audit rejects this reference, including
+the changed captured depth boundaries. Actual worker routing-hook coverage and
+the remaining local producer are under investigation; local replay stability
+does not establish full-model stability. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
 route grouping remains unchanged. This utility is independent of the unshipped
@@ -484,7 +494,12 @@ A separate performance composition adds only the already component-tested
 four-warp persistent expert work grid to the phase-aware source. It passed
 484 CPU/Gloo checks, with 341 skips and two expected disagreements; its full
 manifest is `e6ef62bbbd47679c58a97c5705f7f13c14f3f5975feb30123b2c1d7eb26b6fef`.
-No combined GPU/model/performance acceptance or runtime adoption is claimed.
+Its seven actual validation entry points passed CPU startup checks. Job 195
+now tests the combined candidate's components, full/chunked model, independent
+FP32 reference, bitwise source7 control, four graph paths and paired native
+throughput. Timing and full-task quality remain independent diagnostics while
+the official reference is uncalibrated. No combined GPU/model/performance
+acceptance or optimized runtime adoption is claimed.
 
 Frozen operator traces isolate batch-dependent rounding in dense projections,
 absorbed MLA projections and routed-expert RMSNorm. Generic fixed-layout kernels
