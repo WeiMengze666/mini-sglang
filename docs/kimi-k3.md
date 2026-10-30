@@ -482,9 +482,15 @@ had 9,592,964 raw violations with 171/176 greedy matches; observer transparency
 had 9,641,738 violations with 169/176 greedy matches. Every rank's earliest
 changed captured input was the layer-3 attention input (146/193,536 elements,
 maximum 0.0009765625). The separate CPU audit rejects this reference, including
-the changed captured depth boundaries. Actual worker routing-hook coverage and
-the remaining local producer are under investigation; local replay stability
-does not establish full-model stability. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
+the changed captured depth boundaries. A subsequent source and actual-spawn CPU
+control found a capture-wrapper defect: `runpy(..., run_name="__main__")` changed
+the worker main path to the inner unpatched capture script. The parent-installed
+routing override was lost. Job 191 therefore does not test full-model stable
+routing. The corrected wrapper keeps the outer spawn entry, installs in every
+worker, and requires actual planner-call counts plus GEMM metadata pointer
+aliases on all ranks. CPU spawn controls reproduced the old negative case and
+passed the new positive case, including Python's real main-path preparation.
+Real worker coverage and complete calibration remain GPU requirements. The optional generic stable integer grouping utility also passed 493 CPU/Gloo
 tests on the shipping tree (187 skips, two expected failures; 31.70 seconds).
 It is available through `moe_align_block_size(..., stable=True)`; the default
 route grouping remains unchanged. This utility is independent of the unshipped
@@ -494,10 +500,13 @@ A separate performance composition adds only the already component-tested
 four-warp persistent expert work grid to the phase-aware source. It passed
 484 CPU/Gloo checks, with 341 skips and two expected disagreements; its full
 manifest is `e6ef62bbbd47679c58a97c5705f7f13c14f3f5975feb30123b2c1d7eb26b6fef`.
-Its seven actual validation entry points passed CPU startup checks. Job 195
-now tests the combined candidate's components, full/chunked model, independent
-FP32 reference, bitwise source7 control, four graph paths and paired native
-throughput. Timing and full-task quality remain independent diagnostics while
+Its seven actual validation entry points passed CPU startup checks. Queued job
+195 was removed before starting and replaced by job 197, one serial allocation:
+spawn-corrected complete reference calibration, independent CPU audit, then the
+unchanged frozen candidate controller. It tests components, full/chunked model,
+independent FP32 reference, bitwise source7 control, four graph paths and paired
+native throughput. Each reference arm must record all eight workers' actual
+planner calls and GEMM metadata aliases; parent installation alone is insufficient. Timing and full-task quality remain independent diagnostics while
 the official reference is uncalibrated. No combined GPU/model/performance
 acceptance or optimized runtime adoption is claimed.
 

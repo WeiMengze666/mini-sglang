@@ -2605,7 +2605,8 @@
         },
         "independent_cpu_audit_passed": false,
         "reference_valid": false,
-        "actual_worker_route_hook_coverage": "not yet positively recorded"
+        "actual_worker_route_hook_coverage": "Lost: official forces spawn; outer wrapper replaced __main__ with inner unpatched capture entry",
+        "actual_stable_routing_full_model_test": false
       },
       "generic_routing_shipping_cpu": {
         "parent_commit": "3fded4c",
@@ -2631,6 +2632,37 @@
           "checkpoint_weight_omitted": true,
           "small_activations_routes_endpoints_and_each_weight_sha_preserved": true
         }
+      },
+      "spawn_wrapper_correction_cpu": {
+        "passed": true,
+        "actual_start_method": "spawn",
+        "old_wrapper_not_installed": true,
+        "new_wrapper_installed": true,
+        "actual_main_preparation_old_inner_new_outer": true,
+        "new_wrapper_sha256": "b14a41b904f71bd9bc72935f668b67a32e7635fe8eb949f68b527827f8fff309",
+        "cpu_driver_sha256": "f6990d1e0405a17590fe771a9db21044c1ae3166e96731cb0e96be0f39fa4fe8",
+        "cuda_initialized": false,
+        "gemm_wrapper_metadata_only": "CPU-only CUDA symbol placeholder explicitly used; actual GPU GEMM plan aliases and per-worker >=92 planner calls remain mandatory",
+        "real_gpu_calibration_passed": false
+      },
+      "spawn_safe_serial_submission": {
+        "job": 197,
+        "entry_sha256": "3aec5f9293a4b3f117776ed8ee9683962bdbc000f6b6ea0948582cc8eaf9dd40",
+        "files": 2349,
+        "submitted_utc": "2026-10-30T09:01:14.725124+00:00",
+        "replaced_queued_own_job": 195,
+        "old_candidate_controller_unchanged": true,
+        "order": [
+          "complete spawn-safe official reference calibration",
+          "independent CPU audit with all actual worker coverage",
+          "original model/performance/quality candidate controller, reference override v3"
+        ],
+        "new_reference_wrapper_sha256": "b14a41b904f71bd9bc72935f668b67a32e7635fe8eb949f68b527827f8fff309",
+        "sequence_cpu_passed": true,
+        "sequence_sha256": "5c27575e5632bf72ca598bc84441cc58a7d5e4134badda6d1d7757fd3395a188",
+        "audit_sha256": "7a4d2a7abc10b1b05c481caafaaafb6df65e9d5e82d693ce938354a1b99677e4",
+        "gpu_results_pending": true,
+        "runtime_adopted": false
       }
     },
     "phase_aware_persistent_gpu_submission": {
@@ -2641,7 +2673,8 @@
       "source_manifest_sha256": "e6ef62bbbd47679c58a97c5705f7f13c14f3f5975feb30123b2c1d7eb26b6fef",
       "actual_cpu_entry_points_passed": 7,
       "scope": "Components/model/chunk/FP32/source7 bitwise/graph gates, paired native and official BF16 timing; quality if own model and timing pass; cross-engine reference remains unaccepted",
-      "runtime_adopted": false
+      "runtime_adopted": false,
+      "status": "queued-only removal before start; unchanged controller reuses same frozen entry within serial job197"
     }
   }
 }
