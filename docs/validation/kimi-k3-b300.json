@@ -2631,6 +2631,15 @@
           "all_member_files_verified": 43,
           "checkpoint_weight_omitted": true,
           "small_activations_routes_endpoints_and_each_weight_sha_preserved": true
+        },
+        "job191": {
+          "archive": "phase10-through-job191-compact-v1.tar.gz",
+          "bytes": 227823270,
+          "sha256": "102f5b8b46dcc14d56de9469b984c542fbbdc3c57dae80ff1f33c3a8cf505204",
+          "all_logical_member_files_verified": 909,
+          "safe_internal_symlinks_verified": 2,
+          "full_depth_tensors_retained_remote": 16,
+          "scope": "Failed attempted reference; old variant label invalidated by actual spawn controls; no stable-reference acceptance"
         }
       },
       "spawn_wrapper_correction_cpu": {
@@ -2663,6 +2672,13 @@
         "audit_sha256": "7a4d2a7abc10b1b05c481caafaaafb6df65e9d5e82d693ce938354a1b99677e4",
         "gpu_results_pending": true,
         "runtime_adopted": false
+      },
+      "verified_frozen197_input_delta": {
+        "archive": "phase10-job197-frozen-input-delta-v1.tar.gz",
+        "bytes": 240004,
+        "sha256": "dbbbd356c0f5e2da8c27651b3ac389a338f41bfb127b3924b3a8c279739add6e",
+        "all_member_files_verified": 20,
+        "scope": "Only frozen input delta and submission/cancellation records; no GPU results"
       }
     },
     "phase_aware_persistent_gpu_submission": {

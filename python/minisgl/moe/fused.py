@@ -32,42 +32,15 @@ def fused_topk(
 def moe_align_block_size(
     topk_ids: torch.Tensor, block_size: int, num_experts: int, *, stable: bool = False
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Aligns the token distribution across experts to be compatible with block
-    size for matrix multiplication.
+    """Group flattened route indices by expert, padding each bucket to a block.
 
-    Parameters:
-    - topk_ids: A tensor of shape [total_tokens, top_k], with local expert IDs
-        in [0, num_experts). Use -1 for routes owned by another rank.
-    - block_size: The block size used in block matrix multiplication.
-    - num_experts: The total number of experts.
+    IDs are local to ``[0, num_experts)``; ``-1`` denotes a remote route.
+    Returns padded route indices, one expert ID per block, and a device tensor
+    containing the used length. Padding uses ``topk_ids.numel()`` as its index;
+    remote blocks have expert ``-1``. Capacity beyond the used length is ignored.
 
-    Returns:
-    - sorted_token_ids: A tensor containing the sorted token indices according
-        to their allocated expert.
-    - expert_ids: A tensor indicating the assigned expert index for each block.
-    - num_tokens_post_padded: The total number of tokens after padding,
-        ensuring divisibility by block_size.
-
-    This function pads the number of tokens that each expert needs to process
-    so that it is divisible by block_size.
-    Padding ensures that during block matrix multiplication, the dimensions
-    align correctly.
-
-    Example:
-    Given topk_ids = [[2, 3, 4], [1, 2, 4], [1, 3, 4], [1, 2, 3]],
-    block_size = 4, and num_experts = 5:
-    - We initially have 12 tokens (after repeating 'top_k' times) and 4 experts,
-        with each expert needing to process 3 tokens.
-    - As block_size is 4, we pad 1 token for each expert.
-    - First, flatten topk_ids to [2, 3, 4, 1, 2, 4, 1, 3, 4, 1, 2, 3].
-    - Then append padding tokens [12, 12, 12, 12] for each block.
-    - After sorting by expert index, we obtain token_ids
-        [3, 6, 9, 12, 0, 4, 10, 12, 1, 7, 11, 12, 2, 5, 8, 12].
-        Tokens 12 are non-existent (padding) and are ignored in
-        the subsequent matrix multiplication.
-    - The padding ensures that the total number of tokens is now divisible
-        by block_size for proper block matrix operations.
+    ``stable=True`` retains original route order within each expert bucket.
+    The default uses the native grouping kernel without an ordering guarantee.
     """
     if stable:
         from .routing import align_routes
