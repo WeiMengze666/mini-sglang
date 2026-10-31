@@ -5,6 +5,8 @@ MoE operations. Admission, prefix reuse, token pages, distributed layouts and
 request completion remain framework mechanisms. Code quality and numerical
 correctness precede further performance work.
 
+The current tree adds generic per-collective capability routing and an explicit RoutingPolicy seam for packed grouped experts (2c7981b). The default route grouping is unchanged; setting stable_moe_routing=true selects the calibrated deterministic reference path. GPUq job 303 passed 163 packed MXFP4, stable-routing, Kimi packing and parallel checks with two skips. A component benchmark in job 304 measured 217.87 us for native grouping and 345.87 us for stable grouping on the same workload, with bitwise-equal outputs; stable grouping is therefore a reference mode, not the production performance path. The separate custom-all-reduce probe (job 301) produced errors of 28.0 and 8.0 for ordinary and CUDA-Graph calls, so no unverified collective backend was enabled.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA

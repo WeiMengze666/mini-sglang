@@ -19,6 +19,7 @@ python -m minisgl --model "Qwen/Qwen3-0.6B" --shell
 To scale performance across multiple GPUs, Mini-SGLang supports Tensor Parallelism (TP). You can enable distributed serving by specifying the number of GPUs with the `--tp n` argument, where `n` is the degree of parallelism.
 
 DCP (`--dcp-size`) partitions token ownership for context-sharded MLA and merges partial attention using output/LSE exchange. EP (`--ep-size`) partitions experts independently of their tensor shards, for both ordinary and latent MoE. The replicated-token scheduler combines local expert contributions by TP reduction. The integrated paged DCP path currently serves MLA; the exchange itself is independent of the attention algorithm.
+Collective backends declare per-operation capabilities, so an optional backend can handle only supported all-reduces or gathers while the tested fallback handles the rest. Grouped MoE also accepts a generic RoutingPolicy; stable_moe_routing=true selects deterministic integer route grouping for calibrated references, while the default keeps the native grouping path.
 
 ## Supported Models
 
