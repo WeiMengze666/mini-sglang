@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from minisgl.layers import (
     AttentionLayer,
     BaseOP,
+    GatedActivation,
     LinearColParallelMerged,
     LinearOProj,
     LinearQKVMerged,
@@ -30,10 +31,11 @@ class GatedMLP(BaseOP):
             has_bias=False,
         )
 
+        activation = GatedActivation.from_config(config)
         FN_MAP = {"silu": silu_and_mul, "gelu": gelu_and_mul}
-        act_fn = FN_MAP.get(config.hidden_act, None)
+        act_fn = FN_MAP.get(activation.name, None)
         if act_fn is None:
-            raise ValueError(f"Unsupported activation function: {config.hidden_act}")
+            raise ValueError(f"Fused MLP does not support activation: {activation.name}")
         self.act_fn = act_fn
         self.down_proj = LinearRowParallel(
             config.intermediate_size,
@@ -58,6 +60,7 @@ class MoEMLP(BaseOP):
             hidden_size=config.hidden_size,
             intermediate_size=config.moe_intermediate_size,
             renormalize=config.norm_topk_prob,
+            activation=config.hidden_act,
         )
         self.gate = LinearReplicated(
             config.hidden_size,

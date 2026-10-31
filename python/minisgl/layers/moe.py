@@ -2,6 +2,7 @@ import torch
 from minisgl.core import get_global_ctx
 from minisgl.distributed import DistributedCommunicator, get_tp_info
 from minisgl.distributed.layout import get_parallel_layout
+from minisgl.layers.activation import resolve_gated_activation
 from minisgl.utils import div_even
 
 from .base import BaseOP
@@ -29,7 +30,9 @@ class MoELayer(BaseOP):
         tp_info = get_tp_info()
         self.tp_size = tp_info.size
         self.renormalize = renormalize
-        self.activation = activation
+        self.activation = resolve_gated_activation(activation)
+        if self.activation.name not in ("silu", "gelu"):
+            raise NotImplementedError("The fused MoE backend supports SiLU and GELU only")
         self.apply_router_weight_on_input = apply_router_weight_on_input
         layout = get_parallel_layout()
         self._expert_partition = layout.experts
@@ -55,7 +58,7 @@ class MoELayer(BaseOP):
             gating_output=router_logits,
             topk=self.top_k,
             renormalize=self.renormalize,
-            activation=self.activation,
+            activation=self.activation.name,
             apply_router_weight_on_input=self.apply_router_weight_on_input,
             expert_partition=self._expert_partition,
             num_global_experts=self.num_experts,

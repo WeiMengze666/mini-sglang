@@ -9,6 +9,7 @@ import torch
 import triton as tr
 import triton.language as tl
 from minisgl.moe.fused import moe_align_block_size
+from minisgl.layers.activation import resolve_gated_activation
 
 from .mxfp4_kernel import _decode
 
@@ -132,10 +133,13 @@ class MXFP4Experts:
         self._experts = tuple(expert for _, expert in items)  # retain weight allocations
         self._hidden = first.w1._input_size
         self._intermediate = first.w1._output_size
-        self._activation, self._beta = activation, beta
-        self._linear_beta = linear_beta or 0.0
-        if activation not in ("silu", "situ") or beta <= 0 or self._linear_beta < 0:
+        activation_spec = resolve_gated_activation(
+            activation, beta=beta, linear_beta=linear_beta
+        )
+        if activation_spec.name not in ("silu", "situ"):
             raise ValueError("Unsupported packed expert activation")
+        self._activation, self._beta = activation_spec.name, activation_spec.beta
+        self._linear_beta = activation_spec.linear_beta or 0.0
         pointers = []
         for index, expert in items:
             if index != self._start + len(pointers):

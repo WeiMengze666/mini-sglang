@@ -6,23 +6,14 @@ import torch
 import torch.nn.functional as F
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
-from minisgl.layers.activation import situ_and_mul
+from minisgl.layers.activation import GatedActivation, situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.linear import Linear
 from minisgl.layers.norm import TorchRMSNorm
 
 
 def _activation(gate: torch.Tensor, up: torch.Tensor, config) -> torch.Tensor:
-    if config.hidden_act == "situ":
-        return situ_and_mul(
-            gate,
-            up,
-            getattr(config, "activation_situ_beta", None) or 1.0,
-            getattr(config, "activation_situ_linear_beta", None),
-        )
-    if config.hidden_act == "silu":
-        return F.silu(gate) * up
-    raise ValueError(f"Unsupported activation: {config.hidden_act}")
+    return GatedActivation.from_config(config).apply(gate, up)
 
 
 class GatedMLP(BaseOP):
@@ -30,6 +21,7 @@ class GatedMLP(BaseOP):
 
     def __init__(self, config, intermediate_size: int | None = None):
         self._config = config
+        self._activation = GatedActivation.from_config(config)
         self._tp = TensorParallel()
         width = intermediate_size if intermediate_size is not None else config.intermediate_size
         width = local_size(width, self._tp.size, "MLP intermediate_size")
@@ -39,7 +31,7 @@ class GatedMLP(BaseOP):
 
     def forward_local(self, x: torch.Tensor) -> torch.Tensor:
         return self.down_proj.forward(
-            _activation(self.gate_proj.forward(x), self.up_proj.forward(x), self._config)
+            self._activation.apply(self.gate_proj.forward(x), self.up_proj.forward(x))
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -51,6 +43,7 @@ class _Expert(BaseOP):
 
     def __init__(self, hidden_size: int, intermediate_size: int, config):
         self._config = config
+        self._activation = GatedActivation.from_config(config)
         intermediate_size = local_size(
             intermediate_size, get_parallel_layout().expert_tensor_size, "expert intermediate_size"
         )
@@ -59,7 +52,7 @@ class _Expert(BaseOP):
         self.w3 = Linear(hidden_size, intermediate_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.w2.forward(_activation(self.w1.forward(x), self.w3.forward(x), self._config))
+        return self.w2.forward(self._activation.apply(self.w1.forward(x), self.w3.forward(x)))
 
 
 class GroupedRouter(BaseOP):
