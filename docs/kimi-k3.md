@@ -953,6 +953,15 @@ performance measurements. The released
 checkpoint gate also accepts `--chunk-size` and prepares attention metadata for
 each chunk, including singleton tails. Both retain the original tolerances.
 
+A later opt-in test (job 343) integrated FlashInfer's public FP32
+all-reduce-fusion workspace through the generic distributed backend capability
+interface. Low-precision accumulation was promoted only when the selected
+backend advertised that capability; default Torch and PyNCCL routing remained
+unchanged. The released Kimi-K3 BF16 strict full/chunk gate still failed with
+73,776/163,840 mismatches and maximum absolute difference 1.47265625. The
+adapter, environment flag and tests were removed after the gate, so no
+unverified collective optimization remains in production.
+
 ## Reproduction
 
 Use compatible native dependencies (`pip install -e '.[native,dev]'`). The rebuilt
