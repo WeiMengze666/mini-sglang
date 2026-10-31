@@ -14,6 +14,18 @@ GPUq job 308 repeated the same gate with the portable recurrent backend (native 
 A PyNCCL direct-buffer experiment passed the same eight-rank collective and DCP checks in job 310; the internal-buffer control passed in job 311. Its component latency was mixed in job 314, but complete Kimi job 319 regressed decode throughput from 14.21/26.12/50.90/97.95 to 13.01/23.53/35.10/55.49 tokens/s at batch 1/2/4/8, with unstable raw duplicates at batch 2/4/8. The direct implementation was removed; production keeps the symmetric internal buffer.
 A follow-up 8192-byte selective-direct trial passed temporary collective checks in jobs 316/317 but was removed with the direct implementation. In the same-process benchmark job 318 it measured 30.49/29.87/22.37 us versus 16.19/20.67/22.93 us for the default internal path at 3,584/28,672/229,376 elements, so no threshold switch is retained.
 
+
+The isolation controls in jobs 346, 351 and 354 narrow this boundary without
+changing production code. With DCP=1 and EP=8, the current packed Triton path
+still failed full/chunk BF16 with 77,378/163,840 mismatches (maximum
+1.5234375; job 346), so DCP LSE exchange is not the sole cause. Replacing
+packed MXFP4 experts by the existing portable Torch expert loop made the result
+worse at 83,989/163,840 (maximum 1.427734375; job 351), so packed execution is
+not the sole cause either. Retaining packed experts but switching KDA to the
+portable recurrent implementation still failed at 74,063/163,840 (maximum
+1.2109375; job 354). These are diagnostic controls only; no backend was
+replaced or tolerance relaxed.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
