@@ -1,6 +1,19 @@
 """Stable integer routing plans for grouped expert kernels."""
 
+from dataclasses import dataclass
+
 import torch
+
+
+@dataclass(frozen=True)
+class RoutingPolicy:
+    """Model-level routing choices shared by portable and packed MoE paths."""
+
+    stable: bool = False
+
+    @classmethod
+    def from_config(cls, config) -> "RoutingPolicy":
+        return cls(stable=bool(getattr(config, "stable_moe_routing", False)))
 
 
 def align_routes(

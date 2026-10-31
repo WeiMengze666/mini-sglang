@@ -10,6 +10,7 @@ import triton as tr
 import triton.language as tl
 from minisgl.layers.activation import resolve_gated_activation
 from minisgl.moe.fused import moe_align_block_size
+from minisgl.moe.routing import RoutingPolicy
 
 from .mxfp4_kernel import _decode
 
@@ -135,7 +136,15 @@ def _down(
 class MXFP4Experts:
     """Homogeneous, bias-free w1/w3/w2 experts with contiguous global IDs."""
 
-    def __init__(self, experts, *, activation, beta=1.0, linear_beta=None):
+    def __init__(
+        self,
+        experts,
+        *,
+        activation,
+        beta=1.0,
+        linear_beta=None,
+        routing_policy: RoutingPolicy | None = None,
+    ):
         items = list(experts)
         first = items[0][1]
         self._start = items[0][0]
@@ -149,6 +158,7 @@ class MXFP4Experts:
             raise ValueError("Unsupported packed expert activation")
         self._activation, self._beta = activation_spec.name, activation_spec.beta
         self._linear_beta = activation_spec.linear_beta or 0.0
+        self._routing_policy = routing_policy or RoutingPolicy()
         pointers = []
         for index, expert in items:
             if index != self._start + len(pointers):
@@ -179,7 +189,9 @@ class MXFP4Experts:
         local = ids - self._start
         local = local.masked_fill((local < 0) | (local >= experts), -1).int().contiguous()
         bm, bn, bk = 16, 32, 64
-        sorted_ids, expert_ids, length = moe_align_block_size(local, bm, experts)
+        sorted_ids, expert_ids, length = moe_align_block_size(
+            local, bm, experts, stable=self._routing_policy.stable
+        )
         # At most one padded block tail per nonempty bucket; no host readback.
         routes = count * topk
         blocks = tr.cdiv(routes + min(experts + 1, routes) * (bm - 1), bm)

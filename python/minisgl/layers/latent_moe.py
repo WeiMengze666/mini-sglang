@@ -10,6 +10,7 @@ from minisgl.layers.activation import GatedActivation, situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.linear import Linear
 from minisgl.layers.norm import TorchRMSNorm
+from minisgl.moe.routing import RoutingPolicy
 
 __all__ = ["GatedMLP", "GroupedRouter", "LatentMoE", "situ_and_mul"]
 
@@ -157,6 +158,7 @@ class LatentMoE(BaseOP):
                 activation=self._config.hidden_act,
                 beta=getattr(self._config, "activation_situ_beta", None) or 1.0,
                 linear_beta=getattr(self._config, "activation_situ_linear_beta", None),
+                routing_policy=RoutingPolicy.from_config(self._config),
             )
 
     def validate_cuda_graph(self):

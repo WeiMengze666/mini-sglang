@@ -5,7 +5,7 @@ import random
 import pytest
 import torch
 from minisgl.moe.fused import moe_align_block_size
-from minisgl.moe.routing import align_routes
+from minisgl.moe.routing import RoutingPolicy, align_routes
 
 
 def oracle(ids, block, experts):
@@ -66,3 +66,53 @@ def test_single_bucket_and_noncontiguous_inputs(remote):
 def test_invalid_metadata(ids, block, experts):
     with pytest.raises(ValueError):
         align_routes(ids, block, experts)
+
+
+
+def test_routing_policy_is_opt_in_and_config_driven():
+    class Config:
+        stable_moe_routing = True
+
+    assert RoutingPolicy.from_config(Config()).stable
+    assert not RoutingPolicy.from_config(object()).stable
+
+
+def test_packed_executor_forwards_routing_policy(monkeypatch):
+    import minisgl.quantization.mxfp4_moe as packed
+    from minisgl.moe.routing import RoutingPolicy
+
+    calls = []
+
+    def fake_align(ids, block_size, experts, *, stable=False):
+        calls.append(stable)
+        return (
+            torch.zeros(block_size, dtype=torch.int32),
+            torch.zeros(1, dtype=torch.int32),
+            torch.tensor([block_size], dtype=torch.int32),
+        )
+
+    class FakeKernel:
+        def __getitem__(self, _grid):
+            return lambda *args, **kwargs: None
+
+    monkeypatch.setattr(packed, "moe_align_block_size", fake_align)
+    monkeypatch.setattr(packed, "_gate_up", FakeKernel())
+    monkeypatch.setattr(packed, "_down", FakeKernel())
+
+    executor = object.__new__(packed.MXFP4Experts)
+    executor._start = 0
+    executor._experts = (object(),)
+    executor._hidden = executor._intermediate = 2
+    executor._activation = "silu"
+    executor._beta = 1.0
+    executor._linear_beta = 0.0
+    executor._programs = 1
+    executor._pointers = torch.empty(1, 6, dtype=torch.int64)
+    executor._routing_policy = RoutingPolicy(stable=True)
+
+    executor.forward(
+        torch.zeros(1, 2),
+        torch.ones(1, 1),
+        torch.zeros(1, 1, dtype=torch.int32),
+    )
+    assert calls == [True]

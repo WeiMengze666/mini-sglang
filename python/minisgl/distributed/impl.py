@@ -21,7 +21,15 @@ class DistributedImpl(ABC):
     def all_gather(self, x: torch.Tensor) -> torch.Tensor: ...
 
     def supports(self, x: torch.Tensor) -> bool:
+        """Backward-compatible capability alias for all-reduce."""
+        return self.supports_all_reduce(x)
+
+    def supports_all_reduce(self, x: torch.Tensor) -> bool:
         """Whether this backend can reduce this tensor without fallback."""
+        return True
+
+    def supports_all_gather(self, x: torch.Tensor) -> bool:
+        """Whether this backend can gather this tensor without fallback."""
         return True
 
     def close(self) -> None:
@@ -35,19 +43,33 @@ class FallbackDistributedImpl(DistributedImpl):
     primary: DistributedImpl
     fallback: DistributedImpl
 
-    def supports(self, x: torch.Tensor) -> bool:
-        return self.primary.supports(x) or self.fallback.supports(x)
+    @staticmethod
+    def _supports(backend: DistributedImpl, operation: str, x: torch.Tensor) -> bool:
+        method = getattr(backend, f"supports_{operation}", None)
+        return bool(method(x) if method is not None else backend.supports(x))
+
+    def supports_all_reduce(self, x: torch.Tensor) -> bool:
+        return self._supports(self.primary, "all_reduce", x) or self._supports(
+            self.fallback, "all_reduce", x
+        )
+
+    def supports_all_gather(self, x: torch.Tensor) -> bool:
+        return self._supports(self.primary, "all_gather", x) or self._supports(
+            self.fallback, "all_gather", x
+        )
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
-        backend = self.primary if self.primary.supports(x) else self.fallback
+        backend = self.primary if self._supports(self.primary, "all_reduce", x) else self.fallback
         return backend.all_reduce(x)
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fallback.all_gather(x)
+        backend = self.primary if self._supports(self.primary, "all_gather", x) else self.fallback
+        return backend.all_gather(x)
 
     def close(self) -> None:
         self.primary.close()
-        self.fallback.close()
+        if self.fallback is not self.primary:
+            self.fallback.close()
 
 
 @dataclass
