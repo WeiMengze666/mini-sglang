@@ -35,6 +35,8 @@ The shared `GatedActivation` contract now validates and resolves `silu`, `gelu` 
 
 The packed MXFP4 executor now uses a bounded persistent work grid for its gate/up and down kernels. It preserves the existing GEMM, activation and output arithmetic: the remote CPU regression passed 483 tests with 225 skips, GPUq job 286 passed 121 component cases, and paired GPUq job 288 matched the previous executor bitwise on 128 calls. A same-input component microbenchmark measured 230.09 us versus 184.59 us (1.2465x), which is recorded as a kernel result only and is not a whole-model throughput claim.
 
+GPUq job 294 ran the current candidate through the released-checkpoint warm benchmark on one greeting prompt. Its batch 1/2/4/8 rates were 14.21/26.12/50.90/97.95 tokens/s under the checkpoint-suite boundary; duplicate requests matched through stop. The same run reported a 1.234375 maximum full/chunk logit difference, so strict chunk consistency failed and these single-prompt rates are diagnostic only.
+
 The latest numerical candidate is not adopted. Job 270 passed 283 GPU component
 tests, all four ordinary/hybrid communication Graph paths, and the independent
 FP32 check at the original `1e-4` tolerance. Strict BF16 still fails: 166/176 greedy
