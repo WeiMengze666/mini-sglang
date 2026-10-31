@@ -8,8 +8,8 @@ collective or optional latent normalization. CPU/reference execution is separate
 import torch
 import triton as tr
 import triton.language as tl
-from minisgl.moe.fused import moe_align_block_size
 from minisgl.layers.activation import resolve_gated_activation
+from minisgl.moe.fused import moe_align_block_size
 
 from .mxfp4_kernel import _decode
 

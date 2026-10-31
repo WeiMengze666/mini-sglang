@@ -11,6 +11,8 @@ from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.linear import Linear
 from minisgl.layers.norm import TorchRMSNorm
 
+__all__ = ["GatedMLP", "GroupedRouter", "LatentMoE", "situ_and_mul"]
+
 
 def _activation(gate: torch.Tensor, up: torch.Tensor, config) -> torch.Tensor:
     return GatedActivation.from_config(config).apply(gate, up)

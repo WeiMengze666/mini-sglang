@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
-
 from minisgl.layers.activation import GatedActivation, resolve_gated_activation
 
 
