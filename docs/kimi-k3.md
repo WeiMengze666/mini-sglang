@@ -25,6 +25,20 @@ job 218 passed all four dense/MoE/static-hybrid/unified-hybrid GPU graph
 compatibility paths: zero logit error and bitwise equal hybrid state. This refactor
 changes startup validation and keeps the existing operator choices.
 
+The latest numerical candidate is not adopted. Job 270 passed 283 GPU component
+tests, all four ordinary/hybrid communication Graph paths, and the independent
+FP32 check at the original `1e-4` tolerance. Strict BF16 still fails: 166/176 greedy
+positions match, and 9,502,436 logits exceed the unchanged `rtol=0.05, atol=0.1`
+gate. The original 13-token prefill split also fails. Quality and throughput
+acceptance did not run for this candidate.
+
+The dense SiTU correction removes the previous first divergence: the first three
+normalized readouts now match bitwise on all eight ranks. The next difference is
+the readout after layer 1's KDA: 145/193,536 values differ, with maximum error
+`0.00048828125`. Its local attention contributions already differ before the
+collective on four ranks. The observed trace is bitwise transparent across all
+eleven complete raw-logit captures; same-input KDA localization continues.
+
 The accepted functional baseline is `phase8-committed-v1-source`, commit `8d28bd6`,
 manifest SHA256 `9e2cb98b3d1c1a5eb131eadf63a1b4f96ecf8cdae4b3bfb85c7a6c5ecc43a373`.
 Its complete CPU/Gloo regression passed in `phase8-full-cpu-v9.log` from a clean
