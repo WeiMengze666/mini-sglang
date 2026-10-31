@@ -37,6 +37,8 @@ The packed MXFP4 executor now uses a bounded persistent work grid for its gate/u
 
 GPUq job 294 ran the current candidate through the released-checkpoint warm benchmark on one greeting prompt. Its batch 1/2/4/8 rates were 14.21/26.12/50.90/97.95 tokens/s under the checkpoint-suite boundary; duplicate requests matched through stop. The same run reported a 1.234375 maximum full/chunk logit difference, so strict chunk consistency failed and these single-prompt rates are diagnostic only.
 
+GPUq job 296 profiled the same candidate after graph capture. The largest CUDA costs were `_gate_up` at 17.21%, BF16/FP32 all-reduces together at about 35.6%, `_down` at 10.84%, and elementwise copies at 5.35%. The next optimization scope is therefore generic collective scheduling and copy boundaries; no communication change has been adopted yet.
+
 The latest numerical candidate is not adopted. Job 270 passed 283 GPU component
 tests, all four ordinary/hybrid communication Graph paths, and the independent
 FP32 check at the original `1e-4` tolerance. Strict BF16 still fails: 166/176 greedy
