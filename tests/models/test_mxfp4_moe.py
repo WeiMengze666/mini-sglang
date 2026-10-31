@@ -7,6 +7,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 from minisgl.layers.activation import situ_and_mul
+from minisgl.moe.routing import RoutingPolicy
 from minisgl.quantization.mxfp4 import MXFP4Linear
 
 pytestmark = pytest.mark.skipif(
@@ -31,6 +32,7 @@ def _projection(inputs, outputs, dtype):
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("activation", ["silu", "situ"])
+@pytest.mark.parametrize("stable_routing", [False, True])
 @pytest.mark.parametrize(
     "tokens,selection,experts,width",
     [
@@ -43,7 +45,9 @@ def _projection(inputs, outputs, dtype):
         (65, "mixed", 1, 128),
     ],
 )
-def test_grouped_packed_experts(dtype, activation, tokens, selection, experts, width):
+def test_grouped_packed_experts(
+    dtype, activation, stable_routing, tokens, selection, experts, width
+):
     from minisgl.quantization.mxfp4_moe import MXFP4Experts
 
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -57,7 +61,13 @@ def test_grouped_packed_experts(dtype, activation, tokens, selection, experts, w
         w2, down = _projection(intermediate, hidden, dtype)
         items.append((index, SimpleNamespace(w1=w1, w3=w3, w2=w2)))
         dense.append((gate, up, down))
-    executor = MXFP4Experts(items, activation=activation, beta=4.0, linear_beta=25.0)
+    executor = MXFP4Experts(
+        items,
+        activation=activation,
+        beta=4.0,
+        linear_beta=25.0,
+        routing_policy=RoutingPolicy(stable=stable_routing),
+    )
     x = torch.randn(tokens, hidden, device="cuda", dtype=dtype) * 0.12
     ids = torch.randint(
         4 if selection == "owned" else 0, 4 + experts, (tokens, topk), device="cuda"
