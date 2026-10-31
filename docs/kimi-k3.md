@@ -31,6 +31,8 @@ Both lifetime regressions fail with the previous ordering and pass after this
 generic lifecycle correction. The shipping-tree CPU/Gloo regression passes
 507 checks, with 187 skips and two existing expected disagreements.
 
+The shared `GatedActivation` contract now validates and resolves `silu`, `gelu` and `situ` for dense/shared MoE, latent MoE and packed MXFP4 experts. Standard MoE forwards the model activation instead of assuming SiLU, while unsupported fused activations fail explicitly. The remote CPU/Gloo regression passed 475 tests with 225 skips, and GPUq job 283 passed 121 focused MXFP4, stable-routing, packed-K3 and parallel cases with two skips.
+
 The latest numerical candidate is not adopted. Job 270 passed 283 GPU component
 tests, all four ordinary/hybrid communication Graph paths, and the independent
 FP32 check at the original `1e-4` tolerance. Strict BF16 still fails: 166/176 greedy
