@@ -26,6 +26,22 @@ portable recurrent implementation still failed at 74,063/163,840 (maximum
 1.2109375; job 354). These are diagnostic controls only; no backend was
 replaced or tolerance relaxed.
 
+
+A TDD-based stable-projection candidate was then tested and removed after
+unchanged-gate review. The first MXFP4-only hook did not affect K3 because
+self-attention projections are intentionally ignored by the checkpoint's
+quantization rules (job 368: 77,378/163,840, maximum 1.5234375). A generic
+FP32-accumulating dense `Linear.forward_stable` for the KDA beta projection
+produced 79,578 mismatches, maximum 1.46875 (job 370). Extending the same
+capability to the 128-wide `f_a` projection reduced this to 71,739 and
+1.296875 (job 371); extending it to `f_b` reduced it further to 67,345 and
+1.25 (job 372), but still failed the unchanged strict gate. With the same
+stable projections, portable FP32 KDA recurrence produced 80,110 mismatches
+and maximum 1.2734375 (job 373). The candidate methods and tests were removed;
+the production tree retains the original FlashInfer KDA and ordinary Linear
+paths. These results isolate a promising numerical direction but do not
+justify a default precision or performance change.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
