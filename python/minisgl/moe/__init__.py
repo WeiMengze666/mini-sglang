@@ -5,6 +5,7 @@ from typing import Protocol
 from minisgl.utils import Registry, init_logger
 
 from .base import BaseMoeBackend
+from .routing import RoutingPolicy
 
 logger = init_logger(__name__)
 
@@ -29,6 +30,7 @@ def create_moe_backend(backend: str) -> BaseMoeBackend:
 
 __all__ = [
     "BaseMoeBackend",
+    "RoutingPolicy",
     "create_moe_backend",
     "SUPPORTED_MOE_BACKENDS",
 ]

@@ -4,8 +4,9 @@ import random
 
 import pytest
 import torch
+from minisgl.moe import RoutingPolicy
 from minisgl.moe.fused import moe_align_block_size
-from minisgl.moe.routing import RoutingPolicy, align_routes
+from minisgl.moe.routing import align_routes
 
 
 def oracle(ids, block, experts):
