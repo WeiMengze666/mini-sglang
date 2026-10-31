@@ -20,8 +20,34 @@ class DistributedImpl(ABC):
     @abstractmethod
     def all_gather(self, x: torch.Tensor) -> torch.Tensor: ...
 
+    def supports(self, x: torch.Tensor) -> bool:
+        """Whether this backend can reduce this tensor without fallback."""
+        return True
+
     def close(self) -> None:
         """Release owned communication resources before the bootstrap group."""
+
+
+@dataclass
+class FallbackDistributedImpl(DistributedImpl):
+    """Route unsupported tensors to a stable, already-tested backend."""
+
+    primary: DistributedImpl
+    fallback: DistributedImpl
+
+    def supports(self, x: torch.Tensor) -> bool:
+        return self.primary.supports(x) or self.fallback.supports(x)
+
+    def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
+        backend = self.primary if self.primary.supports(x) else self.fallback
+        return backend.all_reduce(x)
+
+    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
+        return self.fallback.all_gather(x)
+
+    def close(self) -> None:
+        self.primary.close()
+        self.fallback.close()
 
 
 @dataclass
