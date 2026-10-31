@@ -20,7 +20,7 @@ To scale performance across multiple GPUs, Mini-SGLang supports Tensor Paralleli
 
 DCP (`--dcp-size`) partitions token ownership for context-sharded MLA and merges partial attention using output/LSE exchange. EP (`--ep-size`) partitions experts independently of their tensor shards, for both ordinary and latent MoE. The replicated-token scheduler combines local expert contributions by TP reduction. The integrated paged DCP path currently serves MLA; the exchange itself is independent of the attention algorithm.
 Collective backends declare per-operation capabilities, so an optional backend can handle only supported all-reduces or gathers while the tested fallback handles the rest. Grouped MoE also accepts a generic RoutingPolicy; stable_moe_routing=true selects deterministic integer route grouping for calibrated references, while the default keeps the native grouping path.
-PyNCCL keeps its symmetric internal reduction buffer by default. MINISGL_PYNCCL_USE_INTERNAL_BUFFER=0 enables direct NCCL reductions for experiments; the option is correctness-tested but is not a global performance default because its latency depends on tensor size.
+PyNCCL uses its symmetric internal reduction buffer for the production path. A direct-buffer experiment was measured and rejected because it regressed complete Kimi decode throughput; no direct-buffer runtime knob is shipped.
 
 ## Supported Models
 
