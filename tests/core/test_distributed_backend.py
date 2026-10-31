@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 import torch
-from minisgl.distributed.impl import FallbackDistributedImpl
+from minisgl.distributed import FallbackDistributedImpl
 
 
 def test_fallback_backend_selects_by_tensor_capability():
