@@ -91,3 +91,12 @@ def _worker(rank, world, init_file):
 @pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")
 def test_eight_rank_pynccl_and_nccl_context_groups(tmp_path):
     mp.spawn(_worker, args=(8, str(tmp_path / "pynccl-group")), nprocs=8, join=True)
+
+def test_pynccl_buffer_mode_is_explicit(monkeypatch):
+    import minisgl.kernel.pynccl as loader
+
+    monkeypatch.setattr(loader.ENV.PYNCCL_USE_INTERNAL_BUFFER, "value", True)
+    assert loader._effective_buffer_size(4096) == 4096
+
+    monkeypatch.setattr(loader.ENV.PYNCCL_USE_INTERNAL_BUFFER, "value", False)
+    assert loader._effective_buffer_size(4096) == 0

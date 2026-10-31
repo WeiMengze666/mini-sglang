@@ -72,23 +72,27 @@ inline constexpr auto template_fn =
 
 struct NCCLWrapper : public tvm::ffi::Object {
 public:
-  NCCLWrapper(int rank, int world_size, const size_t max_bytes, NCCLIDList uid)
-      : m_rank(rank), m_world_size(world_size), m_max_bytes(max_bytes) {
+  NCCLWrapper(int rank, int world_size, const size_t max_bytes, NCCLIDList uid,
+               bool use_internal_buffer)
+      : m_rank(rank), m_world_size(world_size), m_max_bytes(max_bytes),
+        m_use_internal_buffer(use_internal_buffer) {
     ncclUniqueId id = get_uid(uid);
     ncclComm_t comm;
     NCCL_CHECK(::ncclCommInitRank(&comm, m_world_size, id, m_rank));
     m_comm = {comm, template_fn<::ncclCommDestroy>};
 
-    void *buf;
-    NCCL_CHECK(::ncclMemAlloc(&buf, max_bytes));
-    m_sym_mem = {buf, template_fn<::ncclMemFree>};
+    if (m_use_internal_buffer) {
+      void *buf;
+      NCCL_CHECK(::ncclMemAlloc(&buf, max_bytes));
+      m_sym_mem = {buf, template_fn<::ncclMemFree>};
 
-    ncclWindow_t win;
-    NCCL_CHECK(::ncclCommWindowRegister(comm, buf, max_bytes, &win,
-                                        NCCL_WIN_COLL_SYMMETRIC));
-    m_win = {win, [comm = m_comm](ncclWindow_t w) {
-               return NCCL_CHECK(::ncclCommWindowDeregister(comm.get(), w));
-             }};
+      ncclWindow_t win;
+      NCCL_CHECK(::ncclCommWindowRegister(comm, buf, max_bytes, &win,
+                                          NCCL_WIN_COLL_SYMMETRIC));
+      m_win = {win, [comm = m_comm](ncclWindow_t w) {
+                 return NCCL_CHECK(::ncclCommWindowDeregister(comm.get(), w));
+               }};
+    }
   }
 
   auto all_reduce(tvm::ffi::TensorView t, std::string op) const -> void {
@@ -103,7 +107,7 @@ public:
     const auto reduce_op = kNCCLReduceOPMap.at(op);
     const auto stream = LaunchKernel::resolve_device(t.device());
 
-    if (size_bytes <= m_max_bytes) { // use internal buffer
+    if (m_use_internal_buffer && size_bytes <= m_max_bytes) { // use internal buffer
       const auto buf_ptr = m_sym_mem.get();
       const auto need_memcpy = (buf_ptr != data_ptr);
       if (need_memcpy) {
@@ -170,6 +174,7 @@ private:
   int m_rank;
   int m_world_size;
   size_t m_max_bytes;
+  bool m_use_internal_buffer;
   shared_obj<ncclComm_t> m_comm;
   shared_ptr<void> m_sym_mem;
   shared_obj<ncclWindow_t> m_win;
@@ -178,7 +183,7 @@ private:
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   refl::ObjectDef<NCCLWrapper>()
-      .def(refl::init<int, int, size_t, NCCLIDList>(), "__init__")
+      .def(refl::init<int, int, size_t, NCCLIDList, bool>(), "__init__")
       .def("all_reduce", &NCCLWrapper::all_reduce)
       .def("all_gather", &NCCLWrapper::all_gather)
       .def("get_buffer", &NCCLWrapper::get_buffer);
