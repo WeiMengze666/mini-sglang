@@ -14,6 +14,13 @@ from minisgl.moe.fused import moe_align_block_size
 from .mxfp4_kernel import _decode
 
 
+def bounded_grid_size(blocks: int, columns: int, programs: int) -> int:
+    """Return a positive grid that covers all work with bounded residency."""
+    if blocks < 0 or columns <= 0 or programs <= 0:
+        raise ValueError("Grid dimensions and program count must be positive")
+    return max(1, min(blocks * columns, programs))
+
+
 @tr.jit
 def _expert_ptr(table, expert, column: tl.constexpr):
     return tl.load(table + expert * 6 + column).to(tl.pointer_type(tl.uint8))
@@ -39,43 +46,45 @@ def _gate_up(
     BN: tl.constexpr,
     BK: tl.constexpr,
 ):
-    block = tl.program_id(0)
-    if block * BM >= tl.load(Length):
-        return
-    expert = tl.load(Experts + block)
-    if (expert < 0) | (expert >= E):
-        return
-    routes = tl.load(Sorted + block * BM + tl.arange(0, BM)).to(tl.int64)
-    valid = (routes >= 0) & (routes < R)
-    rows = tl.program_id(1) * BN + tl.arange(0, BN)
-    offsets = tl.arange(0, BK)
-    gate = tl.zeros((BM, BN), tl.float32)
-    up = tl.zeros((BM, BN), tl.float32)
-    wg, sg = _expert_ptr(P, expert, 0), _expert_ptr(P, expert, 1)
-    wu, su = _expert_ptr(P, expert, 2), _expert_ptr(P, expert, 3)
-    for block_k in range(tr.cdiv(H, BK)):
-        cols = block_k * BK + offsets
-        x = tl.load(
-            X + routes[:, None] // TOPK * H + cols[None, :],
-            valid[:, None] & (cols[None, :] < H),
-            0,
-        )
-        w1 = _decode(wg, sg, rows, cols, I, H).to(x.dtype)
-        w3 = _decode(wu, su, rows, cols, I, H).to(x.dtype)
-        gate = tl.dot(x, tl.trans(w1), gate, input_precision="tf32x3")
-        up = tl.dot(x, tl.trans(w3), up, input_precision="tf32x3")
-    # Preserve each Linear's output rounding before the nonlinear activation.
-    gate = gate.to(X.dtype.element_ty).to(tl.float32)
-    up = up.to(X.dtype.element_ty).to(tl.float32)
-    if ACTIVATION == "situ":
-        gate = BETA * tl.extra.cuda.libdevice.tanh(gate / BETA) * tl.sigmoid(gate)
-        if LINEAR_BETA > 0:
-            up = LINEAR_BETA * tl.extra.cuda.libdevice.tanh(up / LINEAR_BETA)
-    else:
-        gate = (gate * tl.sigmoid(gate)).to(X.dtype.element_ty).to(tl.float32)
-    tl.store(
-        A + routes[:, None] * I + rows[None, :], gate * up, valid[:, None] & (rows[None, :] < I)
-    )
+    columns: tl.constexpr = tr.cdiv(I, BN)
+    work_end = tl.cdiv(tl.load(Length), BM) * columns
+    for work in range(tl.program_id(0), work_end, tl.num_programs(0)):
+        block = work // columns
+        expert = tl.load(Experts + block)
+        if (expert >= 0) & (expert < E):
+            routes = tl.load(Sorted + block * BM + tl.arange(0, BM)).to(tl.int64)
+            valid = (routes >= 0) & (routes < R)
+            rows = (work % columns) * BN + tl.arange(0, BN)
+            offsets = tl.arange(0, BK)
+            gate = tl.zeros((BM, BN), tl.float32)
+            up = tl.zeros((BM, BN), tl.float32)
+            wg, sg = _expert_ptr(P, expert, 0), _expert_ptr(P, expert, 1)
+            wu, su = _expert_ptr(P, expert, 2), _expert_ptr(P, expert, 3)
+            for block_k in range(tr.cdiv(H, BK)):
+                cols = block_k * BK + offsets
+                x = tl.load(
+                    X + routes[:, None] // TOPK * H + cols[None, :],
+                    valid[:, None] & (cols[None, :] < H),
+                    0,
+                )
+                w1 = _decode(wg, sg, rows, cols, I, H).to(x.dtype)
+                w3 = _decode(wu, su, rows, cols, I, H).to(x.dtype)
+                gate = tl.dot(x, tl.trans(w1), gate, input_precision="tf32x3")
+                up = tl.dot(x, tl.trans(w3), up, input_precision="tf32x3")
+            # Preserve each Linear's output rounding before the nonlinear activation.
+            gate = gate.to(X.dtype.element_ty).to(tl.float32)
+            up = up.to(X.dtype.element_ty).to(tl.float32)
+            if ACTIVATION == "situ":
+                gate = BETA * tl.extra.cuda.libdevice.tanh(gate / BETA) * tl.sigmoid(gate)
+                if LINEAR_BETA > 0:
+                    up = LINEAR_BETA * tl.extra.cuda.libdevice.tanh(up / LINEAR_BETA)
+            else:
+                gate = (gate * tl.sigmoid(gate)).to(X.dtype.element_ty).to(tl.float32)
+            tl.store(
+                A + routes[:, None] * I + rows[None, :],
+                gate * up,
+                valid[:, None] & (rows[None, :] < I),
+            )
 
 
 @tr.jit(do_not_specialize=["R"])
@@ -95,32 +104,32 @@ def _down(
     BN: tl.constexpr,
     BK: tl.constexpr,
 ):
-    block = tl.program_id(0)
-    if block * BM >= tl.load(Length):
-        return
-    expert = tl.load(Experts + block)
-    if (expert < 0) | (expert >= E):
-        return
-    routes = tl.load(Sorted + block * BM + tl.arange(0, BM)).to(tl.int64)
-    valid = (routes >= 0) & (routes < R)
-    rows = tl.program_id(1) * BN + tl.arange(0, BN)
-    offsets = tl.arange(0, BK)
-    acc = tl.zeros((BM, BN), tl.float32)
-    w, s = _expert_ptr(P, expert, 4), _expert_ptr(P, expert, 5)
-    for block_k in range(tr.cdiv(I, BK)):
-        cols = block_k * BK + offsets
-        a = tl.load(
-            A + routes[:, None] * I + cols[None, :], valid[:, None] & (cols[None, :] < I), 0
-        )
-        weight = _decode(w, s, rows, cols, H, I).to(a.dtype)
-        acc = tl.dot(a, tl.trans(weight), acc, input_precision="tf32x3")
-    acc = acc.to(A.dtype.element_ty).to(tl.float32)
-    mixing = tl.load(Weights + routes, valid, 0)
-    tl.store(
-        Y + routes[:, None] * H + rows[None, :],
-        acc * mixing[:, None],
-        valid[:, None] & (rows[None, :] < H),
-    )
+    columns: tl.constexpr = tr.cdiv(H, BN)
+    work_end = tl.cdiv(tl.load(Length), BM) * columns
+    for work in range(tl.program_id(0), work_end, tl.num_programs(0)):
+        block = work // columns
+        expert = tl.load(Experts + block)
+        if (expert >= 0) & (expert < E):
+            routes = tl.load(Sorted + block * BM + tl.arange(0, BM)).to(tl.int64)
+            valid = (routes >= 0) & (routes < R)
+            rows = (work % columns) * BN + tl.arange(0, BN)
+            offsets = tl.arange(0, BK)
+            acc = tl.zeros((BM, BN), tl.float32)
+            w, s = _expert_ptr(P, expert, 4), _expert_ptr(P, expert, 5)
+            for block_k in range(tr.cdiv(I, BK)):
+                cols = block_k * BK + offsets
+                a = tl.load(
+                    A + routes[:, None] * I + cols[None, :], valid[:, None] & (cols[None, :] < I), 0
+                )
+                weight = _decode(w, s, rows, cols, H, I).to(a.dtype)
+                acc = tl.dot(a, tl.trans(weight), acc, input_precision="tf32x3")
+            acc = acc.to(A.dtype.element_ty).to(tl.float32)
+            mixing = tl.load(Weights + routes, valid, 0)
+            tl.store(
+                Y + routes[:, None] * H + rows[None, :],
+                acc * mixing[:, None],
+                valid[:, None] & (rows[None, :] < H),
+            )
 
 
 class MXFP4Experts:
@@ -153,6 +162,12 @@ class MXFP4Experts:
                     raise ValueError("Packed expert projections must be homogeneous and bias-free")
                 row.extend((op.weight_packed.data_ptr(), op.weight_scale.data_ptr()))
             pointers.append(row)
+        device = first.w1.weight_packed.device
+        self._programs = (
+            2 * torch.cuda.get_device_properties(device).multi_processor_count
+            if device.type == "cuda"
+            else 1
+        )
         self._pointers = torch.tensor(
             pointers, dtype=torch.int64, device=first.w1.weight_packed.device
         )
@@ -171,7 +186,7 @@ class MXFP4Experts:
         activated = x.new_empty((routes, intermediate))
         # The alignment primitive assigns remote routes to expert -1, which both kernels skip.
         partial = torch.zeros((count, topk, hidden), device=x.device, dtype=torch.float32)
-        _gate_up[(blocks, tr.cdiv(intermediate, bn))](
+        _gate_up[(bounded_grid_size(blocks, tr.cdiv(intermediate, bn), self._programs),)](
             x.contiguous(),
             self._pointers,
             sorted_ids,
@@ -191,7 +206,7 @@ class MXFP4Experts:
             bk,
             num_warps=4,
         )
-        _down[(blocks, tr.cdiv(hidden, bn))](
+        _down[(bounded_grid_size(blocks, tr.cdiv(hidden, bn), self._programs),)](
             activated,
             self._pointers,
             sorted_ids,
