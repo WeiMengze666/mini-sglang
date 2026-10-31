@@ -20,6 +20,9 @@ class DistributedImpl(ABC):
     @abstractmethod
     def all_gather(self, x: torch.Tensor) -> torch.Tensor: ...
 
+    def close(self) -> None:
+        """Release owned communication resources before the bootstrap group."""
+
 
 @dataclass
 class TorchDistributedImpl(DistributedImpl):
@@ -94,4 +97,6 @@ def destroy_distributed() -> None:
     """
     Destroy all the distributed communication plugins.
     """
+    for plugin in reversed(DistributedCommunicator.plugins):
+        plugin.close()
     DistributedCommunicator.plugins = []

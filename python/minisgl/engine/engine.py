@@ -320,9 +320,10 @@ class Engine:
         return ForwardOutput(next_tokens_gpu, next_tokens_cpu, copy_done_event)
 
     def shutdown(self) -> None:
+        torch.cuda.synchronize(self.device)
         self.graph_runner.destroy_cuda_graphs()
-        torch.distributed.destroy_process_group()
         destroy_distributed()
+        torch.distributed.destroy_process_group()
 
 
 def _align_up_32(num: int) -> int:

@@ -25,6 +25,12 @@ job 218 passed all four dense/MoE/static-hybrid/unified-hybrid GPU graph
 compatibility paths: zero logit error and bitwise equal hybrid state. This refactor
 changes startup validation and keeps the existing operator choices.
 
+Communication teardown synchronizes the device, destroys Graphs, closes
+communication plugins in reverse order, then destroys the bootstrap group.
+Both lifetime regressions fail with the previous ordering and pass after this
+generic lifecycle correction. The shipping-tree CPU/Gloo regression passes
+507 checks, with 187 skips and two existing expected disagreements.
+
 The latest numerical candidate is not adopted. Job 270 passed 283 GPU component
 tests, all four ordinary/hybrid communication Graph paths, and the independent
 FP32 check at the original `1e-4` tolerance. Strict BF16 still fails: 166/176 greedy
