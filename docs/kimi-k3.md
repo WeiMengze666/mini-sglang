@@ -1270,3 +1270,10 @@ ordinary recurrent-fi DCP=2/EP=8 CUDA Graph boundary returned to
 13.41/24.84/48.37/93.08 tokens/s for batches 1/2/4/8 (job 513), matching the
 pre-policy production baseline, while job 512 retained strict full/chunk
 correctness.
+
+A direct FlashInfer Cake KDA probe was also run before considering a fused
+decode integration. With the installed FlashInfer 0.7.1 on SM103a, FP32-state
+single-token decode returned an unexported schedule specialization for both
+BF16 compute (job 517) and TF32 compute (job 518). The probe therefore produced
+no runtime result and no Cake backend was added; the native KDA decode remains
+the correct FP32-state fallback.
