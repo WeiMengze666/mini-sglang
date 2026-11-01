@@ -139,6 +139,11 @@ expert contribution to BF16 before writing the FP32 partial buffer. It
 regressed the DCP=1/EP=8 gate to 77,992/163,840 mismatches with maximum
 1.23046875 (job 436), so the local mixture rounding variant was also removed.
 
+A global TorchRMSNorm control moved BF16 rounding after weight multiplication,
+matching the observed official FlashInfer norm order. On the mini full/chunk
+gate it regressed to 77,738/163,840 mismatches with maximum 1.4140625 (job
+437), so the global norm-order change was not adopted.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
