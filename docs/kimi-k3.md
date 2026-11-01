@@ -1217,10 +1217,12 @@ BF16 baseline, and reaches 31.3%/28.7%/31.0%/34.4% of the recorded full
 SGLang boundary. The opt-in path remains disabled by default because its
 MXFP8 activation policy does not satisfy strict BF16 alignment.
 
-The final current-tree CPU/Gloo regression after the opt-in backend and storage
-policy passed 527 tests, skipped 234 CUDA-only cases, and retained two expected
-xfails. The default Triton/BF16 route remains the shipping path; FlashInfer is
-available only through the explicit backend and activation-precision settings.
+The current-tree CPU/Gloo regression after the opt-in backend, storage
+policy, and executor contract checks passed 529 tests, skipped 234 CUDA-only
+cases, and retained two expected xfails. The default Triton/BF16 route remains
+the shipping path; FlashInfer is available only through the explicit backend and
+activation-precision settings. GPU component job 485 passed all five FlashInfer
+executor tests after exposing the project virtualenv's ninja binary to gpuq.
 
 The server CLI exposes the opt-in policy explicitly:
 `--mxfp4-backend flashinfer --mxfp4-activation-precision mxfp8`.
