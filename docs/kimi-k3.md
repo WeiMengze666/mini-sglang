@@ -42,6 +42,20 @@ the production tree retains the original FlashInfer KDA and ordinary Linear
 paths. These results isolate a promising numerical direction but do not
 justify a default precision or performance change.
 
+
+The standalone KDA chunk probe separates the recurrence from model projections.
+Using identical random BF16 q/k/v and gates, the public FlashInfer recurrence
+changed the full versus 13+13+1 output by up to `0.0003662109375` and its
+FP32 state by up to `0.0043964385986328125` (job 377). The portable FP32
+recurrence was bitwise identical in both output and state on the same inputs.
+A final all-KDA-projection-stable, portable-recurrence model trial reduced the
+released greeting gate to 57,069/163,840 mismatches with maximum 1.20703125
+(job 378), while forcing every dense Linear through FP32 accumulation regressed
+to 72,978 mismatches and maximum 1.2646484375 (job 380). Both failed the
+unchanged gate and all temporary stable methods/tests were removed. The
+remaining correctness problem spans more than the FlashInfer recurrence alone;
+no global slow precision mode is enabled.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
