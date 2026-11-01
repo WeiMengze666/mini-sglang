@@ -20,6 +20,7 @@ class EngineConfig:
     dcp_size: int = 1
     ep_size: int = 1
     mxfp4_backend: str = "torch"
+    mxfp4_activation_precision: str = "bf16"
     max_running_req: int = 256
     max_cached_states: int = 8
     enable_unified_memory: bool = False

@@ -61,7 +61,7 @@ class Engine:
         from minisgl.quantization.mxfp4 import MXFP4Linear
 
         self.model.apply(
-            lambda op: op.set_backend(config.mxfp4_backend) if isinstance(op, MXFP4Linear) else None
+            lambda op: op.set_backend(config.mxfp4_backend, activation_precision=config.mxfp4_activation_precision) if isinstance(op, MXFP4Linear) else None
         )
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
@@ -336,8 +336,10 @@ def _adjust_config(config: EngineConfig):
 
     if config.max_cached_states < 0:
         raise ValueError("max_cached_states cannot be negative")
-    if config.mxfp4_backend not in ("torch", "triton"):
-        raise ValueError("mxfp4_backend must be torch or triton")
+    if config.mxfp4_backend not in ("torch", "triton", "flashinfer"):
+        raise ValueError("mxfp4_backend must be torch, triton or flashinfer")
+    if config.mxfp4_activation_precision not in ("bf16", "mxfp8"):
+        raise ValueError("mxfp4_activation_precision must be bf16 or mxfp8")
     ParallelLayout(config.tp_info.rank, config.tp_info.size, config.dcp_size, config.ep_size)
     if config.dcp_size > 1 and config.model_config.cache_config is None:
         raise ValueError("DCP requires a context-sharded attention/cache implementation")

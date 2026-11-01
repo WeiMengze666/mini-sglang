@@ -77,11 +77,15 @@ class MXFP4Linear(BaseOP):
         self._output_size = output_size
         self._chunk_rows = min(chunk_rows, max(1, max_decode_elements // input_size))
         self._backend = "torch"
+        self._activation_precision = "bf16"
 
-    def set_backend(self, backend):
-        if backend not in ("torch", "triton"):
-            raise ValueError("MXFP4 backend must be torch or triton")
+    def set_backend(self, backend, *, activation_precision="bf16"):
+        if backend not in ("torch", "triton", "flashinfer"):
+            raise ValueError("MXFP4 backend must be torch, triton or flashinfer")
+        if activation_precision not in ("bf16", "mxfp8"):
+            raise ValueError("MXFP4 activation precision must be bf16 or mxfp8")
         self._backend = backend
+        self._activation_precision = activation_precision
 
     @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
