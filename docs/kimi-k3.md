@@ -1166,3 +1166,10 @@ difference 1.36328125. The temporary wrapper was removed; this does not justify
 changing the generic residual operator or its production reduction order.
 
 The remote CPU/Gloo regression after these temporary diagnostics passed 523 tests, skipped 229 CUDA-only cases, and retained two expected xfails. The generic MoE reduction candidate in job 443 replaced the grouped MXFP4 executor's `partial.sum(1)` with the existing Triton `moe_sum_reduce_triton`; its strict DCP=1/EP=8 greeting gate failed at 77,992/163,840 mismatches with maximum absolute difference 1.23046875. The candidate was restored before the regression and is not production code.
+
+A generic pinned host-token staging candidate was also rejected after a direct
+B300 copy microbenchmark (job 446). For batch sizes 1/2/4/8/32, pageable
+Tensor.to(cpu, non_blocking=True) measured 13.2--13.8 us median, while an
+explicit pinned destination plus nonblocking copy_ measured 15.5--15.8 us;
+all copied values were equal. The engine change was reverted before commit, so
+the serving path keeps its original ownership and lifetime semantics.
