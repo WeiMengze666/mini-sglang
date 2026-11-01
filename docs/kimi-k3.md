@@ -1221,3 +1221,8 @@ The final current-tree CPU/Gloo regression after the opt-in backend and storage
 policy passed 527 tests, skipped 234 CUDA-only cases, and retained two expected
 xfails. The default Triton/BF16 route remains the shipping path; FlashInfer is
 available only through the explicit backend and activation-precision settings.
+
+The server CLI exposes the opt-in policy explicitly:
+`--mxfp4-backend flashinfer --mxfp4-activation-precision mxfp8`.
+For K3 SiTU this mode is required by the available FlashInfer tactic and carries
+the recorded MXFP8 precision boundary; the default CLI remains Triton/BF16.
