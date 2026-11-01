@@ -17,7 +17,11 @@ were added to the generic projection kernel. A packed MXFP4 expert `num_warps=2`
 probe passed 108 CUDA component tests and the strict 93-layer gate with FP32
 partials (jobs 533 and 535), but the paired model benchmark regressed from
 10.62759/21.12311/41.91369/82.18344 to 9.43815/18.74897/37.26540/73.43164
-tokens/s (job 537). The expert probe was rejected as well. These paired results
+tokens/s (job 537). The expert probe was rejected as well. A separate
+`BN=64` output-tile probe passed the same 108 component tests and strict gate
+(job 541), but its paired throughput fell from 10.64925/21.11661/41.89091/82.26675
+to 7.37028/14.67145/29.23795/57.74515 tokens/s (job 543); it was rejected too.
+These paired results
 use the same released checkpoint, DCP2/EP8 layout, 64-token output boundary and
 CUDA-Graph request sizes; they are performance evidence, not new correctness
 claims.
