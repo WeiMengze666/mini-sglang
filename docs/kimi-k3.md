@@ -119,6 +119,13 @@ earlier stable-finish control rather than repairing it. These results reject
 both collective order alone and the simple stable-attention-plus-collective
 combination; the slow controls remain unadopted.
 
+The official narrow KDA projection fusion was tested separately by merging
+the dense f_a and beta weights into one GEMV before f_b. It improved the
+portable DCP=1/EP=8 gate to 71,724/163,840 mismatches with maximum 1.203125
+(job 426), compared with the unfused 74,063/163,840 and 1.2109375 baseline.
+The improvement is real but incomplete; no production fusion is enabled until
+the full correctness gate and a paired performance check both pass.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
