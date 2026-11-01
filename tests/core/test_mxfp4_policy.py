@@ -23,3 +23,15 @@ def test_mxfp4_linear_rejects_invalid_policy(backend):
     precision = "bf16" if backend == "invalid" else "invalid"
     with pytest.raises(ValueError, match="activation precision|MXFP4 backend"):
         op.set_backend(backend, activation_precision=precision)
+
+def test_server_parses_flashinfer_precision_policy():
+    from minisgl.server.args import parse_args
+
+    args, _ = parse_args([
+        "--model-path", "/tmp/model",
+        "--dtype", "bfloat16",
+        "--mxfp4-backend", "flashinfer",
+        "--mxfp4-activation-precision", "mxfp8",
+    ])
+    assert args.mxfp4_backend == "flashinfer"
+    assert args.mxfp4_activation_precision == "mxfp8"

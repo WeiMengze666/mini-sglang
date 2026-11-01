@@ -106,10 +106,17 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     parser.add_argument(
         "--mxfp4-backend",
-        choices=["torch", "triton"],
+        choices=["torch", "triton", "flashinfer"],
         default=ServerArgs.mxfp4_backend,
         help="Weight-only MXFP4 execution backend.",
     )
+    parser.add_argument(
+        "--mxfp4-activation-precision",
+        choices=["bf16", "mxfp8"],
+        default=ServerArgs.mxfp4_activation_precision,
+        help="Activation precision for packed MXFP4 experts.",
+    )
+
     parser.add_argument(
         "--max-running-requests",
         type=int,
