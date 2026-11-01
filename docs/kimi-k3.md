@@ -99,6 +99,17 @@ Replacing KDA projections with token-wise GEMV was slower and worse:
 current residual is a coupled projection/collective arithmetic boundary; no
 slow GEMV or unconditional synchronization was adopted.
 
+An isolated same-input kernel probe separates the KDA recurrence from the
+model boundary. The official Triton KDA kernel and mini's single-token Triton
+kernel produced bitwise-equal outputs for the tested decode steps; the
+official 27-token path versus mini's portable FP32 recurrence differed by at
+most 1.52587890625e-5 in output and 1.4901161193847656e-7 in FP32 state
+(job 415). A temporary generic fused q/k/v/g projection control then left the
+complete DCP=1/EP=8 gate unchanged at 74,063/163,840 mismatches and maximum
+1.2109375 (job 417). The fused projection candidate was removed; neither the
+KDA recurrence kernel nor the unfused wide projection is the primary repair
+target.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
