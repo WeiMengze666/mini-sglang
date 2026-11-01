@@ -1228,3 +1228,27 @@ The server CLI exposes the opt-in policy explicitly:
 `--mxfp4-backend flashinfer --mxfp4-activation-precision mxfp8`.
 For K3 SiTU this mode is required by the available FlashInfer tactic and carries
 the recorded MXFP8 precision boundary; the default CLI remains Triton/BF16.
+
+The strict BF16 path is now expressed as a reusable attention composition:
+'recurrent-fi-triton' combines the FlashInfer paged MLA backend with the
+framework's Triton KDA scan. It is available for any hybrid model through the
+normal --attention-backend option; no model class checks for Kimi-K3. The
+ordinary 'recurrent-fi' composition remains available for the lower-latency
+FlashInfer KDA prefill path, whose numerical boundary is recorded separately.
+
+The precision layer uses device- and dtype-gated generic kernels for BF16
+linear projections, headwise MLA projections, RMSNorm, gated RMSNorm, and
+attention-residual mixing. CPU and unsupported dtype paths retain the existing
+Torch implementations. On the current K3 checkpoint, the explicit
+'recurrent-fi-triton' path passed the complete 93-layer DCP=2/EP=8 BF16
+full/chunk gate with allow_bf16_reduced_precision_reduction=false,
+max_abs=0, and zero relative L2 at every layer (job 499). The follow-up
+B300 component suite passed all 53 norm, residual, and linear kernel tests
+(job 498). The CPU/Gloo regression after these changes passed 532 tests,
+skipped 234 CUDA-only cases, and retained two expected xfails.
+
+A first performance rerun for 'recurrent-fi-triton' was blocked during NCCL
+bootstrap by an external unhandled CUDA error before model execution (job 503);
+it produced no throughput data. Existing recurrent-fi and FlashInfer/MXFP8
+performance measurements therefore remain the applicable performance evidence
+until the queue environment is clean.

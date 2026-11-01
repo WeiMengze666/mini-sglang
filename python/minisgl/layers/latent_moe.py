@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import torch
-import torch.nn.functional as F
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.activation import GatedActivation, situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
-from minisgl.layers.linear import Linear
+from minisgl.layers.linear import Linear, linear_fp32
 from minisgl.layers.norm import TorchRMSNorm
 from minisgl.moe.routing import RoutingPolicy
 
@@ -83,7 +82,7 @@ class GroupedRouter(BaseOP):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         c = self._config
-        logits = F.linear(x.float(), self.weight.float())
+        logits = linear_fp32(x, self.weight)
         if c.moe_router_activation_func == "sigmoid":
             scores = logits.sigmoid()
         elif c.moe_router_activation_func == "softmax" and self.e_score_correction_bias is None:

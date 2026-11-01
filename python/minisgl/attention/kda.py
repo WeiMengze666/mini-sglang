@@ -78,5 +78,15 @@ def kda_recurrence(q, k, v, log_decay, beta, state=None, *, scale=None):
 
 
 def gated_rms_norm(x, gate, weight, eps=1e-6):
+    if (
+        x.is_cuda
+        and x.device == gate.device == weight.device
+        and x.dtype == gate.dtype == weight.dtype == torch.bfloat16
+        and weight.is_contiguous()
+        and x.shape == gate.shape
+    ):
+        from minisgl.layers.norm_kernel import rms_norm
+
+        return rms_norm(x, weight, eps, gate=gate, round_before_weight=False)
     y = x.float() * torch.rsqrt(x.float().square().mean(-1, keepdim=True) + eps)
     return (y * weight.float() * torch.sigmoid(gate.float())).to(x.dtype)

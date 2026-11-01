@@ -44,6 +44,16 @@ class TorchRMSNorm(BaseOP):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if (
+            x.is_cuda
+            and x.dtype == self.weight.dtype == torch.bfloat16
+            and self.weight.device == x.device
+            and self.weight.is_contiguous()
+            and x.shape[-1] > 0
+        ):
+            from .norm_kernel import rms_norm
+
+            return rms_norm(x, self.weight, self.eps, round_before_weight=True)
         xf = x.float()
         return (xf * torch.rsqrt(xf.square().mean(-1, keepdim=True) + self.eps)).to(
             x.dtype

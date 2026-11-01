@@ -90,12 +90,15 @@ class KDALayer(BaseOP):
             a, dt = a.repeat(batch), dt.repeat(batch)
         previous = None if state is None else state.recurrent.reshape(-1, self._dim, self._dim)
         if (
-            implementation == "flashinfer"
+            implementation in ("flashinfer", "triton")
             and q.is_cuda
             and q.dtype == torch.bfloat16
             and self._dim == 128
         ):
-            from minisgl.attention.kda_fi import recurrent_kda
+            if implementation == "triton":
+                from minisgl.attention.kda_kernel import recurrent_kda
+            else:
+                from minisgl.attention.kda_fi import recurrent_kda
 
             output, recurrent = recurrent_kda(
                 *values,

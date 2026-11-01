@@ -59,6 +59,16 @@ def create_recurrent_fi_backend(config: ModelConfig):
     )
 
 
+@register_attention_backend("recurrent-fi-triton", stateful_layers=True)
+def create_recurrent_fi_triton_backend(config: ModelConfig):
+    from .mla_fi import FlashInferMLA
+    from .recurrent import RecurrentAttentionBackend
+
+    return RecurrentAttentionBackend(
+        config, kda_implementation="triton", mla_attention=FlashInferMLA()
+    )
+
+
 @register_attention_backend("trtllm")
 def create_trtllm_backend(config: ModelConfig):
     from .trtllm import TensorRTLLMBackend

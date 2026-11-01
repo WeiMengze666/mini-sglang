@@ -10,6 +10,59 @@ from minisgl.utils import div_even
 from .base import BaseOP
 
 
+def _linear(x, weight, bias):
+    if (
+        x.is_cuda
+        and weight.device == x.device
+        and x.ndim > 0
+        and weight.ndim == 2
+        and x.dtype == weight.dtype == torch.bfloat16
+        and x.shape[-1] == weight.shape[1]
+        and weight.is_contiguous()
+        and (
+            bias is None
+            or (bias.device == x.device and bias.dtype == x.dtype and bias.is_contiguous())
+        )
+    ):
+        from .linear_kernel import linear
+
+        return linear(x, weight, bias)
+    return F.linear(x, weight, bias)
+
+
+def linear_fp32(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """Accumulate BF16 projections in FP32 while retaining the BF16 weight layout."""
+    if (
+        x.is_cuda
+        and weight.device == x.device
+        and x.ndim > 0
+        and weight.ndim == 2
+        and x.dtype == weight.dtype == torch.bfloat16
+        and x.shape[-1] == weight.shape[1]
+        and weight.is_contiguous()
+    ):
+        from .linear_kernel import linear
+
+        return linear(x, weight, dtype=torch.float32)
+    return F.linear(x.float(), weight.float())
+
+
+def headwise_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """Project [tokens, heads, input] with separate weights for each head."""
+    if (
+        x.is_cuda
+        and weight.device == x.device
+        and x.ndim == weight.ndim == 3
+        and x.dtype == weight.dtype == torch.bfloat16
+        and x.shape[1] == weight.shape[0]
+        and x.shape[2] == weight.shape[2]
+    ):
+        from .linear_kernel import headwise_linear as project
+
+        return project(x, weight)
+    return torch.einsum("thk,hnk->thn", x, weight)
+
+
 class _LinearTPImpl(BaseOP):
     """Real implementation of a linear layer with tensor parallelism."""
 
@@ -29,7 +82,7 @@ class _LinearTPImpl(BaseOP):
         self.bias = torch.empty(local_osize) if has_bias else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.linear(x, self.weight, self.bias)
+        return _linear(x, self.weight, self.bias)
 
 
 class LinearReplicated(_LinearTPImpl):
@@ -100,7 +153,7 @@ class LinearOProj(_LinearTPImpl):
         super().__init__(full_isize, full_osize, local_isize, local_osize, has_bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = F.linear(x, self.weight, self.bias)
+        y = _linear(x, self.weight, self.bias)
         if self._tp_size > 1:
             y = self._comm.all_reduce(y)
         return y
@@ -121,7 +174,7 @@ class LinearRowParallel(_LinearTPImpl):
         super().__init__(input_size, output_size, local_input_size, local_output_size, has_bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = F.linear(x, self.weight, self.bias)
+        y = _linear(x, self.weight, self.bias)
         if self._tp_size > 1:
             y = self._comm.all_reduce(y)
         return y
@@ -133,4 +186,4 @@ class Linear(BaseOP):
         self.bias = torch.empty(output_size) if has_bias else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.linear(x, self.weight, self.bias)
+        return _linear(x, self.weight, self.bias)
