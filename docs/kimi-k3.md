@@ -56,6 +56,19 @@ unchanged gate and all temporary stable methods/tests were removed. The
 remaining correctness problem spans more than the FlashInfer recurrence alone;
 no global slow precision mode is enabled.
 
+
+Further temporary boundary controls were run without changing the checkout.
+With all KDA projections plus `g_proj/o_proj` accumulated in FP32 and portable
+KDA recurrence, the DCP=1 greeting gate reached 64,095/163,840 mismatches and
+maximum 1.25 (job 388). Stabilizing all MLA and KDA attention projections as
+well did not solve it: 65,916 mismatches and maximum 1.1875 (job 390).
+A portable MXFP4 expert cross-control with stable KDA projections was worse at
+95,236 mismatches and maximum 1.6484375 (job 382). The standalone convolution
+probe was bitwise exact across full and 13+13+1 chunks (job 385). These controls
+leave a distributed residual/MoE arithmetic boundary rather than a single
+attention, recurrence, DCP or expert backend fix; all code existed only in
+temporary remote scripts and was not adopted.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
