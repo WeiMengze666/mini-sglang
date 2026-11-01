@@ -134,6 +134,11 @@ with the packed expert SiTU arithmetic reached 78,698/163,840 (maximum
 1.421875, job 433). These controls do not reproduce the required complete
 boundary and were restored out of the production tree.
 
+A separate packed-MoE local-mixture control rounded each routed
+expert contribution to BF16 before writing the FP32 partial buffer. It
+regressed the DCP=1/EP=8 gate to 77,992/163,840 mismatches with maximum
+1.23046875 (job 436), so the local mixture rounding variant was also removed.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
