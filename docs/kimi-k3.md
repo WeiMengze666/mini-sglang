@@ -21,6 +21,17 @@ tokens/s (job 537). The expert probe was rejected as well. A separate
 `BN=64` output-tile probe passed the same 108 component tests and strict gate
 (job 541), but its paired throughput fell from 10.64925/21.11661/41.89091/82.26675
 to 7.37028/14.67145/29.23795/57.74515 tokens/s (job 543); it was rejected too.
+Phase-14 communication probes also remain isolated. Lowering the global
+PyNCCL staging limit to 64 KiB changed the prefill collective path and failed the
+strict gate with 65,141/163,840 mismatches and maximum absolute difference
+1.203125 (job 547). A generic opt-in `MINISGL_PYNCCL_DECODE_DIRECT=1` policy kept
+prefill staging and used direct NCCL pointers only for decode; it passed the
+prefill strict gate and 13 CPU distributed checks (job 549), but the same-process
+DCP2/EP8 pair regressed from 10.66933/21.12653/41.94057/82.30710 to
+10.39107/18.14585/31.75414/62.35249 tokens/s at batch 1/2/4/8, and all four
+batch token sequences differed (job 550). The temporary communication API was
+removed from the shipping tree.
+
 The current production tree was rechecked after these probes: the strict
 BF16 full/chunk gate with reduced-precision partials disabled passed for all 93
 layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark
