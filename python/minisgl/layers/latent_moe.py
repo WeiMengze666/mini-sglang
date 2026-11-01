@@ -143,23 +143,41 @@ class LatentMoE(BaseOP):
         from minisgl.quantization.mxfp4 import MXFP4Linear
 
         self._packed_experts = None
-        if all(
-            isinstance(op, MXFP4Linear)
-            and op._backend == "triton"
-            and op.weight_packed.is_cuda
-            and op.bias is None
+        packed_ops = [
+            op
             for _, expert in self.experts.items()
             for op in (expert.w1, expert.w3, expert.w2)
+        ]
+        if all(
+            isinstance(op, MXFP4Linear) and op.weight_packed.is_cuda and op.bias is None
+            for op in packed_ops
         ):
-            from minisgl.quantization.mxfp4_moe import MXFP4Experts
+            activation = self._config.hidden_act
+            beta = getattr(self._config, "activation_situ_beta", None) or 1.0
+            linear_beta = getattr(self._config, "activation_situ_linear_beta", None)
+            backend = packed_ops[0]._backend
+            precision = packed_ops[0]._activation_precision
+            if backend == "flashinfer":
+                from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
 
-            self._packed_experts = MXFP4Experts(
-                self.experts.items(),
-                activation=self._config.hidden_act,
-                beta=getattr(self._config, "activation_situ_beta", None) or 1.0,
-                linear_beta=getattr(self._config, "activation_situ_linear_beta", None),
-                routing_policy=RoutingPolicy.from_config(self._config),
-            )
+                self._packed_experts = FlashInferMXFP4Experts(
+                    self.experts.items(),
+                    activation=activation,
+                    beta=beta,
+                    linear_beta=linear_beta,
+                    num_global_experts=self._config.num_experts,
+                    activation_precision=precision,
+                )
+            elif backend == "triton":
+                from minisgl.quantization.mxfp4_moe import MXFP4Experts
+
+                self._packed_experts = MXFP4Experts(
+                    self.experts.items(),
+                    activation=activation,
+                    beta=beta,
+                    linear_beta=linear_beta,
+                    routing_policy=RoutingPolicy.from_config(self._config),
+                )
 
     def validate_cuda_graph(self):
         if self._packed_experts is None:
