@@ -32,6 +32,14 @@ DCP2/EP8 pair regressed from 10.66933/21.12653/41.94057/82.30710 to
 batch token sequences differed (job 550). The temporary communication API was
 removed from the shipping tree.
 
+A Phase-15 structural probe followed the official side-stream idea by
+splitting LatentMoE's concatenated latent|shared TP reduction into two generic
+reductions. Independent CPU algebra outputs still matched, but the existing
+parallel contract tests failed because one logical MoE collective became two
+(shape `(T, latent + hidden)` became separate latent and hidden collectives).
+The candidate was rejected before GPU execution; the shipping tree keeps the
+single collective and its stable backend contract.
+
 The current production tree was rechecked after these probes: the strict
 BF16 full/chunk gate with reduced-precision partials disabled passed for all 93
 layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark
