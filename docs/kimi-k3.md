@@ -21,6 +21,12 @@ tokens/s (job 537). The expert probe was rejected as well. A separate
 `BN=64` output-tile probe passed the same 108 component tests and strict gate
 (job 541), but its paired throughput fell from 10.64925/21.11661/41.89091/82.26675
 to 7.37028/14.67145/29.23795/57.74515 tokens/s (job 543); it was rejected too.
+The current production tree was rechecked after these probes: the strict
+BF16 full/chunk gate with reduced-precision partials disabled passed for all 93
+layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark
+measured 13.43745/24.83282/48.44173/93.14856 tokens/s at batch 1/2/4/8
+(job 545).
+
 These paired results
 use the same released checkpoint, DCP2/EP8 layout, 64-token output boundary and
 CUDA-Graph request sizes; they are performance evidence, not new correctness
