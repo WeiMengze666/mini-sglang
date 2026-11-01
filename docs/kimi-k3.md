@@ -1260,3 +1260,13 @@ hybrid composition (job 511, the same 64-token boundary) was
 adapter deliberately uses the native decode kernel for one-token updates to
 preserve the FP32 recurrent-state contract. The composition is therefore a
 correctness and lifecycle seam, not an unqualified performance switch.
+
+The BF16 arithmetic policy is explicit and model-independent. 'auto' keeps
+ordinary 'recurrent-fi' on the default Torch/BF16 kernels and selects strict
+rounding kernels only when 'recurrent-fi-triton' is present in the attention
+composition. '--bf16-precision strict' and '--bf16-precision default' override
+that selection for controlled comparisons. After this policy split, the
+ordinary recurrent-fi DCP=2/EP=8 CUDA Graph boundary returned to
+13.41/24.84/48.37/93.08 tokens/s for batches 1/2/4/8 (job 513), matching the
+pre-policy production baseline, while job 512 retained strict full/chunk
+correctness.

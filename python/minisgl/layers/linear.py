@@ -5,6 +5,7 @@ from typing import List
 import torch
 import torch.nn.functional as F
 from minisgl.distributed import DistributedCommunicator, get_tp_info
+from minisgl.precision import use_strict_bf16
 from minisgl.utils import div_even
 
 from .base import BaseOP
@@ -16,6 +17,7 @@ def _linear(x, weight, bias):
         and weight.device == x.device
         and x.ndim > 0
         and weight.ndim == 2
+        and use_strict_bf16()
         and x.dtype == weight.dtype == torch.bfloat16
         and x.shape[-1] == weight.shape[1]
         and weight.is_contiguous()
@@ -37,6 +39,7 @@ def linear_fp32(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
         and weight.device == x.device
         and x.ndim > 0
         and weight.ndim == 2
+        and use_strict_bf16()
         and x.dtype == weight.dtype == torch.bfloat16
         and x.shape[-1] == weight.shape[1]
         and weight.is_contiguous()
@@ -53,6 +56,7 @@ def headwise_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
         x.is_cuda
         and weight.device == x.device
         and x.ndim == weight.ndim == 3
+        and use_strict_bf16()
         and x.dtype == weight.dtype == torch.bfloat16
         and x.shape[1] == weight.shape[0]
         and x.shape[2] == weight.shape[2]

@@ -6,6 +6,7 @@ from typing import NamedTuple
 
 import torch
 import torch.nn.functional as F
+from minisgl.precision import use_strict_bf16
 
 
 class KDAState(NamedTuple):
@@ -81,6 +82,7 @@ def gated_rms_norm(x, gate, weight, eps=1e-6):
     if (
         x.is_cuda
         and x.device == gate.device == weight.device
+        and use_strict_bf16()
         and x.dtype == gate.dtype == weight.dtype == torch.bfloat16
         and weight.is_contiguous()
         and x.shape == gate.shape

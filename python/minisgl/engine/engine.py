@@ -13,6 +13,7 @@ from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight
 from minisgl.moe import create_moe_backend
+from minisgl.precision import resolve_bf16_precision
 from minisgl.utils import div_even, init_logger, is_sm90_supported, is_sm100_supported, torch_dtype
 
 from .config import EngineConfig
@@ -42,6 +43,9 @@ class Engine:
         torch.cuda.set_stream(self.stream)
         self.dtype = config.dtype
         self.ctx = Context(config.page_size)
+        self.ctx.bf16_precision = resolve_bf16_precision(
+            config.bf16_precision, config.attention_backend
+        )
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
@@ -347,6 +351,7 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("mxfp4_backend must be torch, triton or flashinfer")
     if config.mxfp4_activation_precision not in ("bf16", "mxfp8"):
         raise ValueError("mxfp4_activation_precision must be bf16 or mxfp8")
+    resolve_bf16_precision(config.bf16_precision, config.attention_backend)
     ParallelLayout(config.tp_info.rank, config.tp_info.size, config.dcp_size, config.ep_size)
     if config.dcp_size > 1 and config.model_config.cache_config is None:
         raise ValueError("DCP requires a context-sharded attention/cache implementation")

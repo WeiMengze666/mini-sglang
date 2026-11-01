@@ -1,7 +1,7 @@
 """Per-token attention over a bank of frozen block sums."""
-
 import torch
 import torch.nn.functional as F
+from minisgl.precision import use_strict_bf16
 
 
 def attention_residual(head, bank, norm, proj):
@@ -11,6 +11,7 @@ def attention_residual(head, bank, norm, proj):
     rows = torch.stack([*bank, head], dim=1)
     if (
         head.is_cuda
+        and use_strict_bf16()
         and head.dtype == norm.weight.dtype == proj.weight.dtype == torch.bfloat16
         and norm.weight.device == proj.weight.device == head.device
         and norm.weight.is_contiguous()

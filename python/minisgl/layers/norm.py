@@ -1,6 +1,7 @@
 from typing import Tuple
 
 import torch
+from minisgl.precision import use_strict_bf16
 
 from .base import BaseOP
 
@@ -46,6 +47,7 @@ class TorchRMSNorm(BaseOP):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if (
             x.is_cuda
+            and use_strict_bf16()
             and x.dtype == self.weight.dtype == torch.bfloat16
             and self.weight.device == x.device
             and self.weight.is_contiguous()
