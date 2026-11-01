@@ -1179,3 +1179,12 @@ around the unchanged recurrent DCP=1/EP=8 BF16 checkpoint suite. It produced
 the same 74,063/163,840 full/chunk mismatches and maximum absolute difference
 1.2109375 as the ordinary portable-KDA baseline. The global deterministic switch
 does not remove the shape-dependent boundary and is not enabled in production.
+
+Job 448 did not execute the model: the checkpoint suite requested CUDA Graphs
+with its fixed torch MXFP4 backend, while the shipping tree correctly requires
+a device-side grouped executor for graph capture. The equivalent Triton backend
+run in job 450 completed the current DCP=2/EP=8 BF16 baseline at
+13.43/24.85/48.41/93.23 tokens/s for batches 1/2/4/8; duplicate outputs
+matched through stop, while full/chunk still differed by maximum 1.234375.
+Against the recorded full SGLang 70.38/134.61/239.75/404.00 boundary, mini
+reaches 19.1%/18.5%/20.2%/23.1%.
