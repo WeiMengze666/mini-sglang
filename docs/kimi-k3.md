@@ -1254,4 +1254,9 @@ DCP=2/EP=8 CUDA Graph boundary measured 10.66/21.06/41.88/82.20 tokens/s for
 batches 1/2/4/8. This is 79.3%/84.8%/86.5%/88.2% of the current recurrent-fi
 Triton/BF16 baseline, so strict correctness is available as an explicit
 backend composition while the ordinary recurrent-fi path remains the faster
-default until the decode-side hybrid measurement is complete.
+default until the decode-side hybrid measurement is complete. The measured
+hybrid composition (job 509) was 10.62/21.11/41.85/82.20 tokens/s, effectively
+the same as pure recurrent-fi-triton. This is expected: the FlashInfer KDA
+adapter deliberately uses the native decode kernel for one-token updates to
+preserve the FP32 recurrent-state contract. The composition is therefore a
+correctness and lifecycle seam, not an unqualified performance switch.
