@@ -1157,3 +1157,10 @@ The [checkpoint audit](kimi-k3-checkpoint-audit.md),
 [tokenizer audit](kimi-k3-tokenizer.md) retain their stated snapshot boundaries.
 The ledger preserves earlier diagnostics and failures rather than treating them
 as current acceptance.
+
+The corrected residual-order diagnostic in job 441 completed successfully and
+was rejected. It preserved the model's `[tokens, hidden]` shape and accumulated
+the residual mixture in an explicit FP32 loop, but the DCP=1/EP=8 BF16 greeting
+gate worsened to 71,411/163,840 full/chunk mismatches with maximum absolute
+difference 1.36328125. The temporary wrapper was removed; this does not justify
+changing the generic residual operator or its production reduction order.
