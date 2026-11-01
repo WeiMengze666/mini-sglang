@@ -69,6 +69,19 @@ leave a distributed residual/MoE arithmetic boundary rather than a single
 attention, recurrence, DCP or expert backend fix; all code existed only in
 temporary remote scripts and was not adopted.
 
+
+The final boundary matrix adds several controls. The stable-KDA layer trace
+still shows layer 0 attention output differences after exact convolution
+(full/chunk conv output and tail are bitwise equal in job 385); stabilizing
+KDA finish projections reduced the strict gate to 64,095/163,840 with maximum
+1.25 (job 388). Stabilizing all attention projections gave 65,916 mismatches
+and maximum 1.1875 (job 390). A temporary MLP boundary trace records the same
+layer-0 attention-to-MLP propagation, so the residual is not isolated to one
+MLA projection. Promoting every BF16 PyNCCL all-reduce to FP32 in the same
+stable-KDA/portable-recurrence control regressed to 82,951 mismatches and
+maximum 1.8125 (job 394). These experiments remain diagnostics only; no
+global precision mode or communication replacement was adopted.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
