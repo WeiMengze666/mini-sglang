@@ -126,6 +126,14 @@ portable DCP=1/EP=8 gate to 71,724/163,840 mismatches with maximum 1.203125
 The improvement is real but incomplete; no production fusion is enabled until
 the full correctness gate and a paired performance check both pass.
 
+The later SiTU controls were rejected as arithmetic mismatches. A temporary
+dense native-tanh kernel using libdevice tanh regressed to 80,069/163,840
+(maximum 1.5703125, job 429); the historical inline PTX tanh.approx form
+reached 76,178/163,840 (maximum 1.421875, job 430). Coupling that dense path
+with the packed expert SiTU arithmetic reached 78,698/163,840 (maximum
+1.421875, job 433). These controls do not reproduce the required complete
+boundary and were restored out of the production tree.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
