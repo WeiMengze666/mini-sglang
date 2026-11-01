@@ -88,6 +88,17 @@ mismatches with maximum 1.4140625 at DCP=1/EP=8 (job 398). It is worse than
 the current PyNCCL portable-KDA control, so switching communication backends
 alone is not a correctness fix.
 
+The latest communication-boundary controls further constrain the residual. In
+the stable-KDA trace, the layer-0 KDA o_proj output before TP reduction
+differed in only 27 elements with maximum 1.52587890625e-5; after the
+reduction, 1,791 elements differed with maximum 0.00048828125 (job 399).
+Synchronizing every PyNCCL all-reduce returned to the ordinary portable-KDA
+baseline, 74,063/163,840 mismatches and maximum 1.2109375 (job 401).
+Replacing KDA projections with token-wise GEMV was slower and worse:
+77,431 mismatches and maximum 1.7265625 (job 405). This confirms that the
+current residual is a coupled projection/collective arithmetic boundary; no
+slow GEMV or unconditional synchronization was adopted.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
