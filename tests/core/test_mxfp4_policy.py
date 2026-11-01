@@ -1,6 +1,5 @@
 import pytest
 import torch
-
 from minisgl.engine.config import EngineConfig
 from minisgl.quantization.mxfp4 import MXFP4Linear
 
@@ -24,14 +23,35 @@ def test_mxfp4_linear_rejects_invalid_policy(backend):
     with pytest.raises(ValueError, match="activation precision|MXFP4 backend"):
         op.set_backend(backend, activation_precision=precision)
 
+
 def test_server_parses_flashinfer_precision_policy():
     from minisgl.server.args import parse_args
 
-    args, _ = parse_args([
-        "--model-path", "/tmp/model",
-        "--dtype", "bfloat16",
-        "--mxfp4-backend", "flashinfer",
-        "--mxfp4-activation-precision", "mxfp8",
-    ])
+    args, _ = parse_args(
+        [
+            "--model-path",
+            "/tmp/model",
+            "--dtype",
+            "bfloat16",
+            "--mxfp4-backend",
+            "flashinfer",
+            "--mxfp4-activation-precision",
+            "mxfp8",
+        ]
+    )
     assert args.mxfp4_backend == "flashinfer"
     assert args.mxfp4_activation_precision == "mxfp8"
+
+def test_flashinfer_executor_validates_policy_without_cuda():
+    from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
+
+    with pytest.raises(ValueError, match="at least one local expert"):
+        FlashInferMXFP4Experts(
+            [], activation="silu", beta=1.0, linear_beta=None,
+            num_global_experts=1, activation_precision="bf16"
+        )
+    with pytest.raises(ValueError, match="SiTU.*mxfp8"):
+        FlashInferMXFP4Experts(
+            [], activation="situ", beta=4.0, linear_beta=25.0,
+            num_global_experts=1, activation_precision="bf16"
+        )

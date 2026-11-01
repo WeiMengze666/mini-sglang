@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Iterable
 
 import torch
+from minisgl.layers.activation import resolve_gated_activation
 
 
 class FlashInferMXFP4Experts:
@@ -24,20 +25,25 @@ class FlashInferMXFP4Experts:
         num_global_experts: int,
         activation_precision: str,
     ):
-        if activation not in ("silu", "situ"):
+        activation_spec = resolve_gated_activation(activation, beta=beta, linear_beta=linear_beta)
+        if activation_spec.name not in ("silu", "situ"):
             raise ValueError("FlashInfer FP4 supports gated silu or situ")
         if activation_precision not in ("bf16", "mxfp8"):
             raise ValueError("FlashInfer activation precision must be bf16 or mxfp8")
-        if activation == "situ" and activation_precision != "mxfp8":
+        if activation_spec.name == "situ" and activation_precision != "mxfp8":
             raise ValueError("FlashInfer SiTU requires mxfp8 activation precision")
-        if not torch.cuda.is_available():
-            raise RuntimeError("FlashInfer FP4 grouped experts require CUDA")
+        if activation_spec.name == "situ" and activation_spec.linear_beta is None:
+            raise ValueError("FlashInfer SiTU requires linear_beta")
         items = list(experts)
         if not items:
             raise ValueError("FlashInfer FP4 requires at least one local expert")
         if num_global_experts < 1:
             raise ValueError("num_global_experts must be positive")
-        self._activation = activation
+        if not torch.cuda.is_available():
+            raise RuntimeError("FlashInfer FP4 grouped experts require CUDA")
+        if items[0][0] < 0 or items[-1][0] >= num_global_experts:
+            raise ValueError("FlashInfer expert IDs must fit the global expert range")
+        self._activation = activation_spec.name
         self._precision = activation_precision
         self._start = items[0][0]
         self._global_experts = num_global_experts
@@ -50,12 +56,11 @@ class FlashInferMXFP4Experts:
                 "FlashInfer FP4 requires hidden_size divisible by 256 and "
                 "intermediate_size divisible by 128"
             )
-        self._beta = float(beta)
-        self._linear_beta = None if linear_beta is None else float(linear_beta)
+        self._beta = activation_spec.beta
+        self._linear_beta = activation_spec.linear_beta
         self._prepare_weights(items)
 
     def _prepare_weights(self, items):
-        from flashinfer import shuffle_matrix_a, shuffle_matrix_sf_a
         from flashinfer.fp4_quantization import block_scale_interleave
         from flashinfer.fused_moe.core import (
             _maybe_get_cached_w3_w1_permute_indices,
@@ -69,6 +74,19 @@ class FlashInferMXFP4Experts:
             if index != self._start + len(sources):
                 raise ValueError("FlashInfer expert IDs must be contiguous")
             ops = (expert.w1, expert.w3, expert.w2)
+            expected = (
+                (self._intermediate, self._hidden),
+                (self._intermediate, self._hidden),
+                (self._hidden, self._intermediate),
+            )
+            for op, (output_size, input_size) in zip(ops, expected):
+                if (op._output_size, op._input_size) != (
+                    output_size,
+                    input_size,
+                ) or op.bias is not None:
+                    raise ValueError(
+                        "FlashInfer expert projections must be homogeneous and bias-free"
+                    )
             packed = tuple(op.weight_packed.detach().cpu() for op in ops)
             scales = tuple(op.weight_scale.detach().cpu() for op in ops)
             if any(op.weight_packed.device.type != "cuda" for op in ops):
@@ -100,20 +118,28 @@ class FlashInferMXFP4Experts:
             )
             w13_weights.append(w13.view(torch.uint8)[w13_perm].contiguous())
             w13_scales.append(
-                block_scale_interleave(w13_scale.view(torch.uint8)[w13_scale_perm].contiguous())
-                .view(torch.float8_e4m3fn)
+                block_scale_interleave(
+                    w13_scale.view(torch.uint8)[w13_scale_perm].contiguous()
+                ).view(torch.float8_e4m3fn)
             )
             w2_weights.append(w2.view(torch.uint8)[w2_perm].contiguous())
             w2_scales.append(
-                block_scale_interleave(w2_scale.view(torch.uint8)[w2_scale_perm].contiguous())
-                .view(torch.float8_e4m3fn)
+                block_scale_interleave(w2_scale.view(torch.uint8)[w2_scale_perm].contiguous()).view(
+                    torch.float8_e4m3fn
+                )
             )
         self._w13 = torch.stack(w13_weights).contiguous()
-        self._w13_scale = torch.stack(w13_scales).reshape(self._experts, 2 * self._intermediate, -1).contiguous()
+        self._w13_scale = (
+            torch.stack(w13_scales).reshape(self._experts, 2 * self._intermediate, -1).contiguous()
+        )
         self._w2 = torch.stack(w2_weights).contiguous()
-        self._w2_scale = torch.stack(w2_scales).reshape(self._experts, self._hidden, -1).contiguous()
+        self._w2_scale = (
+            torch.stack(w2_scales).reshape(self._experts, self._hidden, -1).contiguous()
+        )
         if self._activation == "situ":
-            self._alpha = torch.full((self._experts,), self._beta, dtype=torch.float32, device=self._w13.device)
+            self._alpha = torch.full(
+                (self._experts,), self._beta, dtype=torch.float32, device=self._w13.device
+            )
             self._linear = torch.full(
                 (self._experts,), self._linear_beta, dtype=torch.float32, device=self._w13.device
             )
@@ -130,7 +156,9 @@ class FlashInferMXFP4Experts:
         if x.dtype != torch.bfloat16 or not x.is_cuda:
             raise ValueError("FlashInfer FP4 currently requires CUDA BF16 inputs")
         if ids.ndim != 2 or weights.shape != ids.shape:
-            raise ValueError("FlashInfer route IDs and weights must have the same [tokens, topk] shape")
+            raise ValueError(
+                "FlashInfer route IDs and weights must have the same [tokens, topk] shape"
+            )
         from flashinfer import mxfp8_quantize, trtllm_fp4_block_scale_routed_moe
         from flashinfer.fused_moe.core import ActivationType
         from flashinfer.tllm_enums import RoutingMethodType, SfLayout
@@ -169,7 +197,9 @@ class FlashInferMXFP4Experts:
             routed_scaling_factor=None,
             routing_method_type=RoutingMethodType.TopK.value,
             activation_type=(
-                ActivationType.Situ.value if self._activation == "situ" else ActivationType.Swiglu.value
+                ActivationType.Situ.value
+                if self._activation == "situ"
+                else ActivationType.Swiglu.value
             ),
             tune_max_num_tokens=self._tune_tokens(x.shape[0]),
             output=output,
