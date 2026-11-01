@@ -5,6 +5,23 @@ MoE operations. Admission, prefix reuse, token pages, distributed layouts and
 request completion remain framework mechanisms. Code quality and numerical
 correctness precede further performance work.
 
+Phase-13 performance probes kept the production tree unchanged. A strict BF16
+linear projection candidate with `num_warps=2` was bitwise equal on 28 component
+shapes and passed the complete 93-layer gate (jobs 522 and 524). A shape-based
+policy that selected two warps for wide outputs or short reductions improved the
+isolated projection benchmark by 4.23% geometrically and also passed the complete
+strict gate (job 530), but a same-process DCP2/EP8 CUDA-Graph pair regressed from
+10.65998/21.12622/41.91710/82.25900 to 10.55427/20.93430/41.53512/81.53678
+tokens/s at batch 1/2/4/8 (job 532). The policy was rejected; no shape thresholds
+were added to the generic projection kernel. A packed MXFP4 expert `num_warps=2`
+probe passed 108 CUDA component tests and the strict 93-layer gate with FP32
+partials (jobs 533 and 535), but the paired model benchmark regressed from
+10.62759/21.12311/41.91369/82.18344 to 9.43815/18.74897/37.26540/73.43164
+tokens/s (job 537). The expert probe was rejected as well. These paired results
+use the same released checkpoint, DCP2/EP8 layout, 64-token output boundary and
+CUDA-Graph request sizes; they are performance evidence, not new correctness
+claims.
+
 The current tree adds generic per-collective capability routing and an explicit RoutingPolicy seam for packed grouped experts (2c7981b). The default route grouping is unchanged; setting stable_moe_routing=true selects the calibrated deterministic reference path. GPUq job 303 passed 163 packed MXFP4, stable-routing, Kimi packing and parallel checks with two skips. A component benchmark in job 304 measured 217.87 us for native grouping and 345.87 us for stable grouping on the same workload, with bitwise-equal outputs; stable grouping is therefore a reference mode, not the production performance path. The separate custom-all-reduce probe (job 301) produced errors of 28.0 and 8.0 for ordinary and CUDA-Graph calls, so no unverified collective backend was enabled.
 The current production baseline was rerun in job 321 after removing the rejected direct-collective code. Its DCP2/EP8 BF16 greeting boundary measured 13.44/24.84/48.40/93.20 tokens/s at batch 1/2/4/8, with repeated raw and through-stop outputs matching. Full/chunk still differed by maximum 1.234375, so this is a performance baseline rather than strict correctness acceptance.
 An opt-in FlashInfer MoeAlltoAll candidate then passed startup, JIT, packed dispatch/combine, CUDA Graph and batch-1 lifecycle checks in job 323. Its strict DCP2/EP8 BF16 gate 324 failed with 77,855/163,840 full/chunk violations and maximum absolute difference 1.28125. The candidate was removed from runtime code; the generic EP optimization remains unadopted until it can pass the unchanged numerical gate.
