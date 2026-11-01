@@ -40,6 +40,15 @@ parallel contract tests failed because one logical MoE collective became two
 The candidate was rejected before GPU execution; the shipping tree keeps the
 single collective and its stable backend contract.
 
+A Phase-16 side-stream candidate moved shared-expert local compute to a
+lazy CUDA stream while keeping the single concatenated latent|shared TP reduction.
+It passed 26 CPU structural tests, the complete 93-layer strict gate, CUDA Graph
+capture, and exact token-sequence comparison (jobs 553 and 554). The paired
+DCP2/EP8 default-backend benchmark nevertheless regressed from
+13.43067/24.84070/48.41340/93.26793 to 12.21734/22.70402/44.31402/85.64357
+tokens/s at batch 1/2/4/8. The side-stream implementation was rejected; no
+additional stream or synchronization state was added to production.
+
 The current production tree was rechecked after these probes: the strict
 BF16 full/chunk gate with reduced-precision partials disabled passed for all 93
 layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark
