@@ -64,15 +64,27 @@ class FlashInferMXFP4Experts:
 
         cache = {}
         w13_weights, w13_scales, w2_weights, w2_scales = [], [], [], []
+        sources = []
         for index, expert in items:
-            if index != self._start + len(w13_weights):
+            if index != self._start + len(sources):
                 raise ValueError("FlashInfer expert IDs must be contiguous")
-            packed = (expert.w1.weight_packed, expert.w3.weight_packed, expert.w2.weight_packed)
-            scales = (expert.w1.weight_scale, expert.w3.weight_scale, expert.w2.weight_scale)
-            if any(t.device.type != "cuda" for t in (*packed, *scales)):
+            ops = (expert.w1, expert.w3, expert.w2)
+            packed = tuple(op.weight_packed.detach().cpu() for op in ops)
+            scales = tuple(op.weight_scale.detach().cpu() for op in ops)
+            if any(op.weight_packed.device.type != "cuda" for op in ops):
                 raise RuntimeError("FlashInfer FP4 expert weights must be on CUDA")
             if any(t.dtype != torch.uint8 for t in (*packed, *scales)):
                 raise ValueError("FlashInfer FP4 expects uint8 packed weights and scales")
+            # The model loader has already materialized every layer. Release this
+            # layer's raw GPU bytes before allocating its transformed stacked copy.
+            for op in ops:
+                op.weight_packed = torch.empty(0, dtype=torch.uint8, device="cuda")
+                op.weight_scale = torch.empty(0, dtype=torch.uint8, device="cuda")
+            sources.append((packed, scales))
+        torch.cuda.empty_cache()
+        for packed, scales in sources:
+            packed = tuple(t.cuda() for t in packed)
+            scales = tuple(t.cuda() for t in scales)
             w13 = torch.cat((packed[1], packed[0]), dim=0)
             w13_scale = torch.exp2(torch.cat((scales[1], scales[0]), dim=0).float() - 127)
             w13_scale = w13_scale.to(torch.float8_e8m0fnu)

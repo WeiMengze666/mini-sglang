@@ -1200,3 +1200,19 @@ reference by maximum 0.002960205078125 and mean 0.0005777561. This identifies
 the performance/correctness tradeoff precisely: FlashInfer FP4 is a viable
 generic opt-in backend only with an explicit MXFP8 activation policy; it must
 not silently replace the shipping BF16 Triton path.
+
+FlashInfer opt-in integration was exercised in jobs 471, 479 and 481. The
+first run exposed a 588 MiB transformed-weight allocation over the global
+weight arena; the final storage policy loads FlashInfer weights without the
+global arena, releases each layer's raw packed bytes after transformation, and
+moves the stream tensors explicitly to CUDA. The opt-in model then loaded and
+ran CUDA Graphs successfully. Its DCP=1/EP=8 BF16/MXFP8 full/chunk gate still
+failed with 79,323/163,840 mismatches and maximum absolute difference 1.55078125.
+This precision-mode result is kept separate from the shipping BF16 Triton gate.
+
+Job 482 measured the opt-in FlashInfer/MXFP8 DCP=2/EP=8 CUDA Graph boundary at
+22.02/38.70/74.46/139.00 tokens/s for batches 1/2/4/8, with duplicate outputs
+matching through stop. It is 1.64x/1.56x/1.54x/1.49x over the current Triton
+BF16 baseline, and reaches 31.3%/28.7%/31.0%/34.4% of the recorded full
+SGLang boundary. The opt-in path remains disabled by default because its
+MXFP8 activation policy does not satisfy strict BF16 alignment.

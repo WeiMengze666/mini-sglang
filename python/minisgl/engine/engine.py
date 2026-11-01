@@ -65,7 +65,14 @@ class Engine:
         )
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
-            self.model.load_weights(self._iter_weights(config), device=self.device)
+            # FlashInfer packed experts release raw layer weights after their
+            # transformed storage is prepared; a global arena would keep the
+            # whole raw checkpoint alive and defeat that lifecycle.
+            weight_device = None if config.mxfp4_backend == "flashinfer" else self.device
+            weights = self._iter_weights(config)
+            if weight_device is None:
+                weights = ((name, item.to(device=self.device)) for name, item in weights)
+            self.model.load_weights(weights, device=weight_device)
         else:
             self.model.load_state_dict(self._load_weight_state_dict(config))
 
