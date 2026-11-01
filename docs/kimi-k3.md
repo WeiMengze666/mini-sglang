@@ -82,6 +82,12 @@ stable-KDA/portable-recurrence control regressed to 82,951 mismatches and
 maximum 1.8125 (job 394). These experiments remain diagnostics only; no
 global precision mode or communication replacement was adopted.
 
+
+The standard-NCCL control also failed unchanged full/chunk BF16: 75,559/163,840
+mismatches with maximum 1.4140625 at DCP=1/EP=8 (job 398). It is worse than
+the current PyNCCL portable-KDA control, so switching communication backends
+alone is not a correctness fix.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
