@@ -1247,8 +1247,11 @@ B300 component suite passed all 53 norm, residual, and linear kernel tests
 (job 498). The CPU/Gloo regression after these changes passed 532 tests,
 skipped 234 CUDA-only cases, and retained two expected xfails.
 
-A first performance rerun for 'recurrent-fi-triton' was blocked during NCCL
-bootstrap by an external unhandled CUDA error before model execution (job 503);
-it produced no throughput data. Existing recurrent-fi and FlashInfer/MXFP8
-performance measurements therefore remain the applicable performance evidence
-until the queue environment is clean.
+A first performance rerun for 'recurrent-fi-triton' was blocked during
+NCCL bootstrap by an external unhandled CUDA error before model execution (job
+503). A shorter rerun completed after the queue recovered (job 506): the
+DCP=2/EP=8 CUDA Graph boundary measured 10.66/21.06/41.88/82.20 tokens/s for
+batches 1/2/4/8. This is 79.3%/84.8%/86.5%/88.2% of the current recurrent-fi
+Triton/BF16 baseline, so strict correctness is available as an explicit
+backend composition while the ordinary recurrent-fi path remains the faster
+default until the decode-side hybrid measurement is complete.
