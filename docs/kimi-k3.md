@@ -1164,3 +1164,5 @@ the residual mixture in an explicit FP32 loop, but the DCP=1/EP=8 BF16 greeting
 gate worsened to 71,411/163,840 full/chunk mismatches with maximum absolute
 difference 1.36328125. The temporary wrapper was removed; this does not justify
 changing the generic residual operator or its production reduction order.
+
+The remote CPU/Gloo regression after these temporary diagnostics passed 523 tests, skipped 229 CUDA-only cases, and retained two expected xfails. The generic MoE reduction candidate in job 443 replaced the grouped MXFP4 executor's `partial.sum(1)` with the existing Triton `moe_sum_reduce_triton`; its strict DCP=1/EP=8 greeting gate failed at 77,992/163,840 mismatches with maximum absolute difference 1.23046875. The candidate was restored before the regression and is not production code.
