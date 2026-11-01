@@ -1188,3 +1188,15 @@ run in job 450 completed the current DCP=2/EP=8 BF16 baseline at
 matched through stop, while full/chunk still differed by maximum 1.234375.
 Against the recorded full SGLang 70.38/134.61/239.75/404.00 boundary, mini
 reaches 19.1%/18.5%/20.2%/23.1%.
+
+Jobs 457, 458 and 462 probed the official FlashInfer FP4 grouped backend with
+real layer-12 Kimi expert weights. After the official byte shuffle and E8M0
+scale decode, the BF16 SiLU path ran successfully and differed from the mini
+decoded reference in only three elements (maximum 6.103515625e-5). The same
+BF16 kernel has no SiTU tactic in the installed FlashInfer build. The official
+MXFP8 activation path does provide a SiTU tactic; with Kimi beta=4 and
+linear_beta=25 it produced finite output, but differed from the current BF16
+reference by maximum 0.002960205078125 and mean 0.0005777561. This identifies
+the performance/correctness tradeoff precisely: FlashInfer FP4 is a viable
+generic opt-in backend only with an explicit MXFP8 activation policy; it must
+not silently replace the shipping BF16 Triton path.
