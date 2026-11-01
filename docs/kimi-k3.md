@@ -110,6 +110,15 @@ complete DCP=1/EP=8 gate unchanged at 74,063/163,840 mismatches and maximum
 KDA recurrence kernel nor the unfused wide projection is the primary repair
 target.
 
+A generic fixed-order collective control replaced each TP all-reduce with
+all_gather followed by rank-order BF16 summation. The baseline result was
+unchanged at 74,063/163,840 mismatches and maximum 1.2109375 (job 419).
+Combining that collective with the temporary FP32-stable KDA projections and
+finish path reached 64,095/163,840 and maximum 1.25 (job 420), matching the
+earlier stable-finish control rather than repairing it. These results reject
+both collective order alone and the simple stable-attention-plus-collective
+combination; the slow controls remain unadopted.
+
 ## Current validation
 
 The attention composition at `5b810ac` explicitly combines recurrent and MLA
