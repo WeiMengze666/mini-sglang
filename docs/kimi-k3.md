@@ -1173,3 +1173,9 @@ Tensor.to(cpu, non_blocking=True) measured 13.2--13.8 us median, while an
 explicit pinned destination plus nonblocking copy_ measured 15.5--15.8 us;
 all copied values were equal. The engine change was reverted before commit, so
 the serving path keeps its original ownership and lifetime semantics.
+
+Job 447 enabled PyTorch deterministic algorithms and cuDNN deterministic mode
+around the unchanged recurrent DCP=1/EP=8 BF16 checkpoint suite. It produced
+the same 74,063/163,840 full/chunk mismatches and maximum absolute difference
+1.2109375 as the ordinary portable-KDA baseline. The global deterministic switch
+does not remove the shape-dependent boundary and is not enabled in production.
