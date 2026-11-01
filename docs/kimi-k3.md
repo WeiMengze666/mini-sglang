@@ -1216,3 +1216,8 @@ matching through stop. It is 1.64x/1.56x/1.54x/1.49x over the current Triton
 BF16 baseline, and reaches 31.3%/28.7%/31.0%/34.4% of the recorded full
 SGLang boundary. The opt-in path remains disabled by default because its
 MXFP8 activation policy does not satisfy strict BF16 alignment.
+
+The final current-tree CPU/Gloo regression after the opt-in backend and storage
+policy passed 527 tests, skipped 234 CUDA-only cases, and retained two expected
+xfails. The default Triton/BF16 route remains the shipping path; FlashInfer is
+available only through the explicit backend and activation-precision settings.
