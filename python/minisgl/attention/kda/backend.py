@@ -30,20 +30,21 @@ class KDAAttentionBackend(BaseAttnBackend):
 
     def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
         metadata = batch.attn_metadata
-        decode = all(req.extend_len == 1 for req in batch.reqs)
-        if decode:
+        single_step = all(req.extend_len == 1 for req in batch.reqs)
+        if single_step:
             indices = metadata.state_indices
             if indices is None:
                 indices = cache.recurrent.batch_indices([req.table_idx for req in batch.reqs])
                 metadata.state_indices = indices
             initial = cache.recurrent.get_kda_batch(layer_id, indices)
-            fused = layer.decode(x, initial, kernel=self.kernel)
-            if fused is not None:
-                result, final = fused
-                cache.recurrent.set_kda_batch(layer_id, indices, final)
-                return result
+            if self.kernel.decode is not None and batch.is_decode:
+                fused = layer.decode(x, initial, kernel=self.kernel)
+                if fused is not None:
+                    result, final = fused
+                    cache.recurrent.set_kda_batch(layer_id, indices, final)
+                    return result
         projected = layer.project(x)
-        if decode:
+        if single_step:
             output, final = layer.update(
                 *(part.unsqueeze(1) for part in projected), initial, kernel=self.kernel
             )
