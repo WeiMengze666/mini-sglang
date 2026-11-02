@@ -102,6 +102,15 @@ may optionally return an already gated-normalized core output. The default
 Torch/PyNCCL, Triton and FlashInfer routes remain selected exactly as before.
 The remote CPU/core/models regression passed 496 tests with 260 skips and 19
 deselected cases; backend-specific tests and ruff also passed.
+The complete 93-layer DCP2/EP8 BF16 full/chunk gate then passed with
+`max_abs=0`, `relative_l2=0` and greedy agreement (job 577). A paired CUDA
+Graph benchmark kept all eight batch/repeat token sequences identical and
+measured baseline versus candidate averages of
+`13.5898/24.7755/48.2437/93.3462` versus
+`13.5702/24.7522/48.1577/93.3688` tokens/s for batches 1/2/4/8 (job 580).
+The changes are therefore retained as a neutral-cost extensibility layer;
+they do not claim a fused-kernel speedup until an actual MNNVL or KDA provider
+is installed and independently measured.
 
 These paired results
 use the same released checkpoint, DCP2/EP8 layout, 64-token output boundary and
