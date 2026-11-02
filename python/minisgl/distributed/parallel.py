@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from . import DistributedCommunicator, try_get_tp_info
+from .impl import DistributedCommunicator
+from .info import DistributedInfo, local_size, try_get_tp_info
 
 
 def tp_info() -> tuple[int, int]:
@@ -13,18 +14,20 @@ def tp_info() -> tuple[int, int]:
     return (info.rank, info.size) if info is not None else (0, 1)
 
 
-def local_size(size: int, tp_size: int, name: str) -> int:
-    if tp_size < 1 or size % tp_size:
-        raise ValueError(f"{name} ({size}) must be divisible by TP size ({tp_size})")
-    return size // tp_size
-
-
 class TensorParallel:
     """Capture the model's TP layout and use mini's selected TP communicator."""
 
     def __init__(self):
-        self.rank, self.size = tp_info()
+        self.group = try_get_tp_info() or DistributedInfo(0, 1)
         self._comm = DistributedCommunicator()
+
+    @property
+    def rank(self):
+        return self.group.rank
+
+    @property
+    def size(self):
+        return self.group.size
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         return self._comm.all_reduce(x) if self.size > 1 else x
@@ -39,3 +42,6 @@ class TensorParallel:
                 result = result + residual
             return norm(result) if norm is not None else result
         return self._comm.all_reduce_residual(x, residual, norm=norm)
+
+
+__all__ = ["TensorParallel", "local_size", "tp_info"]

@@ -2,7 +2,7 @@ import functools
 from typing import Dict, Tuple
 
 import torch
-from minisgl.distributed.partition import Partition
+from minisgl.distributed.info import DistributedInfo
 from minisgl.moe import BaseMoeBackend
 from minisgl.utils import div_ceil
 
@@ -218,7 +218,7 @@ class FusedMoe(BaseMoeBackend):
         renormalize: bool,
         activation: str = "silu",
         apply_router_weight_on_input: bool = False,
-        expert_partition: Partition = Partition(0, 1),
+        expert_partition: DistributedInfo = DistributedInfo(0, 1),
         num_global_experts: int | None = None,
     ) -> torch.Tensor:
         topk_weights, topk_ids = fused_topk(

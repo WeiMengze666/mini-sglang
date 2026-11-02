@@ -6,6 +6,18 @@ request completion remain framework mechanisms. Code quality and numerical
 correctness precede further performance work.
 
 
+Phase-32 merges the duplicate `Partition` rank/size descriptor into
+`DistributedInfo`. `ParallelLayout` now composes one TP descriptor and derives
+DCP/EP group coordinates; `ShardSpec` describes tensor slices independently.
+The native MLA row-store kernel moved unchanged to `kernel/triton/mla.py`,
+behind `kernel.store_mla`; cache layout and ownership remain in `kvcache`.
+
+The refactor passed 524 CPU/Gloo checks (297 skipped), 65 GPU component
+checks, all four Graph regressions, and the complete DCP2/EP8 strict BF16 K3
+before/after 32-step full-vocabulary comparison at batches 1 and 4 (job 607).
+Both logit comparisons were bitwise equal. [Evidence](validation/parallel-layout.json)
+records source hashes and the internal comparison scope.
+
 Phase-31 removes the standalone quantization package. `Linear` owns dense
 and packed MXFP4 storage and dispatch; shared format decoding/loading belongs to
 `layers/weight.py`, and local expert compute belongs to `moe/`.
@@ -547,7 +559,7 @@ composition in `models/kimi_*.py`. Reusable mechanisms are organized by operatio
 | Request-state and paged attention execution | `attention/kda/backend.py`, `attention/mla/backend.py` |
 | MLA pages and request-owned recurrent state | `kvcache/mla_pool.py`, `kvcache/recurrent_pool.py` |
 | Cache composition, sparse checkpoints, compact byte arena | `kvcache/hybrid_pool.py`, `hybrid_cache.py`, `unified.py` |
-| Logical DCP/EP partitions and checkpoint slices | `distributed/layout.py`, `distributed/partition.py` |
+| Logical DCP/EP partitions and checkpoint slices | `distributed/info.py`, `distributed/layout.py`, `distributed/shard.py` |
 | Packed output/LSE exchange and stable merge | `distributed/context.py` |
 | Dense/packed projection storage and execution | `layers/linear.py`, `linear_kernel.py` |
 | E2M1/E8M0 decode and checkpoint format rules | `layers/weight.py`, `weight_kernel.py` |

@@ -37,7 +37,7 @@ class MoELayer(BaseOP):
         layout = get_parallel_layout()
         self._expert_partition = layout.experts
         self._expert_ids = layout.expert_range(num_experts)
-        intermediate_size_per_partition = div_even(intermediate_size, layout.expert_tensor_size)
+        intermediate_size_per_partition = div_even(intermediate_size, layout.expert_tensor.size)
         self.gate_up_proj = torch.empty(
             len(self._expert_ids),
             2 * intermediate_size_per_partition,

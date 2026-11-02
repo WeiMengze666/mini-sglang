@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 import torch
-from minisgl.distributed.partition import Partition
+from minisgl.distributed.info import DistributedInfo
 
 
 class BaseMoeBackend(ABC):
@@ -16,7 +16,7 @@ class BaseMoeBackend(ABC):
         renormalize: bool,
         activation: str,
         apply_router_weight_on_input: bool,
-        expert_partition: Partition = Partition(0, 1),
+        expert_partition: DistributedInfo = DistributedInfo(0, 1),
         num_global_experts: int | None = None,
     ) -> torch.Tensor: ...
 

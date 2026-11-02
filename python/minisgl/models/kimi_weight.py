@@ -13,6 +13,7 @@ from typing import Iterator
 
 import safetensors
 import torch
+from minisgl.distributed.info import DistributedInfo
 from minisgl.layers.weight import decode_mxfp4
 from minisgl.layers.weight import read_mxfp4_pair as _read_packed_pair
 
@@ -162,7 +163,7 @@ def load_kimi_weight(
         if not config:
             raise ValueError("Kimi tensor-parallel loading requires checkpoint config.json")
         validate_tp_config(shard_config, tp_size, dcp_size=dcp_size, ep_size=ep_size)
-    layout = ParallelLayout(tp_rank, tp_size, dcp_size, ep_size)
+    layout = ParallelLayout(DistributedInfo(tp_rank, tp_size), dcp_size, ep_size)
     if remote:
         entries = index_entries(folder)
         patterns = (

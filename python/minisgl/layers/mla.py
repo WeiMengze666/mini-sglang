@@ -21,7 +21,7 @@ class MLALayer(BaseOP):
         self._tp = TensorParallel()
         self._cp = ContextParallel()
         self._heads = local_size(
-            config.num_heads, get_parallel_layout().attention_size, "MLA heads"
+            config.num_heads, get_parallel_layout().attention.size, "MLA heads"
         )
         self._output_heads = local_size(config.num_heads, self._tp.size, "MLA output heads")
         self._nope = config.nope_dim

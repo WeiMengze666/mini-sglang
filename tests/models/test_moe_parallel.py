@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 import torch
 from minisgl.distributed import DistributedInfo
-from minisgl.distributed.partition import Partition
 
 
 @pytest.mark.parametrize("ep_size", [1, 2, 4])
@@ -72,10 +71,10 @@ def test_stacked_fused_experts_ep_and_expert_tensor_parallel(tokens, remote_only
     expected = backend.forward(x.clone(), gate_up, down, logits, 2, True)
     actual = torch.zeros_like(x, dtype=torch.float32)
     for expert_rank in range(4):
-        experts = Partition(expert_rank, 4)
+        experts = DistributedInfo(expert_rank, 4)
         owned = experts.range(8)
         for tensor_rank in range(2):
-            split = Partition(tensor_rank, 2)
+            split = DistributedInfo(tensor_rank, 2)
             gate, up = gate_up[owned.start : owned.stop].chunk(2, 1)
             local_gate = torch.cat(
                 [split.shard(1, 64).slice(w) for w in (gate, up)], 1
@@ -130,7 +129,7 @@ def test_single_local_expert_mixture_matches_dense_reference(tokens):
                 logits,
                 2,
                 True,
-                expert_partition=Partition(rank, 4),
+                expert_partition=DistributedInfo(rank, 4),
                 num_global_experts=4,
             ).float()
         torch.testing.assert_close(actual, expected, rtol=0.04, atol=0.002)

@@ -27,9 +27,9 @@ def test_lse_merge_empty_partitions_and_extreme_scores():
 
 def test_independent_layout_and_checkpoint_slices():
     c = _config(shared=2)
-    layout = ParallelLayout(3, 4, 2, 2)
-    assert (layout.dcp_rank, layout.attention_rank, layout.attention_size) == (1, 1, 2)
-    assert (layout.expert_rank, layout.expert_tensor_rank, layout.expert_tensor_size) == (1, 1, 2)
+    layout = ParallelLayout(DistributedInfo(3, 4), 2, 2)
+    assert (layout.context.rank, layout.attention.rank, layout.attention.size) == (1, 1, 2)
+    assert (layout.experts.rank, layout.expert_tensor.rank, layout.expert_tensor.size) == (1, 1, 2)
     assert list(layout.expert_range(4)) == [2, 3]
     assert owns_expert("model.layers.1.mlp.experts.3.w2.weight", c, layout)
     assert not owns_expert("model.layers.1.mlp.experts.1.w2.weight", c, layout)
@@ -37,9 +37,9 @@ def test_independent_layout_and_checkpoint_slices():
     out = shard_spec("model.layers.1.self_attn.o_proj.weight", c, 3, 4, dcp_size=2)
     assert (q.start, q.stop, out.start, out.stop) == (8, 16, 9, 12)
     with pytest.raises(ValueError):
-        ParallelLayout(0, 4, 3, 2)
+        ParallelLayout(DistributedInfo(0, 4), 3, 2)
     with pytest.raises(ValueError):
-        ParallelLayout(0, 4, 2, 8)
+        ParallelLayout(DistributedInfo(0, 4), 2, 8)
 
 
 def test_packed_checkpoint_preserves_global_expert_ids(tmp_path, monkeypatch):
@@ -141,7 +141,7 @@ def _worker(rank, world, init_file, device_type):
         for dcp, ep in ((2, 1), (1, 2), (2, 2), (4, 4)):
             configure_parallel(dcp_size=dcp, ep_size=ep)
             init_context_parallel()
-            layout = ParallelLayout(rank, world, dcp, ep)
+            layout = ParallelLayout(DistributedInfo(rank, world), dcp, ep)
             model = KimiK3LinearForCausalLM(_model_config(c))
 
             def stream():
@@ -159,7 +159,7 @@ def _worker(rank, world, init_file, device_type):
             for _, expert in experts.items():
                 assert (
                     expert.w1.weight.shape[0]
-                    == c.moe_intermediate_size // layout.expert_tensor_size
+                    == c.moe_intermediate_size // layout.expert_tensor.size
                 )
             for unified in (False, True):
                 cache = HybridCache(

@@ -40,3 +40,18 @@ def store_cache(
     element_size = k_cache.shape[1] * k_cache.element_size()
     module = _jit_store_module(element_size)
     module.launch(k_cache, v_cache, indices, k, v)
+
+
+def store_mla(latent, key, locations, pages, cache, *, page_size, cp_size, cp_rank):
+    from .triton.mla import store_mla as store
+
+    store(
+        latent,
+        key,
+        locations,
+        pages,
+        cache,
+        page_size=page_size,
+        cp_size=cp_size,
+        cp_rank=cp_rank,
+    )

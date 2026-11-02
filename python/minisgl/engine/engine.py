@@ -18,6 +18,7 @@ from minisgl.distributed import (
     set_tp_info,
 )
 from minisgl.distributed.context import init_context_parallel
+from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.layout import ParallelLayout, configure_parallel
 from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
@@ -401,7 +402,9 @@ def _adjust_config(config: EngineConfig):
     if config.distributed_backend == "mnnvl" and not config.distributed_provider:
         raise ValueError("distributed_provider is required for the mnnvl backend")
     resolve_bf16_precision(config.bf16_precision)
-    ParallelLayout(config.tp_info.rank, config.tp_info.size, config.dcp_size, config.ep_size)
+    ParallelLayout(
+        DistributedInfo(config.tp_info.rank, config.tp_info.size), config.dcp_size, config.ep_size
+    )
     if config.dcp_size > 1 and config.model_config.cache_config is None:
         raise ValueError("DCP requires a context-sharded attention/cache implementation")
     if config.ep_size > 1:

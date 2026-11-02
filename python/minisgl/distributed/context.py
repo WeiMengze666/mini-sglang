@@ -15,10 +15,10 @@ def init_context_parallel(*, backend=None):
     _DCP_GROUP = None
     if layout.dcp_size == 1:
         return
-    for start in range(0, layout.size, layout.dcp_size):
+    for start in range(0, layout.tensor.size, layout.dcp_size):
         ranks = list(range(start, start + layout.dcp_size))
         group = dist.new_group(ranks, backend=backend)
-        if layout.rank in ranks:
+        if layout.tensor.rank in ranks:
             _DCP_GROUP = group
 
 
@@ -43,7 +43,15 @@ def merge_attention(output, lse):
 class ContextParallel:
     def __init__(self):
         layout = get_parallel_layout()
-        self.rank, self.size = layout.dcp_rank, layout.dcp_size
+        self.group = layout.context
+
+    @property
+    def rank(self):
+        return self.group.rank
+
+    @property
+    def size(self):
+        return self.group.size
 
     def owns(self, positions):
         return positions.remainder(self.size) == self.rank

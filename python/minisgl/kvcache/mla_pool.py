@@ -128,7 +128,7 @@ class MLACache:
         ):
             raise ValueError("MLA token/cache shapes differ; do not write padded tokens")
         if implementation == "triton" and latent.is_cuda:
-            from .mla_kernel import store_mla
+            from minisgl.kernel import store_mla
 
             if self.arena is not None:
                 _check(

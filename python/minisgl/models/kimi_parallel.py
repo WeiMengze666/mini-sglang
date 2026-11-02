@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import re
 
+from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.layout import ParallelLayout
 from minisgl.distributed.parallel import local_size
-from minisgl.distributed.partition import ShardSpec
+from minisgl.distributed.shard import ShardSpec
 
 
 def _text_config(config):
@@ -21,7 +22,7 @@ def _text_config(config):
 def validate_tp_config(config, tp_size: int, *, dcp_size=1, ep_size=1) -> None:
     """Fail before allocation/collectives for unsupported uneven head/FFN splits."""
     c = _text_config(config)
-    layout = ParallelLayout(0, tp_size, dcp_size, ep_size)
+    layout = ParallelLayout(DistributedInfo(0, tp_size), dcp_size, ep_size)
     if tp_size < 1:
         raise ValueError("Kimi TP size must be positive")
     linear = c.linear_attn_config
@@ -38,7 +39,7 @@ def validate_tp_config(config, tp_size: int, *, dcp_size=1, ep_size=1) -> None:
         local_size(c.intermediate_size, tp_size, "dense intermediate_size")
     if moe_layers:
         local_size(c.num_experts, ep_size, "experts")
-        local_size(c.moe_intermediate_size, layout.expert_tensor_size, "moe_intermediate_size")
+        local_size(c.moe_intermediate_size, layout.expert_tensor.size, "moe_intermediate_size")
         shared = getattr(c, "num_shared_experts", 0) or 0
         if shared:
             local_size(c.moe_intermediate_size * shared, tp_size, "shared intermediate_size")
@@ -58,7 +59,7 @@ def shard_spec(
     if tp_size == 1:
         return None
     c = _text_config(config)
-    layout = ParallelLayout(tp_rank, tp_size, dcp_size, ep_size)
+    layout = ParallelLayout(DistributedInfo(tp_rank, tp_size), dcp_size, ep_size)
 
     def split(axis, size, label, block=1, *, partition=layout.tensor):
         return partition.shard(axis, size, label, block)

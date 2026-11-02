@@ -74,7 +74,7 @@ class _Expert(BaseOP):
         self._config = config
         self._activation = GatedActivation.from_config(config)
         intermediate_size = local_size(
-            intermediate_size, get_parallel_layout().expert_tensor_size, "expert intermediate_size"
+            intermediate_size, get_parallel_layout().expert_tensor.size, "expert intermediate_size"
         )
         self.w1 = Linear(hidden_size, intermediate_size)
         self.w2 = Linear(intermediate_size, hidden_size)
