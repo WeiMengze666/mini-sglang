@@ -1,0 +1,111 @@
+"""Optional MNNVL communication adapter.
+
+MNNVL is a transport/backend capability, not a model feature.  The adapter
+accepts an externally compiled provider so mini-sglang can use symmetric-memory
+or multicast collectives when present while keeping the default Torch/PyNCCL
+implementations self-contained and portable.
+"""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+import torch
+import torch.distributed as dist
+
+from .impl import DistributedCommunicator, DistributedImpl
+
+
+class MNNVLProvider(Protocol):
+    """Minimal provider contract implemented by a hardware communication stack."""
+
+    def all_reduce(self, x: torch.Tensor) -> torch.Tensor: ...
+
+    def all_gather(self, x: torch.Tensor) -> torch.Tensor: ...
+
+
+class MNNVLAllReduceProvider:
+    """Use a CustomAllReduceV2-compatible object without importing SGLang.
+
+    The object is intentionally duck-typed: an external runtime supplies
+    ``should_custom_ar``, ``custom_all_reduce`` and ``close``.  Unsupported
+    collectives use the same process group through ordinary Torch/NCCL calls.
+    """
+
+    def __init__(self, comm, *, group=None):
+        self.comm = comm
+        self.group = group
+
+    def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
+        if not getattr(self.comm, "disabled", False) and self.comm.should_custom_ar(x):
+            return self.comm.custom_all_reduce(x)
+        dist.all_reduce(x, group=self.group)
+        return x
+
+    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
+        shape = list(x.shape)
+        shape[0] *= dist.get_world_size(group=self.group)
+        output = torch.empty(shape, dtype=x.dtype, device=x.device)
+        dist.all_gather_into_tensor(output, x, group=self.group)
+        return output
+
+    def close(self) -> None:
+        close = getattr(self.comm, "close", None)
+        if close is not None:
+            close()
+
+
+class MNNVLDistributedImpl(DistributedImpl):
+    """Adapt an MNNVL provider to mini's normal distributed backend contract."""
+
+    name = "mnnvl"
+
+    def __init__(self, provider: MNNVLProvider):
+        self.provider = provider
+
+    def _supports(self, operation: str, x: torch.Tensor) -> bool:
+        method = getattr(self.provider, f"supports_{operation}", None)
+        return bool(method(x)) if method is not None else True
+
+    def supports_all_reduce(self, x: torch.Tensor) -> bool:
+        return self._supports("all_reduce", x)
+
+    def supports_all_gather(self, x: torch.Tensor) -> bool:
+        return self._supports("all_gather", x)
+
+    def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
+        return self.provider.all_reduce(x)
+
+    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
+        return self.provider.all_gather(x)
+
+    def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
+        method = getattr(self.provider, "supports_all_reduce_residual", None)
+        return bool(method(x, residual, norm=norm)) if method is not None else False
+
+    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
+        method = getattr(self.provider, "all_reduce_residual", None)
+        if method is None:
+            return super().all_reduce_residual(x, residual, norm=norm)
+        return method(x, residual, norm=norm)
+
+    def close(self) -> None:
+        close = getattr(self.provider, "close", None)
+        if close is not None:
+            close()
+
+
+def enable_mnnvl_distributed(provider: MNNVLProvider) -> MNNVLDistributedImpl:
+    """Install an externally compiled MNNVL provider as the active backend."""
+
+    backend = MNNVLDistributedImpl(provider)
+    DistributedCommunicator.enable(backend)
+    return backend
+
+
+__all__ = [
+    "MNNVLAllReduceProvider",
+    "MNNVLDistributedImpl",
+    "MNNVLProvider",
+    "enable_mnnvl_distributed",
+]

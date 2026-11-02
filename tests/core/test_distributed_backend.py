@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import torch
 from minisgl.distributed import FallbackDistributedImpl
+from minisgl.distributed.mnnvl import MNNVLAllReduceProvider, MNNVLDistributedImpl
 
 
 def test_fallback_backend_selects_by_tensor_capability():
@@ -49,3 +50,43 @@ def test_fallback_backend_routes_each_collective_by_capability():
     backend.all_gather(torch.zeros(2))
 
     assert events == ["primary-reduce", "fallback-gather"]
+
+
+def test_mnnvl_adapter_exposes_optional_fused_residual():
+    class Provider:
+        def all_reduce(self, tensor):
+            return tensor + 1
+
+        def all_gather(self, tensor):
+            return tensor
+
+        def supports_all_reduce_residual(self, tensor, residual, *, norm=None):
+            return residual is not None and norm is not None
+
+        def all_reduce_residual(self, tensor, residual=None, *, norm=None):
+            return norm(tensor + 1 + residual)
+
+    backend = MNNVLDistributedImpl(Provider())
+    x = torch.zeros(2)
+    assert backend.all_reduce(x).eq(1).all()
+    assert backend.supports_all_reduce_residual(x, x, norm=torch.neg)
+    assert backend.all_reduce_residual(x, x, norm=torch.neg).eq(-1).all()
+
+
+def test_mnnvl_custom_allreduce_provider_uses_external_collective(monkeypatch):
+    class Comm:
+        disabled = False
+
+        def should_custom_ar(self, tensor):
+            return tensor.numel() == 2
+
+        def custom_all_reduce(self, tensor):
+            return tensor + 3
+
+    provider = MNNVLAllReduceProvider(Comm())
+    assert provider.all_reduce(torch.zeros(2)).eq(3).all()
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Torch fallback must not run for supported input")
+
+    monkeypatch.setattr("torch.distributed.all_reduce", unexpected)

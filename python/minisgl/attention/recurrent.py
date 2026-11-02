@@ -154,7 +154,6 @@ def forward_layer(
     cp = ContextParallel()
     metadata = getattr(batch, "attn_metadata", None)
     if recurrent:
-        projected = layer.project(x)
         if all(req.extend_len == 1 for req in batch.reqs):
             indices = metadata.state_indices if isinstance(metadata, HybridMetadata) else None
             if indices is None:
@@ -162,6 +161,19 @@ def forward_layer(
                 if isinstance(metadata, HybridMetadata):
                     metadata.state_indices = indices
             initial = cache.recurrent.get_kda_batch(layer_id, indices)
+            fused = getattr(layer, "decode", None)
+            if fused is not None:
+                output = fused(
+                    x,
+                    initial,
+                    implementation=kda_implementation,
+                )
+                if output is not None:
+                    result, final = output
+                    cache.recurrent.set_kda_batch(layer_id, indices, final)
+                    return result
+        projected = layer.project(x)
+        if all(req.extend_len == 1 for req in batch.reqs):
             output, final = layer.update(
                 *(part.unsqueeze(1) for part in projected),
                 initial,

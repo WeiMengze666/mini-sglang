@@ -32,6 +32,23 @@ class DistributedImpl(ABC):
         """Whether this backend can gather this tensor without fallback."""
         return True
 
+    def supports_all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None
+    ) -> bool:
+        """Whether this backend can fuse reduction with a residual epilogue."""
+        return False
+
+    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
+        """Reduce ``x`` and apply an optional residual and unary epilogue.
+
+        Hardware backends can override this to use a fused communication
+        kernel.  The fallback keeps the operation correct for every backend.
+        """
+        result = self.all_reduce(x)
+        if residual is not None:
+            result = result + residual
+        return norm(result) if norm is not None else result
+
     def close(self) -> None:
         """Release owned communication resources before the bootstrap group."""
 
@@ -65,6 +82,19 @@ class FallbackDistributedImpl(DistributedImpl):
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
         backend = self.primary if self._supports(self.primary, "all_gather", x) else self.fallback
         return backend.all_gather(x)
+
+    def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
+        return self._supports(self.primary, "all_reduce_residual", x) or self._supports(
+            self.fallback, "all_reduce_residual", x
+        )
+
+    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
+        backend = (
+            self.primary
+            if self._supports(self.primary, "all_reduce_residual", x)
+            else self.fallback
+        )
+        return backend.all_reduce_residual(x, residual, norm=norm)
 
     def close(self) -> None:
         self.primary.close()
@@ -114,11 +144,18 @@ class PyNCCLDistributedImpl(DistributedImpl):
 class DistributedCommunicator:
     plugins: List[DistributedImpl] = [TorchDistributedImpl()]
 
+    @classmethod
+    def enable(cls, backend: DistributedImpl) -> None:
+        cls.plugins.append(backend)
+
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         return self.plugins[-1].all_reduce(x)
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
         return self.plugins[-1].all_gather(x)
+
+    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
+        return self.plugins[-1].all_reduce_residual(x, residual, norm=norm)
 
 
 def enable_pynccl_distributed(
@@ -138,7 +175,7 @@ def enable_pynccl_distributed(
         max_size_bytes=max_bytes,
     )
 
-    DistributedCommunicator.plugins.append(PyNCCLDistributedImpl(comm))
+    DistributedCommunicator.enable(PyNCCLDistributedImpl(comm))
 
 
 def destroy_distributed() -> None:

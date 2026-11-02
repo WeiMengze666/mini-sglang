@@ -6,6 +6,13 @@ from typing import TYPE_CHECKING, Protocol
 from minisgl.utils import Registry, init_logger
 
 from .base import BaseAttnBackend, BaseAttnMetadata, HybridBackend
+from .kda_backend import (
+    KDA_KERNELS,
+    KDADecodeResult,
+    get_kda_kernel,
+    register_kda_decode_kernel,
+    register_kda_kernel,
+)
 
 if TYPE_CHECKING:
     from minisgl.models import ModelConfig
@@ -125,4 +132,9 @@ __all__ = [
     "SUPPORTED_ATTENTION_BACKENDS",
     "register_attention_backend",
     "validate_attn_backend",
+    "KDA_KERNELS",
+    "KDADecodeResult",
+    "get_kda_kernel",
+    "register_kda_kernel",
+    "register_kda_decode_kernel",
 ]

@@ -83,6 +83,26 @@ layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark
 measured 13.43745/24.83282/48.44173/93.14856 tokens/s at batch 1/2/4/8
 (job 545).
 
+Phase-22 tested an isolated generic KDA decode fusion that computes the
+`f_b` projection inside the Triton recurrent scan. The output was bitwise equal
+to the existing projection plus scan (`max_abs_output=0`), but the FP32
+recurrent state differed by `2.384185791015625e-7`, violating the strict state
+contract. It was also slower on the B300 CUDA-Graph microcase, `0.004125 ms`
+versus `0.006165 ms` per step (job 573). The candidate was rejected and no
+model-specific fused decode code was added; the existing projection boundary
+and native decode fallback remain the portable implementation.
+
+Phase-23 turns the two hardware optimization points into reusable backend
+seams. `MNNVLDistributedImpl` adapts an externally compiled symmetric-memory
+provider to the normal `DistributedImpl` all-reduce/all-gather contract and
+adds an optional fused residual epilogue with a correct fallback. The KDA
+registry now accepts recurrence backends and complete one-token decode kernels;
+the layer keeps the output projection and TP collective, while a fused kernel
+may optionally return an already gated-normalized core output. The default
+Torch/PyNCCL, Triton and FlashInfer routes remain selected exactly as before.
+The remote CPU/core/models regression passed 496 tests with 260 skips and 19
+deselected cases; backend-specific tests and ruff also passed.
+
 These paired results
 use the same released checkpoint, DCP2/EP8 layout, 64-token output boundary and
 CUDA-Graph request sizes; they are performance evidence, not new correctness
