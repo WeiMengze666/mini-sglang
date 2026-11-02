@@ -15,6 +15,8 @@ class FlashInferMXFP4Experts:
     forward only prepares routing/activation metadata and launches the fused op.
     """
 
+    supports_cuda_graph = True
+
     def __init__(
         self,
         experts: Iterable[tuple[int, object]],

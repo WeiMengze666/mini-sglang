@@ -7,8 +7,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 from minisgl.layers.activation import situ_and_mul
+from minisgl.layers.linear import Linear
 from minisgl.moe.routing import RoutingPolicy
-from minisgl.quantization.mxfp4 import MXFP4Linear
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate"
@@ -24,7 +24,7 @@ def _projection(inputs, outputs, dtype):
     dense = (codebook[codes.long()] * (2.0 ** (scales.float() - 127)).repeat_interleave(32, -1)).to(
         dtype
     )
-    op = MXFP4Linear(inputs, outputs, device="cuda", dtype=dtype)
+    op = Linear(inputs, outputs, device="cuda", dtype=dtype, weight_format="mxfp4")
     op.weight_packed.copy_(codes[:, ::2] | codes[:, 1::2] << 4)
     op.weight_scale.copy_(scales)
     return op, dense
@@ -45,10 +45,10 @@ def _projection(inputs, outputs, dtype):
         (65, "mixed", 1, 128),
     ],
 )
-def test_grouped_packed_experts(
+def test_grouped_expert_executor(
     dtype, activation, stable_routing, tokens, selection, experts, width
 ):
-    from minisgl.quantization.mxfp4_moe import MXFP4Experts
+    from minisgl.moe.mxfp4 import MXFP4Experts
 
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(103)
@@ -97,7 +97,7 @@ def test_grouped_packed_experts(
 
 @pytest.mark.parametrize("tokens", [2, 8])
 def test_large_experts_preserve_duplicate_rows(tokens):
-    from minisgl.quantization.mxfp4_moe import MXFP4Experts
+    from minisgl.moe.mxfp4 import MXFP4Experts
 
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(113)

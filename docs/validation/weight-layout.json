@@ -1,0 +1,376 @@
+{
+  "scope": "Unify projection formats and move expert execution into MoE",
+  "base_commit": "b2c9723d56d19bb24e1cb1faea3c2254a0e3fe82",
+  "cpu_gloo": {
+    "passed": 524,
+    "skipped": 297,
+    "log": "experiment/phase31-cpu-gloo.log"
+  },
+  "gpu": {
+    "job": 605,
+    "components_passed": 113,
+    "graph_reports": {
+      "dense": {
+        "scope": "synthetic model compatibility",
+        "comparison": "exact FP32 values; BF16 eager outputs are converted losslessly",
+        "moe": false,
+        "world_size": 4,
+        "ep_size": 1,
+        "cases": [
+          {
+            "slots": [
+              3,
+              0,
+              6,
+              1
+            ],
+            "max_abs_logits": 0.0
+          },
+          {
+            "slots": [
+              6,
+              2
+            ],
+            "max_abs_logits": 0.0
+          },
+          {
+            "slots": [
+              4
+            ],
+            "max_abs_logits": 0.0
+          },
+          {
+            "slots": [
+              5,
+              2,
+              0
+            ],
+            "max_abs_logits": 0.0
+          }
+        ]
+      },
+      "moe": {
+        "scope": "synthetic model compatibility",
+        "comparison": "exact FP32 values; BF16 eager outputs are converted losslessly",
+        "moe": true,
+        "world_size": 4,
+        "ep_size": 4,
+        "cases": [
+          {
+            "slots": [
+              3,
+              0,
+              6,
+              1
+            ],
+            "max_abs_logits": 0.0
+          },
+          {
+            "slots": [
+              6,
+              2
+            ],
+            "max_abs_logits": 0.0
+          },
+          {
+            "slots": [
+              4
+            ],
+            "max_abs_logits": 0.0
+          },
+          {
+            "slots": [
+              5,
+              2,
+              0
+            ],
+            "max_abs_logits": 0.0
+          }
+        ]
+      },
+      "hybrid": {
+        "unified": false,
+        "world_size": 4,
+        "cases": [
+          {
+            "slots": [
+              3,
+              0,
+              6,
+              1
+            ],
+            "graph_decode": true,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          },
+          {
+            "slots": [
+              6,
+              2
+            ],
+            "graph_decode": true,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          },
+          {
+            "slots": [
+              4
+            ],
+            "graph_decode": true,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          },
+          {
+            "slots": [
+              5,
+              2,
+              0
+            ],
+            "graph_decode": false,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          }
+        ]
+      },
+      "unified": {
+        "unified": true,
+        "world_size": 4,
+        "cases": [
+          {
+            "slots": [
+              3,
+              0,
+              6,
+              1
+            ],
+            "graph_decode": true,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          },
+          {
+            "slots": [
+              6,
+              2
+            ],
+            "graph_decode": true,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          },
+          {
+            "slots": [
+              4
+            ],
+            "graph_decode": true,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          },
+          {
+            "slots": [
+              5,
+              2,
+              0
+            ],
+            "graph_decode": false,
+            "max_abs_logits": 0.0,
+            "states_bitwise_equal": true
+          }
+        ]
+      }
+    }
+  },
+  "full_checkpoint": {
+    "job": 605,
+    "precision": "strict BF16",
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "records": [
+      {
+        "file": "logits-b1-r0.pt",
+        "shape": [
+          32,
+          1,
+          163840
+        ],
+        "max_abs": 0.0,
+        "exact": true
+      },
+      {
+        "file": "logits-b4-r0.pt",
+        "shape": [
+          32,
+          4,
+          163840
+        ],
+        "max_abs": 0.0,
+        "exact": true
+      }
+    ],
+    "scope": "before/after mini code refactor; not independent official alignment or a performance acceptance"
+  },
+  "arithmetic_audit": {
+    "unchanged_function_bodies": [
+      "_linear",
+      "linear",
+      "headwise_linear",
+      "_gemv",
+      "_gemm",
+      "mxfp4_linear",
+      "decode_mxfp4",
+      "read_mxfp4_pair",
+      "bounded_grid_size",
+      "_expert_ptr",
+      "_gate_up",
+      "_down"
+    ]
+  },
+  "source_sha256": {
+    "python/minisgl/__main__.py": "4dc0f059094c970d00098e2300453c6bdef30e18fc14c6c7e3bd68d4db3c78ae",
+    "python/minisgl/attention/README.md": "370526518adc05b05bbd1c6710733348beafa23c3f2b9c4ee9a41c6f2a6f1c19",
+    "python/minisgl/attention/__init__.py": "d2bdbe30fe5274e59dcbacaf11dc2483101a2025bfcdbcc17d12155f3cde5a64",
+    "python/minisgl/attention/base.py": "f1659b78416b540078eafaa0b8b710546c6ae972b8b39b98ee428cc1b4b00149",
+    "python/minisgl/attention/config.py": "19f08e9f540ea15fe39290a0945f9808d0e17123033f4518fda76474924f3541",
+    "python/minisgl/attention/fa.py": "9b1e37766789b2e3a52a09feeb9320b740e5e510fb07b45903d01f84cf6309d1",
+    "python/minisgl/attention/fi.py": "7bdcd1a5faf9cecd7f9cdbfd5e6c0ce2ffd1f26beecb89660db05acec01284d2",
+    "python/minisgl/attention/kda/__init__.py": "aec9df8abfef0b54aa057585c99b9dc1eefac5ffdf090b76989309a7a9632111",
+    "python/minisgl/attention/kda/backend.py": "c4fe5e53ee37f91431ae2303a8c6adf847b0442059af677021dade9d27e56deb",
+    "python/minisgl/attention/kda/causal_conv.py": "fb27452fc33f27125c9664a1f212683e8068a8b53aff005ae80d67778ec2968d",
+    "python/minisgl/attention/kda/flashinfer.py": "4f015ac182d2884ca85d349722c09a7d1656102c9105aa53d04cdf5a87a5de67",
+    "python/minisgl/attention/kda/reference.py": "58ec75f69255319a9eb192f78dc08e3db46b052d01ecfd7a327ac75958a286bd",
+    "python/minisgl/attention/kda/registry.py": "d9146c6713c2afdb9bb6aac1fee7f4c7c1853e1e8b198e4cbd4740cd4701805d",
+    "python/minisgl/attention/kda/triton.py": "d63104d450a19fb00c1e64a82345ea9feec3a2b6d0032cb13af72598b8d209d2",
+    "python/minisgl/attention/mla/__init__.py": "2f6b2c106536c8e488f62c40369e42aea83796aa7a816583382b339a0f58e4ed",
+    "python/minisgl/attention/mla/backend.py": "36c72bf1fa4a1e5bf6a270b7319b5a43934f51ecfc66980410a36073a6ad71a5",
+    "python/minisgl/attention/mla/flashinfer.py": "91ac8b53464adab1a47c25d16eb7e92086327e22573cc1a3e733ce36d8a87314",
+    "python/minisgl/attention/mla/reference.py": "686a5f7030e858d38e3fc217ef906f3bd850d612875f43e0b747963280e2878d",
+    "python/minisgl/attention/trtllm.py": "ec53837ff4bd6bdc546dc3fd439b15e631d35a872d9ce26691eb444576e14a33",
+    "python/minisgl/attention/utils.py": "bd282a3a1e27e0a2aac832ebefe6e5be2576ac5f5f3aa5a51094244d3e4a7aa8",
+    "python/minisgl/benchmark/client.py": "56ed36afe704051f7660252c045c38c0bc80c51eb2cc051b35e69590b9bc67ac",
+    "python/minisgl/benchmark/perf.py": "c67dee0b80e2dcdd17e4d31f9aae60d45a35bbc04f5b75e232ea02f45c584232",
+    "python/minisgl/core.py": "9495507df1c4cdf3cb3bef2bd8743df472dedaef49130695d50703963b3383eb",
+    "python/minisgl/distributed/__init__.py": "bd1a54768bfc5c58da7215c6457518a7a34051d831685c3483adb43da77b40e3",
+    "python/minisgl/distributed/context.py": "85cb64145cae4afaa1f0f3faf0c04407188b1c2c672924b4b7ba348c866a46db",
+    "python/minisgl/distributed/impl.py": "e1a16da2c51bb9fcf07ff3bd40b4ea1b92e34b0115aa4b19573434c618a00636",
+    "python/minisgl/distributed/info.py": "0294dcd80e9d425418baf2dc7825822cbd027bfc0dc53ad2e26fb76224037e73",
+    "python/minisgl/distributed/layout.py": "994829d3b2965976cba64343b0fc3bd7201a3d25494f3c59aa599b16ecb6e93d",
+    "python/minisgl/distributed/mnnvl.py": "85695dd699c65349a3e787d0b7fa5ae2068d0ed59783bfad6524b3f9d9db60f7",
+    "python/minisgl/distributed/parallel.py": "6740900691a432003c639c3ad1514f622b3767c49e4add5e856312941ba4a961",
+    "python/minisgl/distributed/partition.py": "f518218edc2342e99ed22025d707e7551bedb976945e6ae20038f291601efc5c",
+    "python/minisgl/engine/__init__.py": "ebfed9c2537757652b8a00eae9b5396566be1aadb13a09856f65a4b3f997986a",
+    "python/minisgl/engine/config.py": "de0d03be56a850886bd168f9412a90b8ea202dbf422c2477aaa0694d26550ab3",
+    "python/minisgl/engine/engine.py": "80c2b29bdedd4f44f12036c2f2e74fa6ec764d92183cfab4874b7932744b955b",
+    "python/minisgl/engine/graph.py": "a7c761470045eb9bda27ec4ea11c682fcbb301c371f4f6e6b54128011132f704",
+    "python/minisgl/engine/sample.py": "6bb15e116a299929af9436df2c3d2e8331a0aa0adc63320cfe86e0993370ed0b",
+    "python/minisgl/env.py": "f1c00819d82b6b0d3802ca93ec516e14061c717b83e74efc19234577acd8ad6e",
+    "python/minisgl/kernel/__init__.py": "b8b3ea3224049dbb57571de9621502370b8a53cebb93635182d71dba419b3052",
+    "python/minisgl/kernel/__main__.py": "19e97632e33853630ad45e2f196649c722db82de1ca63c97550b5ac0b6f1e809",
+    "python/minisgl/kernel/csrc/include/minisgl/nccl227.h": "a816d195c5fa87b3aa0698faee2ff9951178a2289d994aa1ec59d58c053b27f5",
+    "python/minisgl/kernel/csrc/include/minisgl/tensor.h": "34ba569b5a49aab08a5d467adb3ce0bf78b44aaa96ab5751fe9773e5ebc95cb2",
+    "python/minisgl/kernel/csrc/include/minisgl/utils.cuh": "c46d57862fac0b486fb3a323876206c45ff459be4eda3a68e657f0034d645440",
+    "python/minisgl/kernel/csrc/include/minisgl/utils.h": "73d42fbfe4f64ad0c4c7d11a7f6b869b7dd817c51fc41635aa9e4a07d627800c",
+    "python/minisgl/kernel/csrc/include/minisgl/warp.cuh": "ebd7e93012be03ebfa8cdafc3ec1836ac32e17ad29a060991ed604dd25d4a410",
+    "python/minisgl/kernel/csrc/jit/index.cu": "75348e6848579becedab7b128a20e248ee2f3a0a32ec2dab70285402f2e3d834",
+    "python/minisgl/kernel/csrc/jit/store.cu": "8207607fb922e63236ee5c24f09e2cf45088c045d05ca8a92f6215af04f8e25e",
+    "python/minisgl/kernel/csrc/src/pynccl.cu": "1f967df1f616a1038affdb6d086031f1a5bb7c65b70cedf24c24bc9a7cdfecd3",
+    "python/minisgl/kernel/csrc/src/radix.cpp": "c713f011614b6c6225ea3bd2bd1dcfd035fbeda19def870c0aa4fa0b1aa57b6c",
+    "python/minisgl/kernel/csrc/src/tensor.cpp": "d4c8692d2cdd814ec7c946881c559855f7d59a735ff45856069b1a801eb29dfb",
+    "python/minisgl/kernel/index.py": "5098547d455932cb80b209cdf8480ffbdc2ee77410c02d4f1fdc5355ba197963",
+    "python/minisgl/kernel/moe_impl.py": "931d2cf0829090f5fc3291e233d7d4b15be2a383dd6198f534816481f27b3d51",
+    "python/minisgl/kernel/pynccl.py": "3babc1f62cd26eb31bf0b933326ac87b452982d5edb2a750006d085a45e300e3",
+    "python/minisgl/kernel/radix.py": "d4b7d0d204031382ffda5bad468d77520b2541937fa5b8217dc23b232f182700",
+    "python/minisgl/kernel/store.py": "39e21e21d1de0cc2f14faa37384ea94e427c0aabc997a56c049884ed46fc0c01",
+    "python/minisgl/kernel/tensor.py": "ba478a77ece2d9ce28648977f3f40ea5e54724dde14fe6374f206bb9cad5f88e",
+    "python/minisgl/kernel/triton/fused_moe.py": "59d2c6859e7b5c880c054826858ebad929bcd62b7028f0cb074a65b8a66446b3",
+    "python/minisgl/kernel/utils.py": "7e272c52bbaf847ad0da2f592cb5234403930cf9e425c60fffb570f5112fe9e7",
+    "python/minisgl/kvcache/__init__.py": "4d40a811bf404dd1f02f1e841a8959fae8e41d82efe56b05aa9fa546435cfe5f",
+    "python/minisgl/kvcache/base.py": "63b2431433ee47a8d067091684b5d622d6934523271273dde99069c3c42227cb",
+    "python/minisgl/kvcache/config.py": "24d7f763e979ff11f23fff4f35912c30f82a8f65cbbabb2e2ea1f8b0d477882a",
+    "python/minisgl/kvcache/hybrid_cache.py": "f476bc6d26a29da7f6918c8749c2cbae9e3997881cd89e5384a8fe0b6c50bdbe",
+    "python/minisgl/kvcache/hybrid_pool.py": "ba4ff2e65a898207c84109af3c069da3255f5d07890ee1b77c80922281d973c2",
+    "python/minisgl/kvcache/mha_pool.py": "c22ce82ac132be5dc18a26b8fbb58239cff9baa6f1053aee896376059cb9c4fe",
+    "python/minisgl/kvcache/mla_kernel.py": "a614598a7ee6996a9fdccd2ef75a66015a61c084dd8af8bfeaf07fb4f5ffb1a0",
+    "python/minisgl/kvcache/mla_pool.py": "f8308c6a2bce0aebece70b15e4d39ec8d8f58c8f3e72f9d3158b98726663fceb",
+    "python/minisgl/kvcache/naive_cache.py": "6081459a29dffb4f8d602a563287b537a2268fe0f06bb1d509de9e0a24746dce",
+    "python/minisgl/kvcache/radix_cache.py": "b5d73f1be39027b65ebcc44344acc9a3f438f3e2673cb0893ddf9e147a518072",
+    "python/minisgl/kvcache/recurrent_pool.py": "abba0918a96ee8150e6e45ab29c0e06db67d531f267cfc76ad9ad3960723d50e",
+    "python/minisgl/kvcache/unified.py": "b1295ad896901cc090aa9eb557db7ef5068b81ebd6f07d10bf95ad71958eca62",
+    "python/minisgl/layers/__init__.py": "bc055a745845bf1be381512215caf42bacf2a4278fd25583acd6dd393f7bcc53",
+    "python/minisgl/layers/activation.py": "8296cbba3c9284dc0cd4de4d8ed93b8bcb96cfef1ee30d51d9c826502c47f839",
+    "python/minisgl/layers/attention.py": "fc155cea18ce71f0753b110f8c37a961754d0f8471ccb402b5607685a8510811",
+    "python/minisgl/layers/attn_residual.py": "9f4e9ec04b8c44758160f94255cb37b605632f84d59ada6b3d4310d37c2c8a30",
+    "python/minisgl/layers/attn_residual_kernel.py": "a8844231fda8a6464e2555223b428958e9326a0c0c3697eda44214c9c67bc55a",
+    "python/minisgl/layers/base.py": "8cb7bc1f807142e2c839d5cb26cbd18a221a97d235418015f305e1b438945f66",
+    "python/minisgl/layers/embedding.py": "9cba44733b597f4cb5fa70c566030ae471d0cba48ea367dbd861fea485067494",
+    "python/minisgl/layers/kda.py": "bbb02889948c2ec7b0ef3e7ac511854afd15173d46c2463f065e2855dc6a0983",
+    "python/minisgl/layers/latent_moe.py": "5344b5556813002442c74795ceacaa98f358e6dc89d3f1d243d37ee2c5ff245a",
+    "python/minisgl/layers/linear.py": "63f68accc04d11ec53f09b3b9c45438d9d9cbd93d8a0f7582622c583b2423b99",
+    "python/minisgl/layers/linear_kernel.py": "d6a2e217021b75b28e71d35b0a440275f7be04bf7e1113ff4607bb47fcd3153b",
+    "python/minisgl/layers/mla.py": "b4a0982676fb53c1e70d382b267bb819e2e86454fee290f0e9680567e9ab9ec2",
+    "python/minisgl/layers/moe.py": "9d217cf58f8135c978b5b77216aa177d4027e14f82de42ece18061aa605d8670",
+    "python/minisgl/layers/norm.py": "156c2e77dfd2386df419e1769269024fd72466b430c1483610697997cb395a63",
+    "python/minisgl/layers/norm_kernel.py": "3e129dcd073a7e83da40d0afb299db5eafdbb4447e9b708508ed4b6c17c77531",
+    "python/minisgl/layers/rotary.py": "f3ab653703e90d1f06b09ad875058f2a1af098ffa15a23b97018accc5825c57d",
+    "python/minisgl/layers/weight.py": "41c47cb7181634daa344f1b7761e95ee7aec81a8cd00403c60764f24d2bffe66",
+    "python/minisgl/layers/weight_kernel.py": "709855c66133652e40ad7b651ec3be0dc3ff7cddc37704fff7d17666b9d1661a",
+    "python/minisgl/llm/__init__.py": "a81f5e3d9c25c5f4f5c48ae16ff5a8886f1b51cebde9b970c4d4099f650197a9",
+    "python/minisgl/llm/llm.py": "315b2ce6badf4dacff17e7d3be00444b9c2f7d44975c42021ea1a58616357758",
+    "python/minisgl/message/__init__.py": "b0bfdede41c3fab6347e88eebf439edf3d59d136d77b50e62cc374e4590b6e92",
+    "python/minisgl/message/backend.py": "d1dc7d5db0c34d22658405e51f29094e2d25d9be489f68ff77b5b26cd245d8fb",
+    "python/minisgl/message/frontend.py": "a4d67e36d1da97ad13d71468351adc3b8d9cf61394525c8a72e749a24684c529",
+    "python/minisgl/message/tokenizer.py": "5bdd8fc6a0de761fd6d5e00a199d2a550dec3844d5cc9afd804eafb7415639af",
+    "python/minisgl/message/utils.py": "8d2af6a03a03d4b9b1ab96d81aeb05ebad0dedba82f619a1039609b819aa73c6",
+    "python/minisgl/models/__init__.py": "873c3e9ea52db5a42f8e79e9aa4ef31e39903227a3ae2200f23da633673c0dd8",
+    "python/minisgl/models/base.py": "38edcf4247ced693838e534aa3ab1353f57a5656cdf4dfd6d6cf3daf1832e44d",
+    "python/minisgl/models/checkpoint.py": "7b578621f4c54e9565ee7b0e1e4e488f9e548b6416c52e320860330c9e3b06ea",
+    "python/minisgl/models/config.py": "a198e61e50d697f2d1c8a9fb8ad1c7f9263195436b9d410b32beed4bed2de3e5",
+    "python/minisgl/models/kimi_config.py": "2a52947ad52f83fca97c52cf5fc1a5a2c049cb6117371ec9c3a5805f04d7cfd5",
+    "python/minisgl/models/kimi_k3.py": "5f4e8a5dd5dbef99f4a7c1e150c40cad0f4c4f77e15405c45fddd68691ce675d",
+    "python/minisgl/models/kimi_parallel.py": "0674e267d1e48ca2e49533a21c10453a311291ac7b6c8d0ab1ad3ddbef8a923d",
+    "python/minisgl/models/kimi_quant.py": "7854c9f612c2518cb579a84e15e85a7a3e297c7dc13ab618a854f99b4cc37216",
+    "python/minisgl/models/kimi_weight.py": "47890bd5eb0bc3f681a73ea49f401ef1237214dacb0f95fb8dd769dcd24d53d3",
+    "python/minisgl/models/llama.py": "1d6eefd238e68c0ff5aa176258f8f1d2851c78f467e88a7f89f095dc15355d27",
+    "python/minisgl/models/mistral.py": "b59bc67f9bc8668a22545342d4ced6cc6c4853d66c18b8f19e6ffd7670df6927",
+    "python/minisgl/models/qwen2.py": "98d2bb01f04cd4490166abf2c6b06e96afc142c16af529613d2c9605de49bfd3",
+    "python/minisgl/models/qwen3.py": "c67e112b7cef51b5bf06d4927cae0715c34c3f2d0127aaac7c3520d3407766c1",
+    "python/minisgl/models/qwen3_moe.py": "6e42959a0c14588b9de6932cde81c25096bdf15afdfa7f0c274370ecee144fa8",
+    "python/minisgl/models/register.py": "7f104c1d4aa0ef17dcc05d0f2aee9f9fcae096f2d72be69ba23a2d85a672b11a",
+    "python/minisgl/models/utils.py": "c5cf3c3b0da51e65f4e185b3a4886c722cf02123970301e8afabfb3acb61983a",
+    "python/minisgl/models/weight.py": "d6aba2a7c480104e1d1249a677afb02358ee961ddf69c7a105c401c1efa7d7c2",
+    "python/minisgl/moe/__init__.py": "6e5ac6fc6544dcf98f6df31ce288cf8a0101f99b546c9e02dde2c4af6feccd5d",
+    "python/minisgl/moe/base.py": "b036ea7651cd5d3463e000a3d5a9d0045c46bd108a33c54e0eb60a6bb1c94b51",
+    "python/minisgl/moe/flashinfer.py": "e9594b9d29c48b6ec8c1e6905f30bf55dd5238704900eda1a6afdcd97bdaa8a5",
+    "python/minisgl/moe/fused.py": "08ddee7b4e3b3a31277fd5cb2c782ccc86fc948de3a910defa2dbc4d8245b177",
+    "python/minisgl/moe/mxfp4.py": "2ae9c38612e67439f50154d938e3cde78ac4510e7d5340999f7746df257797d1",
+    "python/minisgl/moe/routing.py": "b398c03e93d59b5fc2eb552d84c3670078f7b7c1cb52aa3fed66cd01613520e6",
+    "python/minisgl/precision.py": "e27249c73cd5bde7024282a138af158195768589445f29f9127082aad90d5b58",
+    "python/minisgl/scheduler/__init__.py": "364738450d9900453838d6db60aaed1744e73e5909ac578f21eb047caa79c72c",
+    "python/minisgl/scheduler/cache.py": "7a4b95beae9fe60db5df47cc5d85e2b300bf05f55b86ca67c723d9609a41c929",
+    "python/minisgl/scheduler/config.py": "da14b80ee038d1013f379bba3d46a1339f9aa5b1e7fc71e5152b336057b241af",
+    "python/minisgl/scheduler/decode.py": "a4f43f9b193610ee37b1c1647ea21e73eefb272bf03b8d5059226ca1ce8f8aef",
+    "python/minisgl/scheduler/io.py": "bd389af5d6bdd582870d4c214153dae04b75785eb2b694dd7234d88a5d2f616c",
+    "python/minisgl/scheduler/prefill.py": "fbb3b1b11ab960ffa5b13e47a83a6e2314ea0a3cdb82d78bd807d42b9c01b8af",
+    "python/minisgl/scheduler/scheduler.py": "1833556b7b0ea33c9293e21696e51abc911e372e2740d7917c968dfd399578e3",
+    "python/minisgl/scheduler/table.py": "9d688250aabbba7b0ac6193fdfadc735b95e3aebbdb664494d71b3ee75fc380a",
+    "python/minisgl/scheduler/utils.py": "168b356354cfd26db11c18a6451650761e887f17eb1edc4e59cce717853731b8",
+    "python/minisgl/server/__init__.py": "63facaa587eff97dfed4f7757a82d2312d275a9d9519e978ad2238f78c4f9125",
+    "python/minisgl/server/api_server.py": "2579cf15d0f06b381637356f27b2a4553162f323d05ece94a39f0f3a1c21d775",
+    "python/minisgl/server/args.py": "891da005d6322ab953357abd8f38dabd6a3a2a37f6922ad92ff3cd1c19089ce7",
+    "python/minisgl/server/launch.py": "8930bffb8fc0c7c180292df351d4c123f1b7f203433e4b5f56f529a88274fc60",
+    "python/minisgl/shell.py": "00f4e860942eabd6b8cb44e102a87e4186db00c9818ffc728c2f626b70e2de13",
+    "python/minisgl/tokenizer/__init__.py": "911e50423dc15d36ddac78bf0bbcd476e1765a92fc725ab6036563326320ebda",
+    "python/minisgl/tokenizer/detokenize.py": "4d7a53e17c7ce742354e391b4bfc744627b2822f035f5eaf0f77ef1c16df167f",
+    "python/minisgl/tokenizer/server.py": "ae2f729f517285312b399c834e286a624b9dc5e4e74e95367c852806996c7cbf",
+    "python/minisgl/tokenizer/tiktoken.py": "8a3103e54c7715f097e4e02a123ec3d6541b561c66713b256f9b76321ffe9d9b",
+    "python/minisgl/tokenizer/tokenize.py": "d8bbf346d1d37b29453179975bc6f9ae4cebb542bbff0be7c8717971c59d15b4",
+    "python/minisgl/tokenizer/xtml.py": "6525187cc21cd104ac91c7c3cdb020cd6627c5cc15492947a68378699f567511",
+    "python/minisgl/utils/__init__.py": "7de27dd3c3016e52145c13113c88a6fd803d22df1e13c10acd97922243fd082f",
+    "python/minisgl/utils/arch.py": "efcf2c2c3b7298c5997121e825d1e97913b9c4d8f629b61085e9838200576601",
+    "python/minisgl/utils/hf.py": "0330fbfb71a431f5c6c53d4a4b11ef04f9e3a42c093c9d61c306457ce17eabf5",
+    "python/minisgl/utils/logger.py": "c8df6e04bc4ceba871dfa6c24570364b23572378138acce2552ea7fbb34be9b9",
+    "python/minisgl/utils/misc.py": "a78a1398f3612db6fad4a1873f2c52b759dd1c230a2f34373ef591709b161c3d",
+    "python/minisgl/utils/mp.py": "5c3c7e0a34035cf434c3b49896bf5aeaded4dc93af9fd8f974a2032d97a685de",
+    "python/minisgl/utils/registry.py": "73bef69132925cdfcdac333312a7f2e30a98e223574566b1a524e149800ebff5",
+    "python/minisgl/utils/torch_utils.py": "d308c8528ac2387e8f8aae88f8a9e6d040be5923ce3527f18cded29b01bbf9cc"
+  },
+  "artifacts": "remote /home/axis/mengze/mini-sglang-k3/experiment/phase31-*"
+}

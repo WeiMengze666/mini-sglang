@@ -16,7 +16,6 @@ from minisgl.models.kimi_quant import (
     replace_quantized_linears,
 )
 from minisgl.models.kimi_weight import decode_mxfp4, load_kimi_weight
-from minisgl.quantization.mxfp4 import MXFP4Linear
 from safetensors.torch import save_file
 
 
@@ -101,7 +100,7 @@ def fixture_weights(rows, cols):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("shape", [(5, 64), (2, 3, 64), (64,), (0, 64)])
 def test_packed_linear_matches_dense_without_dense_state(dtype, shape):
-    op = MXFP4Linear(64, 19, has_bias=True, dtype=dtype, chunk_rows=5)
+    op = Linear(64, 19, has_bias=True, dtype=dtype, chunk_rows=5, weight_format="mxfp4")
     op.weight_packed, op.weight_scale = fixture_weights(19, 64)
     op.bias.copy_(torch.linspace(-0.1, 0.1, 19).to(dtype))
     x = torch.randn(shape, dtype=dtype)
@@ -113,9 +112,9 @@ def test_packed_linear_matches_dense_without_dense_state(dtype, shape):
 
 
 def test_decode_workspace_is_bounded_and_not_retained(monkeypatch):
-    import minisgl.quantization.mxfp4 as loader
+    import minisgl.layers.linear as loader
 
-    op = MXFP4Linear(64, 65, chunk_rows=17, max_decode_elements=640)
+    op = Linear(64, 65, chunk_rows=17, max_decode_elements=640, weight_format="mxfp4")
     op.weight_packed, op.weight_scale = fixture_weights(65, 64)
     calls = []
     original = loader.decode_mxfp4
@@ -143,12 +142,12 @@ def test_meta_replacement_honors_targets_ignore_and_native_dense():
         layer.self_attn.q_proj = Linear(64, 64)
         model.lm_head = Linear(64, 64)
     assert replace_quantized_linears(model, config()) == 12
-    assert isinstance(layer.mlp.experts.op_list[0].w1, MXFP4Linear)
-    assert isinstance(layer.mlp.shared_experts.up_proj, Linear)
-    assert isinstance(layer.mlp.routed_expert_down_proj, Linear)
-    assert isinstance(layer.self_attention_res_proj, Linear)
-    assert isinstance(layer.self_attn.q_proj, Linear)
-    assert isinstance(model.lm_head, Linear)
+    assert getattr(layer.mlp.experts.op_list[0].w1, "weight_format", None) == "mxfp4"
+    assert layer.mlp.shared_experts.up_proj.weight_format == "dense"
+    assert layer.mlp.routed_expert_down_proj.weight_format == "dense"
+    assert layer.self_attention_res_proj.weight_format == "dense"
+    assert layer.self_attn.q_proj.weight_format == "dense"
+    assert model.lm_head.weight_format == "dense"
     assert layer.mlp.gate.weight.dtype == torch.float32
     assert all(t.device.type == "meta" for t in model.state_dict().values())
     assert replace_quantized_linears(model, config()) == 0
@@ -160,8 +159,8 @@ def test_specific_selectors_and_oplist_direct_children():
     quant = quant_config()
     quant["config_groups"]["group_0"]["targets"] = ["language_model.layers.0"]
     assert replace_quantized_linears(model, SimpleNamespace(quantization_config=quant)) == 1
-    assert isinstance(model.layers.op_list[0], MXFP4Linear)
-    assert isinstance(model.layers.op_list[1], Linear)
+    assert getattr(model.layers.op_list[0], "weight_format", None) == "mxfp4"
+    assert model.layers.op_list[1].weight_format == "dense"
     assert replace_quantized_linears(model, SimpleNamespace()) == 0
 
 
@@ -227,7 +226,7 @@ def test_overlapping_groups_fail_closed():
 @pytest.mark.parametrize("rows,cols,chunk", [(1, 31, 4), (1, 0, 4), (0, 32, 4), (1, 32, 0)])
 def test_invalid_linear_dimensions(rows, cols, chunk):
     with pytest.raises(ValueError):
-        MXFP4Linear(cols, rows, chunk_rows=chunk)
+        Linear(cols, rows, chunk_rows=chunk, weight_format="mxfp4")
 
 
 def write_checkpoint(folder, tensors, c=None):

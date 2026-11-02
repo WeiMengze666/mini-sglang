@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.quantization.mxfp4 import MXFP4Linear, decode_mxfp4
+from minisgl.layers.linear import Linear
+from minisgl.layers.weight import decode_mxfp4
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate"
@@ -12,13 +13,13 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_flashinfer_executor_imports_without_cuda_side_effect():
-    from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
 
     assert FlashInferMXFP4Experts is not None
 
 
 def test_flashinfer_executor_rejects_situ_bf16_policy():
-    from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
 
     with pytest.raises(ValueError, match="SiTU.*mxfp8"):
         FlashInferMXFP4Experts(
@@ -32,7 +33,7 @@ def test_flashinfer_executor_rejects_situ_bf16_policy():
 
 
 def test_flashinfer_executor_rejects_non_cuda_weights():
-    from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
 
     with pytest.raises(ValueError, match="at least one local expert"):
         FlashInferMXFP4Experts(
@@ -48,7 +49,7 @@ def test_flashinfer_executor_rejects_non_cuda_weights():
 def _expert(hidden=256, intermediate=256, dtype=torch.bfloat16):
     ops = []
     for inputs, outputs in ((hidden, intermediate), (hidden, intermediate), (intermediate, hidden)):
-        op = MXFP4Linear(inputs, outputs, device="cuda", dtype=dtype)
+        op = Linear(inputs, outputs, device="cuda", dtype=dtype, weight_format="mxfp4")
         op.weight_packed.copy_(
             torch.randint(0, 256, op.weight_packed.shape, device="cuda", dtype=torch.uint8)
         )
@@ -60,7 +61,7 @@ def _expert(hidden=256, intermediate=256, dtype=torch.bfloat16):
 
 
 def test_flashinfer_silu_bf16_matches_decoded_reference():
-    from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
 
     torch.manual_seed(7)
     expert = _expert()
@@ -90,7 +91,7 @@ def test_flashinfer_silu_bf16_matches_decoded_reference():
 
 
 def test_flashinfer_situ_mxfp8_is_finite_and_repeatable():
-    from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
 
     torch.manual_seed(11)
     expert = _expert()

@@ -1,5 +1,10 @@
 # FlashInfer packed MXFP4 backend Implementation Plan
 
+> Layout update: the former quantization package is superseded by unified
+> `layers/linear.py`, shared `layers/weight.py`, and expert execution in
+> `moe/mxfp4.py` / `moe/flashinfer.py`. The old file names below record
+> the original design; current ownership is described in the module READMEs.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task with checkpoints.
 
 **Goal:** Add an opt-in generic FlashInfer FP4 grouped-MoE backend with explicit MXFP8 activation policy, while preserving the current BF16 Triton default.

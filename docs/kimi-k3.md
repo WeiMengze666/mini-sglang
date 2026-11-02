@@ -6,6 +6,20 @@ request completion remain framework mechanisms. Code quality and numerical
 correctness precede further performance work.
 
 
+Phase-31 removes the standalone quantization package. `Linear` owns dense
+and packed MXFP4 storage and dispatch; shared format decoding/loading belongs to
+`layers/weight.py`, and local expert compute belongs to `moe/`.
+`create_expert_executor` selects portable, Triton or FlashInfer execution from
+the weight format, layout and backend policy. Model composition calls the same
+executor interface; packed checkpoint tensor names are unchanged.
+
+Validation passed 524 CPU/Gloo checks (297 skipped), 113 GPU component checks,
+and four cases each for dense/MoE/hybrid/unified-cache Graph execution. The full
+DCP2/EP8 strict BF16 K3 before/after comparison preserved all 32 steps of raw
+vocabulary logits at batches 1 and 4 exactly (job 605).
+[The evidence](validation/weight-layout.json) records scope and source hashes;
+this is a refactor gate, not independent official accuracy or performance acceptance.
+
 The attention layout is organized by backend composition in Phase-30. Engine and Context own a
 single attention backend; neither has a separate KDA implementation setting.
 `HybridAttnBackend` in `attention/base.py` dispatches with
@@ -535,7 +549,9 @@ composition in `models/kimi_*.py`. Reusable mechanisms are organized by operatio
 | Cache composition, sparse checkpoints, compact byte arena | `kvcache/hybrid_pool.py`, `hybrid_cache.py`, `unified.py` |
 | Logical DCP/EP partitions and checkpoint slices | `distributed/layout.py`, `distributed/partition.py` |
 | Packed output/LSE exchange and stable merge | `distributed/context.py` |
-| E2M1/E8M0 storage, linear and grouped expert execution | `quantization/mxfp4*.py` |
+| Dense/packed projection storage and execution | `layers/linear.py`, `linear_kernel.py` |
+| E2M1/E8M0 decode and checkpoint format rules | `layers/weight.py`, `weight_kernel.py` |
+| Local routed expert compute and backend selection | `moe/base.py`, `moe/mxfp4.py`, `moe/flashinfer.py` |
 | Streamed aligned weights and derived metadata | `layers/weight.py`, `BaseOP.after_load` |
 | Local BPE and segmented XTML text formatting | `tokenizer/tiktoken.py`, `tokenizer/xtml.py` |
 

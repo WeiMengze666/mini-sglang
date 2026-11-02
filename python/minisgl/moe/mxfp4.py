@@ -9,10 +9,9 @@ import torch
 import triton as tr
 import triton.language as tl
 from minisgl.layers.activation import resolve_gated_activation
+from minisgl.layers.weight_kernel import decode_mxfp4 as _decode
 from minisgl.moe.fused import moe_align_block_size
 from minisgl.moe.routing import RoutingPolicy
-
-from .mxfp4_kernel import _decode
 
 
 def bounded_grid_size(blocks: int, columns: int, programs: int) -> int:
@@ -136,6 +135,8 @@ def _down(
 class MXFP4Experts:
     """Homogeneous, bias-free w1/w3/w2 experts with contiguous global IDs."""
 
+    supports_cuda_graph = True
+
     def __init__(
         self,
         experts,
@@ -151,9 +152,7 @@ class MXFP4Experts:
         self._experts = tuple(expert for _, expert in items)  # retain weight allocations
         self._hidden = first.w1._input_size
         self._intermediate = first.w1._output_size
-        activation_spec = resolve_gated_activation(
-            activation, beta=beta, linear_beta=linear_beta
-        )
+        activation_spec = resolve_gated_activation(activation, beta=beta, linear_beta=linear_beta)
         if activation_spec.name not in ("silu", "situ"):
             raise ValueError("Unsupported packed expert activation")
         self._activation, self._beta = activation_spec.name, activation_spec.beta

@@ -5,7 +5,7 @@ import os
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.quantization.mxfp4 import MXFP4Linear
+from minisgl.layers.linear import Linear
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="CUDA work must be explicitly queued"
@@ -36,7 +36,7 @@ def test_fused_weight_only_linear(dtype, m, n, k):
     expected_weight = (
         table[codes.long()] * (2.0 ** (scales.float() - 127)).repeat_interleave(32, -1)
     ).to(dtype)
-    layer = MXFP4Linear(k, n, has_bias=True, device="cuda", dtype=dtype)
+    layer = Linear(k, n, has_bias=True, device="cuda", dtype=dtype, weight_format="mxfp4")
     layer.weight_packed.copy_(codes[:, ::2] | codes[:, 1::2] << 4)
     layer.weight_scale.copy_(scales)
     layer.bias.normal_(std=0.1)
@@ -54,7 +54,7 @@ def test_fused_weight_only_linear(dtype, m, n, k):
 
 
 def test_codebook_sign_and_scale_blocks_exactly():
-    layer = MXFP4Linear(64, 16, device="cuda", dtype=torch.float32)
+    layer = Linear(64, 16, device="cuda", dtype=torch.float32, weight_format="mxfp4")
     codes = torch.arange(16, device="cuda", dtype=torch.uint8)
     layer.weight_packed.copy_((codes | codes << 4)[:, None].expand(16, 32))
     layer.weight_scale[:, 0] = 126

@@ -13,8 +13,8 @@ from typing import Iterator
 
 import safetensors
 import torch
-from minisgl.quantization.mxfp4 import decode_mxfp4
-from minisgl.quantization.mxfp4 import read_mxfp4_pair as _read_packed_pair
+from minisgl.layers.weight import decode_mxfp4
+from minisgl.layers.weight import read_mxfp4_pair as _read_packed_pair
 
 from .checkpoint import checkpoint_index, index_entries, shard_readers
 

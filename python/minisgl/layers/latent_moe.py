@@ -9,6 +9,7 @@ from minisgl.layers.activation import GatedActivation, situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.linear import Linear, linear_bf16, linear_fp32
 from minisgl.layers.norm import TorchRMSNorm
+from minisgl.moe import TorchExpertExecutor, create_expert_executor
 from minisgl.moe.routing import RoutingPolicy
 
 __all__ = ["GatedMLP", "GroupedRouter", "LatentMoE", "situ_and_mul"]
@@ -37,6 +38,7 @@ class GatedMLP(BaseOP):
         if (
             isinstance(self.gate_proj, Linear)
             and isinstance(self.up_proj, Linear)
+            and self.gate_proj.weight_format == self.up_proj.weight_format == "dense"
             and self.gate_proj.weight.is_cuda
             and self.gate_proj.weight.dtype == torch.bfloat16
             and self.up_proj.weight.dtype == torch.bfloat16
@@ -161,50 +163,20 @@ class LatentMoE(BaseOP):
             if latent and config.latent_moe_use_norm
             else None
         )
-        self._packed_experts = None
+        self._expert_executor = TorchExpertExecutor(self.experts.items())
 
     def after_load(self):
-        from minisgl.quantization.mxfp4 import MXFP4Linear
-
-        self._packed_experts = None
-        packed_ops = [
-            op
-            for _, expert in self.experts.items()
-            for op in (expert.w1, expert.w3, expert.w2)
-        ]
-        if all(
-            isinstance(op, MXFP4Linear) and op.weight_packed.is_cuda and op.bias is None
-            for op in packed_ops
-        ):
-            activation = self._config.hidden_act
-            beta = getattr(self._config, "activation_situ_beta", None) or 1.0
-            linear_beta = getattr(self._config, "activation_situ_linear_beta", None)
-            backend = packed_ops[0]._backend
-            precision = packed_ops[0]._activation_precision
-            if backend == "flashinfer":
-                from minisgl.quantization.mxfp4_flashinfer import FlashInferMXFP4Experts
-
-                self._packed_experts = FlashInferMXFP4Experts(
-                    self.experts.items(),
-                    activation=activation,
-                    beta=beta,
-                    linear_beta=linear_beta,
-                    num_global_experts=self._config.num_experts,
-                    activation_precision=precision,
-                )
-            elif backend == "triton":
-                from minisgl.quantization.mxfp4_moe import MXFP4Experts
-
-                self._packed_experts = MXFP4Experts(
-                    self.experts.items(),
-                    activation=activation,
-                    beta=beta,
-                    linear_beta=linear_beta,
-                    routing_policy=RoutingPolicy.from_config(self._config),
-                )
+        self._expert_executor = create_expert_executor(
+            self.experts.items(),
+            activation=self._config.hidden_act,
+            beta=getattr(self._config, "activation_situ_beta", None) or 1.0,
+            linear_beta=getattr(self._config, "activation_situ_linear_beta", None),
+            num_global_experts=self._config.num_experts,
+            routing_policy=RoutingPolicy.from_config(self._config),
+        )
 
     def validate_cuda_graph(self):
-        if self._packed_experts is None:
+        if not self._expert_executor.supports_cuda_graph:
             raise ValueError("CUDA graphs require a device-side grouped expert executor")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -215,19 +187,7 @@ class LatentMoE(BaseOP):
         weights, ids = self.gate.forward(x)
         routed = self.routed_expert_down_proj.forward(x) if self.routed_expert_down_proj else x
         # Accumulate mixture in FP32. RMSNorm is AFTER expert reduction, per token.
-        if self._packed_experts is not None:
-            mixed = self._packed_experts.forward(routed, weights, ids)
-        else:
-            mixed = torch.zeros_like(routed, dtype=torch.float32)
-            # The portable path visits only active, locally owned expert IDs.
-            for expert_id in ids.unique(sorted=True).tolist():
-                if expert_id not in self.experts:
-                    continue
-                expert = self.experts.get_op(expert_id)
-                rows, slots = torch.where(ids == expert_id)
-                if rows.numel():
-                    values = expert.forward(routed[rows]).float() * weights[rows, slots, None]
-                    mixed.index_add_(0, rows, values)
+        mixed = self._expert_executor.forward(routed, weights, ids)
         # Routed and shared partials use the same rank world and token rows.
         # Pack one FP32 reduction before applying the nonlinear latent norm/up.
         shared = self.shared_experts.forward_local(x) if self.shared_experts else None

@@ -69,7 +69,6 @@ def test_invalid_metadata(ids, block, experts):
         align_routes(ids, block, experts)
 
 
-
 def test_routing_policy_is_opt_in_and_config_driven():
     class Config:
         stable_moe_routing = True
@@ -79,7 +78,7 @@ def test_routing_policy_is_opt_in_and_config_driven():
 
 
 def test_packed_executor_forwards_routing_policy(monkeypatch):
-    import minisgl.quantization.mxfp4_moe as packed
+    import minisgl.moe.mxfp4 as packed
     from minisgl.moe.routing import RoutingPolicy
 
     calls = []

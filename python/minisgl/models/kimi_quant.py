@@ -2,8 +2,8 @@
 
 from collections.abc import Mapping
 
-from minisgl.quantization.compressed_tensors import quantization_rules as _rules
-from minisgl.quantization.compressed_tensors import replace_quantized_linears as _replace
+from minisgl.layers.weight import quantization_rules as _rules
+from minisgl.layers.weight import replace_quantized_linears as _replace
 
 # These checkpoint modules use dense nn.Linear rather than the quantized class.
 _NATIVE_DENSE = {

@@ -72,14 +72,14 @@ class Engine:
         set_rope_device(self.device)
         with torch.device("meta"), torch_dtype(config.dtype):
             self.model = create_model(config.model_config)
-        from minisgl.quantization.mxfp4 import MXFP4Linear
+        from minisgl.layers.linear import Linear
 
         self.model.apply(
             lambda op: (
                 op.set_backend(
                     config.mxfp4_backend, activation_precision=config.mxfp4_activation_precision
                 )
-                if isinstance(op, MXFP4Linear)
+                if isinstance(op, Linear) and op.weight_format == "mxfp4"
                 else None
             )
         )

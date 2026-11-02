@@ -3,8 +3,7 @@
 import torch
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.linear import Linear
-from minisgl.quantization.compressed_tensors import replace_quantized_linears
-from minisgl.quantization.mxfp4 import MXFP4Linear
+from minisgl.layers.weight import replace_quantized_linears
 
 
 def test_generic_selection_preserves_expert_ids_and_dense_exclusions():
@@ -23,8 +22,8 @@ def test_generic_selection_preserves_expert_ids_and_dense_exclusions():
         "ignore": ["score"],
     }
     assert replace_quantized_linears(model, quant) == 2
-    assert isinstance(model.experts.get_op(2), MXFP4Linear)
-    assert isinstance(model.score, Linear)
+    assert getattr(model.experts.get_op(2), "weight_format", None) == "mxfp4"
+    assert model.score.weight_format == "dense"
     assert set(model.state_dict()) == {
         "experts.2.weight_packed",
         "experts.2.weight_scale",

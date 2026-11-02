@@ -1,5 +1,10 @@
 # FlashInfer packed MXFP4 backend design
 
+> Layout update: the former quantization package is superseded by unified
+> `layers/linear.py`, shared `layers/weight.py`, and expert execution in
+> `moe/mxfp4.py` / `moe/flashinfer.py`. The old file names below record
+> the original design; current ownership is described in the module READMEs.
+
 ## Goal
 
 Add an opt-in FlashInfer TRTLLM FP4 grouped-expert executor to mini-sglang while preserving the existing BF16 Triton executor as the default. The backend must be generic over local/global expert partitions and activation policy; no Kimi model name may appear in quantization or executor modules.

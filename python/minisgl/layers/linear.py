@@ -9,6 +9,7 @@ from minisgl.precision import use_strict_bf16
 from minisgl.utils import div_even
 
 from .base import BaseOP
+from .weight import decode_mxfp4
 
 
 def _linear(x, weight, bias):
@@ -190,9 +191,80 @@ class LinearRowParallel(_LinearTPImpl):
 
 
 class Linear(BaseOP):
-    def __init__(self, input_size: int, output_size: int, has_bias: bool = False):
-        self.weight = torch.empty(output_size, input_size)
-        self.bias = torch.empty(output_size) if has_bias else None
+    """A projection whose weight format selects its storage and execution path."""
+
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        has_bias: bool = False,
+        *,
+        weight_format: str = "dense",
+        device=None,
+        dtype=None,
+        chunk_rows: int = 128,
+        max_decode_elements: int = 1 << 20,
+    ):
+        if weight_format not in ("dense", "mxfp4"):
+            raise ValueError(f"Unsupported linear weight format: {weight_format}")
+        self._weight_format = weight_format
+        self._input_size, self._output_size = input_size, output_size
+        if weight_format == "dense":
+            self.weight = torch.empty(output_size, input_size, dtype=dtype, device=device)
+        else:
+            if input_size <= 0 or input_size % 32 or output_size <= 0:
+                raise ValueError(
+                    "Packed MXFP4 linear input width must be positive and divisible by 32"
+                )
+            if chunk_rows <= 0 or max_decode_elements <= 0:
+                raise ValueError("Packed MXFP4 decode chunk limits must be positive")
+            self.weight_packed = torch.empty(
+                output_size, input_size // 2, dtype=torch.uint8, device=device
+            )
+            self.weight_scale = torch.empty(
+                output_size, input_size // 32, dtype=torch.uint8, device=device
+            )
+            self._chunk_rows = min(chunk_rows, max(1, max_decode_elements // input_size))
+            self._backend = "torch"
+            self._activation_precision = "bf16"
+        self.bias = torch.empty(output_size, dtype=dtype, device=device) if has_bias else None
+
+    @property
+    def weight_format(self):
+        return self._weight_format
+
+    def set_backend(self, backend, *, activation_precision="bf16"):
+        if self.weight_format != "mxfp4":
+            raise ValueError("Packed backend selection requires MXFP4 weights")
+        if backend not in ("torch", "triton", "flashinfer"):
+            raise ValueError("MXFP4 backend must be torch, triton or flashinfer")
+        if activation_precision not in ("bf16", "mxfp8"):
+            raise ValueError("MXFP4 activation precision must be bf16 or mxfp8")
+        self._backend = backend
+        self._activation_precision = activation_precision
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return _linear(x, self.weight, self.bias)
+        if self.weight_format == "dense":
+            return _linear(x, self.weight, self.bias)
+        return self._forward_mxfp4(x)
+
+    @torch.no_grad()
+    def _forward_mxfp4(self, x: torch.Tensor) -> torch.Tensor:
+        if not x.is_floating_point() or x.shape[-1] != self._input_size:
+            raise ValueError(
+                f"Packed MXFP4 linear expects floating inputs of width {self._input_size}"
+            )
+        if self._backend == "triton":
+            from .linear_kernel import mxfp4_linear
+
+            return mxfp4_linear(x, self.weight_packed, self.weight_scale, self.bias)
+        result = x.new_empty((*x.shape[:-1], self._output_size))
+        for start in range(0, self._output_size, self._chunk_rows):
+            stop = min(start + self._chunk_rows, self._output_size)
+            weight = decode_mxfp4(
+                self.weight_packed[start:stop], self.weight_scale[start:stop], dtype=x.dtype
+            )
+            bias = self.bias[start:stop] if self.bias is not None else None
+            result[..., start:stop] = F.linear(x, weight, bias)
+            del weight
+        return result

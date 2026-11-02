@@ -1,7 +1,7 @@
 """Bounded work-grid contracts for grouped MXFP4 experts."""
 
 import pytest
-from minisgl.quantization.mxfp4_moe import bounded_grid_size
+from minisgl.moe.mxfp4 import bounded_grid_size
 
 
 @pytest.mark.parametrize(
