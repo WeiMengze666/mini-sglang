@@ -57,6 +57,18 @@ to 12.31463/22.47452/43.66925/80.93491 tokens/s at batch 1/2/4/8, while also
 reserving extra front-weight memory (job 557). The larger fused shape was
 rejected; production retains the two projection boundaries.
 
+Phase-19 selected the gate/up fusion after a repeated paired benchmark. The
+generic `GatedMLP` now caches one contiguous BF16 gate|up weight and exposes the
+same two original projections as views; strict and quantized/fallback paths keep
+their existing contracts. CPU structural tests passed 26 cases, and the current
+production strict gate passed all 93 layers with reduced-precision partials
+disabled (jobs 564 and 568). Two repeated DCP2/EP8 CUDA-Graph pairs kept token
+sequences identical and measured baseline versus fused throughput of
+13.4100/24.8109/48.3667/93.1477 versus 13.6288/24.8844/48.4478/93.8639
+tokens/s at batch 1/2/4/8 (job 567). The change is retained as a generic dense
+GatedMLP optimization; it does not add model-name checks or alter DCP/EP
+collective shape.
+
 The current production tree was rechecked after these probes: the strict
 BF16 full/chunk gate with reduced-precision partials disabled passed for all 93
 layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark

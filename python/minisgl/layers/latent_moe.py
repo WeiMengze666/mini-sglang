@@ -7,7 +7,7 @@ from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.activation import GatedActivation, situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
-from minisgl.layers.linear import Linear, linear_fp32
+from minisgl.layers.linear import Linear, linear_bf16, linear_fp32
 from minisgl.layers.norm import TorchRMSNorm
 from minisgl.moe.routing import RoutingPolicy
 
@@ -30,11 +30,36 @@ class GatedMLP(BaseOP):
         self.gate_proj = Linear(config.hidden_size, width)
         self.up_proj = Linear(config.hidden_size, width)
         self.down_proj = Linear(width, config.hidden_size)
+        self._gate_up_weight = None
+
+    def after_load(self):
+        self._gate_up_weight = None
+        if (
+            isinstance(self.gate_proj, Linear)
+            and isinstance(self.up_proj, Linear)
+            and self.gate_proj.weight.is_cuda
+            and self.gate_proj.weight.dtype == torch.bfloat16
+            and self.up_proj.weight.dtype == torch.bfloat16
+            and self.gate_proj.bias is None
+            and self.up_proj.bias is None
+            and self.gate_proj.weight.is_contiguous()
+            and self.up_proj.weight.is_contiguous()
+            and self.gate_proj.weight.shape == self.up_proj.weight.shape
+        ):
+            fused = torch.cat((self.gate_proj.weight, self.up_proj.weight), dim=0)
+            width = self.gate_proj.weight.shape[0]
+            self.gate_proj.weight = fused[:width]
+            self.up_proj.weight = fused[width:]
+            self._gate_up_weight = fused
 
     def forward_local(self, x: torch.Tensor) -> torch.Tensor:
-        return self.down_proj.forward(
-            self._activation.apply(self.gate_proj.forward(x), self.up_proj.forward(x))
-        )
+        if self._gate_up_weight is not None and x.is_cuda:
+            gate_up = linear_bf16(x, self._gate_up_weight, None)
+            width = self.gate_proj.weight.shape[0]
+            gate, up = gate_up.split(width, dim=-1)
+        else:
+            gate, up = self.gate_proj.forward(x), self.up_proj.forward(x)
+        return self.down_proj.forward(self._activation.apply(gate, up))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._tp.all_reduce(self.forward_local(x))

@@ -32,6 +32,11 @@ def _linear(x, weight, bias):
     return F.linear(x, weight, bias)
 
 
+def linear_bf16(x: torch.Tensor, weight: torch.Tensor, bias=None) -> torch.Tensor:
+    """Run the shared device-aware BF16 linear dispatch."""
+    return _linear(x, weight, bias)
+
+
 def linear_fp32(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     """Accumulate BF16 projections in FP32 while retaining the BF16 weight layout."""
     if (
