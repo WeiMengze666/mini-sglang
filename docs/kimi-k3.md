@@ -69,6 +69,14 @@ tokens/s at batch 1/2/4/8 (job 567). The change is retained as a generic dense
 GatedMLP optimization; it does not add model-name checks or alter DCP/EP
 collective shape.
 
+A Phase-21 vocab-collective probe delayed the final FP32 cast until after
+TP all-gather, reducing BF16 payload size while preserving logits exactly. It
+passed 26 CPU structural tests and the full strict 93-layer gate (job 570), but
+paired DCP2/EP8 CUDA-Graph throughput was neutral to slightly worse:
+baseline 13.53105/24.86632/48.38902/93.94271 versus candidate
+13.62278/24.85714/48.33918/93.77866 tokens/s at batch 1/2/4/8 (job 571).
+The shipping path keeps its existing logits communication boundary.
+
 The current production tree was rechecked after these probes: the strict
 BF16 full/chunk gate with reduced-precision partials disabled passed for all 93
 layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark
