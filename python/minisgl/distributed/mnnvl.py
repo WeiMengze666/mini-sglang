@@ -9,6 +9,7 @@ implementations self-contained and portable.
 from __future__ import annotations
 
 import importlib
+from contextlib import nullcontext
 from typing import Protocol
 
 import torch
@@ -50,6 +51,10 @@ class MNNVLAllReduceProvider:
         dist.all_gather_into_tensor(output, x, group=self.group)
         return output
 
+    def capture(self):
+        capture = getattr(self.comm, "capture", None)
+        return capture() if capture is not None else nullcontext()
+
     def close(self) -> None:
         close = getattr(self.comm, "close", None)
         if close is not None:
@@ -85,10 +90,13 @@ class MNNVLDistributedImpl(DistributedImpl):
         return bool(method(x, residual, norm=norm)) if method is not None else False
 
     def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
-        method = getattr(self.provider, "all_reduce_residual", None)
-        if method is None:
+        if not self.supports_all_reduce_residual(x, residual, norm=norm):
             return super().all_reduce_residual(x, residual, norm=norm)
-        return method(x, residual, norm=norm)
+        return self.provider.all_reduce_residual(x, residual, norm=norm)
+
+    def capture(self):
+        capture = getattr(self.provider, "capture", None)
+        return capture() if capture is not None else nullcontext()
 
     def close(self) -> None:
         close = getattr(self.provider, "close", None)

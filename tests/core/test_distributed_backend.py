@@ -106,3 +106,55 @@ def test_mnnvl_provider_loader_uses_external_factory(monkeypatch):
     monkeypatch.setitem(sys.modules, module.__name__, module)
     loaded = load_mnnvl_provider(module.__name__, device="cpu")
     assert loaded is provider
+
+
+def test_residual_fusion_capability_receives_full_epilogue():
+    from minisgl.distributed.impl import TorchDistributedImpl
+
+    calls = []
+    x, residual = torch.arange(2.0), torch.ones(2)
+
+    class Backend(TorchDistributedImpl):
+        def __init__(self, enabled):
+            self.enabled = enabled
+
+        def supports_all_reduce_residual(self, tensor, skip=None, *, norm=None):
+            calls.append((self.enabled, skip is residual, norm is torch.square))
+            return self.enabled and skip is residual and norm is torch.square
+
+        def all_reduce_residual(self, tensor, skip=None, *, norm=None):
+            assert self.enabled
+            return norm(tensor + 3 + skip)
+
+    backend = FallbackDistributedImpl(Backend(False), Backend(True))
+    assert backend.supports_all_reduce_residual(x, residual, norm=torch.square)
+    actual = backend.all_reduce_residual(x, residual, norm=torch.square)
+    torch.testing.assert_close(actual, torch.square(x + 3 + residual))
+    assert calls == [(False, True, True), (True, True, True)] * 2
+
+
+def test_unsupported_residual_fusion_uses_capable_reduction_then_epilogue():
+    class Provider:
+        def supports_all_reduce_residual(self, tensor, residual=None, *, norm=None):
+            return False
+
+        def all_reduce_residual(self, *args, **kwargs):
+            raise AssertionError("Unsupported fusion must not execute")
+
+        def all_reduce(self, tensor):
+            return tensor + 2
+
+        def all_gather(self, tensor):
+            return tensor
+
+    primary = MNNVLDistributedImpl(Provider())
+    backend = FallbackDistributedImpl(primary, primary)
+    x, residual = torch.arange(3.0), torch.ones(3)
+    assert not backend.supports_all_reduce_residual(x, residual, norm=torch.square)
+    expected = torch.square(x + 2 + residual)
+    torch.testing.assert_close(
+        backend.all_reduce_residual(x, residual, norm=torch.square), expected
+    )
+    torch.testing.assert_close(
+        primary.all_reduce_residual(x, residual, norm=torch.square), expected
+    )

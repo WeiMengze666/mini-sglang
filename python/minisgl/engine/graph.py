@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Dict, List
 
 import torch
 from minisgl.core import Batch, Req, get_global_ctx
-from minisgl.distributed import get_tp_info
+from minisgl.distributed import DistributedCommunicator, get_tp_info
 from minisgl.utils import init_logger
 from tqdm import tqdm
 
@@ -148,7 +148,7 @@ class GraphRunner:
                 self.buffer.set_batch(batch)
                 if locations is not None:
                     self.buffer.out_loc[:bs].copy_(locations)
-                with get_global_ctx().forward_batch(batch):
+                with DistributedCommunicator().capture(), get_global_ctx().forward_batch(batch):
                     self.buffer.logits[:bs] = model.forward()
                     with torch.cuda.graph(graph, pool=pool, stream=self.stream):
                         self.buffer.logits[:bs] = model.forward()

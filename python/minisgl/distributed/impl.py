@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
@@ -32,9 +33,7 @@ class DistributedImpl(ABC):
         """Whether this backend can gather this tensor without fallback."""
         return True
 
-    def supports_all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None
-    ) -> bool:
+    def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
         """Whether this backend can fuse reduction with a residual epilogue."""
         return False
 
@@ -48,6 +47,14 @@ class DistributedImpl(ABC):
         if residual is not None:
             result = result + residual
         return norm(result) if norm is not None else result
+
+    def capture(self):
+        """Register communication resources around a complete CUDA graph capture.
+
+        Entry precedes warm-up and capture; exit runs after CUDA capture has
+        ended, when peer-input registration may use host collectives.
+        """
+        return nullcontext()
 
     def close(self) -> None:
         """Release owned communication resources before the bootstrap group."""
@@ -84,17 +91,29 @@ class FallbackDistributedImpl(DistributedImpl):
         return backend.all_gather(x)
 
     def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
-        return self._supports(self.primary, "all_reduce_residual", x) or self._supports(
-            self.fallback, "all_reduce_residual", x
-        )
+        return self.primary.supports_all_reduce_residual(
+            x, residual, norm=norm
+        ) or self.fallback.supports_all_reduce_residual(x, residual, norm=norm)
 
     def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
-        backend = (
-            self.primary
-            if self._supports(self.primary, "all_reduce_residual", x)
-            else self.fallback
+        for backend in (self.primary, self.fallback):
+            if backend.supports_all_reduce_residual(x, residual, norm=norm):
+                return backend.all_reduce_residual(x, residual, norm=norm)
+        # A backend may reduce this tensor without covering its epilogue.
+        # Keep capability-based routing for the reduction and compose the rest.
+        return super().all_reduce_residual(x, residual, norm=norm)
+
+    @contextmanager
+    def capture(self):
+        # Either backend may serve tensors in the same graph. Both must register
+        # their inputs, and partial entry failures must unwind the first backend.
+        backends = (
+            (self.primary,) if self.primary is self.fallback else (self.primary, self.fallback)
         )
-        return backend.all_reduce_residual(x, residual, norm=norm)
+        with ExitStack() as stack:
+            for backend in backends:
+                stack.enter_context(backend.capture())
+            yield
 
     def close(self) -> None:
         self.primary.close()
@@ -156,6 +175,9 @@ class DistributedCommunicator:
 
     def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
         return self.plugins[-1].all_reduce_residual(x, residual, norm=norm)
+
+    def capture(self):
+        return self.plugins[-1].capture()
 
 
 def enable_pynccl_distributed(
