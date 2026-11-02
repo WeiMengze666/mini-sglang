@@ -112,6 +112,27 @@ The changes are therefore retained as a neutral-cost extensibility layer;
 they do not claim a fused-kernel speedup until an actual MNNVL or KDA provider
 is installed and independently measured.
 
+Phase-24 made the communication seam selectable from `EngineConfig` and the
+server CLI: `--distributed-backend mnnvl --distributed-provider MODULE` loads
+an external `create_provider(...)` factory, while `auto` preserves the existing
+PyNCCL/Torch selection. The factory receives mini's CPU and device process
+groups, device and byte budget; no vendor package is imported by the default
+path. The real official `CustomAllReduceV2` provider passed an isolated
+8-GPU adapter probe (job 583). Against NCCL it was bitwise different in BF16
+(`max_abs=0.25`, relative L2 about `0.00384`) but faster for 448 KiB/896 KiB/
+1.75 MiB messages: `33.41/41.77/42.83 us` versus
+`55.24/56.44/60.37 us` (job 584).
+
+The Kimi-K3 opt-in model run confirmed the same boundary: DCP2/EP8 CUDA Graph
+throughput was `12.785/23.550/46.137/88.619` tokens/s for batches 1/2/4/8,
+about 4.4--5.8% below the matched default baseline, and all four greedy token
+sequences differed (job 588). MNNVL is therefore an explicit performance
+backend with a documented precision boundary; it is not selected by `auto` and
+is not accepted as the strict BF16 reference. The default configuration was
+rechecked with the complete 93-layer strict gate (`max_abs=0`,
+`relative_l2=0`, greedy agreement; job 589), and the remote CPU/core/models
+regression remained at 496 passed, 260 skipped and 19 deselected cases.
+
 These paired results
 use the same released checkpoint, DCP2/EP8 layout, 64-token output boundary and
 CUDA-Graph request sizes; they are performance evidence, not new correctness

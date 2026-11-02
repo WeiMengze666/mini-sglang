@@ -179,6 +179,18 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         dest="use_pynccl",
         help="Disable PyNCCL for tensor parallelism.",
     )
+    parser.add_argument(
+        "--distributed-backend",
+        choices=["auto", "torch", "pynccl", "mnnvl"],
+        default=ServerArgs.distributed_backend,
+        help="Tensor-parallel communication backend. mnnvl loads an external provider factory.",
+    )
+    parser.add_argument(
+        "--distributed-provider",
+        type=str,
+        default=ServerArgs.distributed_provider,
+        help="Python module exposing create_provider for the mnnvl backend.",
+    )
 
     parser.add_argument(
         "--host",

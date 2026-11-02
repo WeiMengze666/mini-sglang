@@ -6,7 +6,13 @@ from typing import Any, Dict, Iterator, NamedTuple, Tuple
 import torch
 from minisgl.attention import SUPPORTED_ATTENTION_BACKENDS, create_attention_backend
 from minisgl.core import Batch, Context, Req, set_global_ctx
-from minisgl.distributed import destroy_distributed, enable_pynccl_distributed, set_tp_info
+from minisgl.distributed import (
+    destroy_distributed,
+    enable_mnnvl_distributed,
+    enable_pynccl_distributed,
+    load_mnnvl_provider,
+    set_tp_info,
+)
 from minisgl.distributed.context import init_context_parallel
 from minisgl.distributed.layout import ParallelLayout, configure_parallel
 from minisgl.kvcache import create_kvcache_pool
@@ -148,7 +154,10 @@ class Engine:
         )
 
     def _init_communication(self, config: EngineConfig) -> torch.distributed.ProcessGroup:
-        if config.tp_info.size == 1 or config.use_pynccl:
+        backend = config.distributed_backend
+        if backend == "auto":
+            backend = "pynccl" if config.tp_info.size == 1 or config.use_pynccl else "torch"
+        if backend == "pynccl":
             torch.distributed.init_process_group(
                 backend="gloo",
                 rank=config.tp_info.rank,
@@ -162,7 +171,32 @@ class Engine:
                 config.max_forward_len * config.model_config.hidden_size * self.dtype.itemsize
             )
             enable_pynccl_distributed(config.tp_info, tp_cpu_group, max_bytes)
-        else:
+            return tp_cpu_group
+        if backend == "mnnvl":
+            torch.distributed.init_process_group(
+                backend="gloo",
+                rank=config.tp_info.rank,
+                world_size=config.tp_info.size,
+                timeout=timedelta(seconds=config.distributed_timeout),
+                init_method=config.distributed_addr,
+            )
+            tp_cpu_group = torch.distributed.group.WORLD
+            assert tp_cpu_group is not None
+            device_group = torch.distributed.new_group(backend="nccl")
+            max_bytes = (
+                config.max_forward_len * config.model_config.hidden_size * self.dtype.itemsize
+            )
+            provider = load_mnnvl_provider(
+                config.distributed_provider,
+                tp_info=config.tp_info,
+                cpu_group=tp_cpu_group,
+                device_group=device_group,
+                device=self.device,
+                max_bytes=max_bytes,
+            )
+            enable_mnnvl_distributed(provider)
+            return tp_cpu_group
+        if backend == "torch":
             torch.distributed.init_process_group(
                 backend="nccl",
                 rank=config.tp_info.rank,
@@ -172,7 +206,8 @@ class Engine:
             )
             tp_cpu_group = torch.distributed.new_group(backend="gloo")
             assert tp_cpu_group is not None
-        return tp_cpu_group
+            return tp_cpu_group
+        raise ValueError(f"Unsupported distributed backend: {backend}")
 
     def _check_capacity(self, free_memory: int, config: EngineConfig) -> None:
         """Reject an impossible rank before downloading or materializing weights.
@@ -351,6 +386,10 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("mxfp4_backend must be torch, triton or flashinfer")
     if config.mxfp4_activation_precision not in ("bf16", "mxfp8"):
         raise ValueError("mxfp4_activation_precision must be bf16 or mxfp8")
+    if config.distributed_backend not in ("auto", "torch", "pynccl", "mnnvl"):
+        raise ValueError("distributed_backend must be auto, torch, pynccl or mnnvl")
+    if config.distributed_backend == "mnnvl" and not config.distributed_provider:
+        raise ValueError("distributed_provider is required for the mnnvl backend")
     resolve_bf16_precision(config.bf16_precision, config.attention_backend)
     ParallelLayout(config.tp_info.rank, config.tp_info.size, config.dcp_size, config.ep_size)
     if config.dcp_size > 1 and config.model_config.cache_config is None:

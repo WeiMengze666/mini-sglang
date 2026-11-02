@@ -4,7 +4,11 @@ from types import SimpleNamespace
 
 import torch
 from minisgl.distributed import FallbackDistributedImpl
-from minisgl.distributed.mnnvl import MNNVLAllReduceProvider, MNNVLDistributedImpl
+from minisgl.distributed.mnnvl import (
+    MNNVLAllReduceProvider,
+    MNNVLDistributedImpl,
+    load_mnnvl_provider,
+)
 
 
 def test_fallback_backend_selects_by_tensor_capability():
@@ -90,3 +94,15 @@ def test_mnnvl_custom_allreduce_provider_uses_external_collective(monkeypatch):
         raise AssertionError("Torch fallback must not run for supported input")
 
     monkeypatch.setattr("torch.distributed.all_reduce", unexpected)
+
+
+def test_mnnvl_provider_loader_uses_external_factory(monkeypatch):
+    import sys
+    import types
+
+    provider = types.SimpleNamespace(all_reduce=lambda x: x, all_gather=lambda x: x)
+    module = types.ModuleType("test_mnnvl_provider")
+    module.create_provider = lambda **kwargs: provider
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    loaded = load_mnnvl_provider(module.__name__, device="cpu")
+    assert loaded is provider

@@ -11,6 +11,7 @@ from .mnnvl import (
     MNNVLDistributedImpl,
     MNNVLProvider,
     enable_mnnvl_distributed,
+    load_mnnvl_provider,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "MNNVLAllReduceProvider",
     "MNNVLProvider",
     "enable_mnnvl_distributed",
+    "load_mnnvl_provider",
 ]

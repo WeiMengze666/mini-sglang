@@ -8,6 +8,7 @@ implementations self-contained and portable.
 
 from __future__ import annotations
 
+import importlib
 from typing import Protocol
 
 import torch
@@ -103,9 +104,32 @@ def enable_mnnvl_distributed(provider: MNNVLProvider) -> MNNVLDistributedImpl:
     return backend
 
 
+def load_mnnvl_provider(module_name: str, **kwargs) -> MNNVLProvider:
+    """Load an external provider factory without importing a vendor runtime.
+
+    The factory receives the process groups, device and byte budget selected by
+    mini.  It may construct a vendor communicator and return any object that
+    implements :class:`MNNVLProvider`.
+    """
+
+    if not module_name:
+        raise ValueError("An MNNVL provider module is required for the mnnvl backend")
+    module = importlib.import_module(module_name)
+    factory = getattr(module, "create_provider", None)
+    if factory is None:
+        raise AttributeError(f"MNNVL provider module {module_name!r} lacks create_provider")
+    provider = factory(**kwargs)
+    if not callable(getattr(provider, "all_reduce", None)) or not callable(
+        getattr(provider, "all_gather", None)
+    ):
+        raise TypeError("MNNVL provider must implement all_reduce and all_gather")
+    return provider
+
+
 __all__ = [
     "MNNVLAllReduceProvider",
     "MNNVLDistributedImpl",
     "MNNVLProvider",
     "enable_mnnvl_distributed",
+    "load_mnnvl_provider",
 ]
