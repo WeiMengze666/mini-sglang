@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+import torch
 from minisgl.utils import Registry
 
 if TYPE_CHECKING:
-    import torch
     from minisgl.models import ModelConfig
 
 from .base import (
@@ -34,6 +34,8 @@ def create_kvcache_pool(
     max_cached_states: int = 0,
     unified_memory: bool = False,
     enable_cache_overlap: bool = False,
+    *,
+    state_dtype: torch.dtype = torch.float32,
 ) -> BaseKVCachePool:
     if model_config.cache_config is not None:
         from .hybrid_pool import HybridCache
@@ -50,6 +52,7 @@ def create_kvcache_pool(
             max_cached_states=max_cached_states,
             unified_memory=unified_memory,
             enable_cache_overlap=enable_cache_overlap,
+            state_dtype=state_dtype,
         )
 
     from .mha_pool import MHAKVCache

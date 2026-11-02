@@ -27,19 +27,24 @@ class RecurrentStatePool:
         max_cached_states=0,
         arena=None,
         max_staged_states=0,
+        *,
+        state_dtype=torch.float32,
     ):
+        if state_dtype not in (torch.float32, torch.bfloat16):
+            raise ValueError("Recurrent state storage supports float32 or bfloat16")
         self._layers = {layer: i for i, layer in enumerate(layer_ids)}
         self.capacity = capacity
         self.arena = arena
         self._recurrent_shape = (len(self._layers), heads, dim, dim)
         self._conv_shape = (len(self._layers), 3, heads * dim, conv_kernel_size - 1)
-        self._dtype = dtype
+        self._conv_dtype = dtype
+        self._state_dtype = state_dtype
         self._recurrent = (
             None
             if arena is not None
             else torch.zeros(
                 (len(self._layers), capacity, heads, dim, dim),
-                dtype=torch.float32,
+                dtype=state_dtype,
                 device=device,
             )
         )
@@ -67,14 +72,24 @@ class RecurrentStatePool:
         self.max_staged_states = max_staged_states
         self._staged: set[int] = set()
 
+    @property
+    def conv_dtype(self):
+        return self._conv_dtype
+
+    @property
+    def state_dtype(self):
+        return self._state_dtype
+
     def _views(self, key):
         return self._decode_views(self.arena.state_view(key))
 
     def _decode_views(self, data):
-        count = prod(self._recurrent_shape)
-        recurrent = data[: count * 4].view(torch.float32).view(self._recurrent_shape)
-        conv_bytes = prod(self._conv_shape) * self._dtype.itemsize
-        conv = data[count * 4 : count * 4 + conv_bytes].view(self._dtype).view(self._conv_shape)
+        recurrent_bytes = prod(self._recurrent_shape) * self.state_dtype.itemsize
+        recurrent = data[:recurrent_bytes].view(self.state_dtype).view(self._recurrent_shape)
+        conv_bytes = prod(self._conv_shape) * self.conv_dtype.itemsize
+        # Both slot ends are aligned, including mixed dtypes and empty history.
+        conv = data[data.numel() - conv_bytes :].view(self.conv_dtype)
+        conv = conv.view(self._conv_shape)
         return conv, recurrent
 
     def _working(self, table_idx):
@@ -270,4 +285,4 @@ class RecurrentStatePool:
 
     def set_kda_batch(self, layer_id, indices, state):
         for target, value in zip(self._batched_layer(layer_id), state):
-            target.index_copy_(0, indices, value)
+            target.index_copy_(0, indices, value.to(dtype=target.dtype))

@@ -133,6 +133,12 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--recurrent-state-dtype",
+        choices=["float32", "bfloat16"],
+        default=str(ServerArgs.recurrent_state_dtype).removeprefix("torch."),
+        help="Persistent recurrent state storage, independent of model/KV dtype.",
+    )
+    parser.add_argument(
         "--max-cached-states",
         type=int,
         default=ServerArgs.max_cached_states,
@@ -341,6 +347,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         "float32": torch.float32,
     }
     kwargs["dtype"] = DTYPE_MAP[dtype_str] if isinstance(dtype_str, str) else dtype_str
+    kwargs["recurrent_state_dtype"] = DTYPE_MAP[kwargs["recurrent_state_dtype"]]
     kwargs["tp_info"] = DistributedInfo(0, kwargs["tensor_parallel_size"])
     del kwargs["tensor_parallel_size"]
 

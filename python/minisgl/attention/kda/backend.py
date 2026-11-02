@@ -67,7 +67,8 @@ class KDAAttentionBackend(BaseAttnBackend):
 
     def init_capture_graph(self, max_seq_len, bs_list):
         if bs_list and (
-            self.kvcache.dtype != torch.bfloat16 or self.config.cache_config.head_dim != 128
+            self.kvcache.recurrent.conv_dtype != torch.bfloat16
+            or self.config.cache_config.head_dim != 128
         ):
             raise ValueError("KDA graph decode supports BF16 and head_dim=128")
         self._graph_sizes = set(bs_list)

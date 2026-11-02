@@ -32,6 +32,8 @@ class HybridCache(BaseKVCachePool):
         max_cached_states: int = 0,
         unified_memory: bool = False,
         enable_cache_overlap: bool = False,
+        *,
+        state_dtype: torch.dtype = torch.float32,
     ):
         if min(num_pages, page_size, max_running_req) <= 0:
             raise ValueError("Hybrid cache capacities must be positive")
@@ -53,7 +55,7 @@ class HybridCache(BaseKVCachePool):
             self.arena = UnifiedMemory(
                 num_pages,
                 config.cache_bytes_per_page(dtype, page_size),
-                config.state_bytes_per_request(dtype),
+                config.state_bytes_per_request(dtype, state_dtype=state_dtype),
                 device,
             )
         self.mla = MLACache(
@@ -77,6 +79,7 @@ class HybridCache(BaseKVCachePool):
             max_cached_states=max_cached_states,
             arena=self.arena,
             max_staged_states=max_running_req if enable_cache_overlap and max_cached_states else 0,
+            state_dtype=state_dtype,
         )
 
     def stage_state(self, table_idx, uid, length):

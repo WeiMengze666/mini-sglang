@@ -27,7 +27,7 @@ def recurrent_kda(q, k, v, forget, beta_logits, a_log, dt_bias, state, lower_bou
     # FlashInfer stores V,K while the portable recurrence stores K,V. Never
     # reinterpret the same square matrix without exchanging its semantic axes.
     initial = (
-        state.transpose(-1, -2).contiguous().unsqueeze(0)
+        state.float().transpose(-1, -2).contiguous().unsqueeze(0)
         if state is not None
         else torch.zeros(
             (1, q.shape[1], v.shape[-1], q.shape[-1]), dtype=torch.float32, device=q.device

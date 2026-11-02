@@ -43,7 +43,7 @@ def config(backend, graphs):
         cuda_graph_bs=[1] if graphs else [],
     )
     value.__dict__["model_config"] = SimpleNamespace(
-        cache_config=SimpleNamespace(state_bytes_per_request=lambda *args: 0),
+        cache_config=SimpleNamespace(state_bytes_per_request=lambda *args, **kwargs: 0),
         num_qo_heads=8,
         has_recurrent_state=True,
         is_moe=False,

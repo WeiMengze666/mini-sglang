@@ -34,7 +34,14 @@ class HybridCacheConfig:
         local_tokens = local_size(page_size, get_parallel_layout().dcp_size, "MLA page size")
         return local_tokens * self.cache_bytes_per_token(dtype)
 
-    def state_bytes_per_request(self, dtype: torch.dtype, tp_size: int | None = None) -> int:
+    def state_bytes_per_request(
+        self,
+        dtype: torch.dtype,
+        tp_size: int | None = None,
+        *,
+        state_dtype: torch.dtype = torch.float32,
+    ) -> int:
+        """Count persistent state bytes; dtype describes convolution history."""
         if not self.recurrent_layers:
             return 0
         heads = local_size(
@@ -42,5 +49,6 @@ class HybridCacheConfig:
         )
         dim = self.head_dim
         return len(self.recurrent_layers) * (
-            heads * dim * dim * 4 + 3 * heads * dim * (self.conv_kernel_size - 1) * dtype.itemsize
+            heads * dim * dim * state_dtype.itemsize
+            + 3 * heads * dim * (self.conv_kernel_size - 1) * dtype.itemsize
         )

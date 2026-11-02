@@ -77,7 +77,8 @@ def test_engine_stream_only_casts_floating_parameters(monkeypatch):
     assert result["layers.0.scale"] is raw[1][1]
 
 
-def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
+@pytest.mark.parametrize("state_dtype", [torch.float32, torch.bfloat16])
+def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch, state_dtype):
     import minisgl.engine.engine as engine_module
 
     pool = SimpleNamespace(cache_bytes_per_page=None, state_bytes_per_request=None)
@@ -90,22 +91,27 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
     seen = []
     monkeypatch.setattr(pool, "cache_bytes_per_page", lambda dtype, page_size: 4 * page_size)
     monkeypatch.setattr(
-        pool, "state_bytes_per_request", lambda *args, tp_size: seen.append(tp_size) or 16
+        pool,
+        "state_bytes_per_request",
+        lambda *args, tp_size, state_dtype: (
+            seen.append((tp_size, state_dtype)) or 4 * state_dtype.itemsize
+        ),
     )
     config = SimpleNamespace(
         model_config=SimpleNamespace(cache_config=pool),
         max_running_req=2,
         state_slot_budget=2,
+        recurrent_state_dtype=state_dtype,
         tp_info=SimpleNamespace(rank=0, size=2),
         page_size=2,
         memory_ratio=0.9,
         num_page_override=None,
     )
-    # 52 weight bytes +32 state +24 cache =108, budget90.
+    # 52 weight bytes + two state slots + 24 cache exceed the 90-byte budget.
     with pytest.raises(MemoryError, match="before|needs at least"):
         engine._check_capacity(100, config)
     engine._check_capacity(1000, config)
-    assert seen == [2, 2]
+    assert seen == [(2, state_dtype), (2, state_dtype)]
 
 
 @pytest.mark.parametrize(
@@ -118,13 +124,18 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch):
         ((100000,), (60000,), (1000,), 0.9),
     ],
 )
-def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, fixed, ratio):
+@pytest.mark.parametrize("state_dtype", [torch.float32, torch.bfloat16])
+def test_kimi_capacity_reduces_paired_rank_budgets(
+    monkeypatch, before, after, fixed, ratio, state_dtype
+):
     import minisgl.engine.engine as module
 
     pool = SimpleNamespace(cache_bytes_per_page=None, state_bytes_per_request=None)
 
     unit = 1024**2
-    before, after, fixed = [tuple(v * unit for v in values) for values in (before, after, fixed)]
+    before, after = [tuple(v * unit for v in values) for values in (before, after)]
+    fixed = tuple(v * unit * state_dtype.itemsize // 4 for v in fixed)
+    expected_state_dtype = state_dtype
     budgets = [
         int(ratio * old) - (old - new) - state for old, new, state in zip(before, after, fixed)
     ]
@@ -145,7 +156,12 @@ def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, f
             return min(after), max(after)
 
         engine._sync_get_memory = snapshot
-        monkeypatch.setattr(pool, "state_bytes_per_request", lambda *args, **kwargs: fixed[rank])
+
+        def state_bytes(dtype, *, tp_size, state_dtype):
+            assert state_dtype == expected_state_dtype and tp_size == len(before)
+            return fixed[rank]
+
+        monkeypatch.setattr(pool, "state_bytes_per_request", state_bytes)
 
         def reduce_budget(tensor, op, group):
             assert tensor.device.type == "cpu" and tensor.dtype == torch.int64
@@ -163,6 +179,7 @@ def test_kimi_capacity_reduces_paired_rank_budgets(monkeypatch, before, after, f
             page_size=1,
             max_running_req=1,
             state_slot_budget=1,
+            recurrent_state_dtype=state_dtype,
             num_page_override=None,
             memory_ratio=ratio,
         )

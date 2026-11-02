@@ -60,9 +60,19 @@ gate. The serving target above requires a separate correctness gate using its
 actual precision choices before performance acceptance. Changes to the
 reference command or environment must be reported explicitly.
 
-Mini still needs explicit KV-format and recurrent-state storage precision
-support and validation for this profile. Existing FP32 state storage and
-model-dtype KV storage do not establish equivalence.
+Mini exposes `--recurrent-state-dtype float32|bfloat16` for persistent state,
+independent of the model/convolution dtype. The default remains FP32. Built-in
+adapters use FP32 working state and the pool rounds at commit; checkpoints
+retain the selected storage dtype. CPU tests cover allocation, memory budgets,
+mixed-dtype alignment, batch remapping, and checkpoint restore in both pool
+layouts. GPU integration tests also cover BF16/FP32 state commits, actual KDA
+layer graph replay, and request-index remapping after arena compaction
+(48 cases across eight GPUs, compared with the same Mini eager kernels).
+This is an operator/state integration check; full-profile official numerical
+and serving acceptance remain pending.
+
+Explicit FP8 KV-format support and full-profile precision validation remain
+unfinished. The state-storage option alone does not establish equivalence.
 
 ## Measurement boundary
 

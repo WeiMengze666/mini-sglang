@@ -26,6 +26,7 @@ class EngineConfig:
     max_cached_states: int = 8
     enable_unified_memory: bool = False
     enable_cache_overlap: bool = False
+    recurrent_state_dtype: torch.dtype = torch.float32
     attention_backend: str = "auto"
     moe_backend: str = "auto"
     cuda_graph_bs: List[int] | None = None

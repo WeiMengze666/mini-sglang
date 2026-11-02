@@ -114,6 +114,7 @@ class Engine:
             ),
             unified_memory=config.enable_unified_memory,
             enable_cache_overlap=config.enable_cache_overlap,
+            state_dtype=config.recurrent_state_dtype,
         )
 
         # ======================= Page table initialization ========================
@@ -230,7 +231,7 @@ class Engine:
         weights = sum(t.numel() * t.element_size() for t in self.model.state_dict().values())
         state_slots = config.state_slot_budget
         fixed = state_slots * layout.state_bytes_per_request(
-            self.dtype, tp_size=config.tp_info.size
+            self.dtype, tp_size=config.tp_info.size, state_dtype=config.recurrent_state_dtype
         )
         # Two usable pages plus the dummy page are the minimum engine allocation.
         pages = (config.num_page_override or 2) + 1
@@ -297,7 +298,7 @@ class Engine:
             cache_per_page = layout.cache_bytes_per_page(self.dtype, config.page_size)
             state_slots = config.state_slot_budget
             fixed_state = state_slots * layout.state_bytes_per_request(
-                self.dtype, tp_size=config.tp_info.size
+                self.dtype, tp_size=config.tp_info.size, state_dtype=config.recurrent_state_dtype
             )
             if getattr(config, "enable_unified_memory", False):
                 from minisgl.kvcache.unified import align_bytes
@@ -391,6 +392,8 @@ def _adjust_config(config: EngineConfig):
     def override(attr: str, value: Any):  # this is dangerous, use with caution
         object.__setattr__(config, attr, value)
 
+    if config.recurrent_state_dtype not in (torch.float32, torch.bfloat16):
+        raise ValueError("Recurrent state storage supports float32 or bfloat16")
     if config.max_cached_states < 0:
         raise ValueError("max_cached_states cannot be negative")
     if config.mxfp4_backend not in ("torch", "triton", "flashinfer"):
@@ -418,7 +421,9 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("Unified memory requires a hybrid recurrent/token cache")
 
     if config.model_config.cache_config is not None:
-        config.model_config.cache_config.state_bytes_per_request(config.dtype, config.tp_info.size)
+        config.model_config.cache_config.state_bytes_per_request(
+            config.dtype, config.tp_info.size, state_dtype=config.recurrent_state_dtype
+        )
         if config.model_config.num_qo_heads % config.tp_info.size:
             raise ValueError("MLA heads must be divisible by TP size")
         if config.attention_backend == "auto":
