@@ -277,7 +277,7 @@ def main():
     parser.add_argument("--ep-size", type=int, default=1)
     parser.add_argument("--packed", action="store_true")
     parser.add_argument("--mxfp4-backend", choices=["torch", "triton"], default="torch")
-    parser.add_argument("--attention-backend", default="recurrent")
+    parser.add_argument("--attention-backend", default="torch")
     parser.add_argument("--cuda-graph-max-bs", type=int)
     parser.add_argument("--enable-cache-overlap", action="store_true")
     args = parser.parse_args()

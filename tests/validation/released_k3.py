@@ -35,7 +35,8 @@ def main():
     parser.add_argument("--unified-memory", action="store_true")
     parser.add_argument("--num-pages", type=int, default=512)
     parser.add_argument("--mxfp4-backend", choices=["torch", "triton"], default="torch")
-    parser.add_argument("--attention-backend", type=validate_attn_backend, default="recurrent")
+    parser.add_argument("--attention-backend", type=validate_attn_backend, default="torch")
+    parser.add_argument("--bf16-precision", choices=["auto", "default", "strict"], default="auto")
     parser.add_argument("--reference-logits", type=Path)
     parser.add_argument("--prompt", default="请只回答：你好。")
     args = parser.parse_args()
@@ -60,6 +61,7 @@ def main():
             enable_unified_memory=args.unified_memory,
             mxfp4_backend=args.mxfp4_backend,
             attention_backend=args.attention_backend,
+            bf16_precision=args.bf16_precision,
             max_running_req=2,
             max_seq_len_override=256,
             num_page_override=args.num_pages,
