@@ -7,8 +7,7 @@ import torch
 from minisgl.attention import (
     SUPPORTED_ATTENTION_BACKENDS,
     create_attention_backend,
-    get_kda_kernel,
-    load_kda_provider,
+    load_attention_provider,
 )
 from minisgl.core import Batch, Context, Req, set_global_ctx
 from minisgl.distributed import (
@@ -45,6 +44,8 @@ class Engine:
         assert not torch.cuda.is_initialized()
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         configure_parallel(dcp_size=config.dcp_size, ep_size=config.ep_size)
+        if config.attention_provider is not None:
+            load_attention_provider(config.attention_provider)
         _adjust_config(config)
 
         self.device = torch.device(f"cuda:{config.tp_info.rank}")
@@ -54,14 +55,7 @@ class Engine:
         torch.cuda.set_stream(self.stream)
         self.dtype = config.dtype
         self.ctx = Context(config.page_size)
-        self.ctx.bf16_precision = resolve_bf16_precision(
-            config.bf16_precision, config.attention_backend
-        )
-        if config.kda_provider is not None:
-            load_kda_provider(config.kda_provider)
-        if config.kda_implementation != "auto":
-            get_kda_kernel(config.kda_implementation)
-        self.ctx.kda_implementation = config.kda_implementation
+        self.ctx.bf16_precision = resolve_bf16_precision(config.bf16_precision)
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
@@ -81,7 +75,13 @@ class Engine:
         from minisgl.quantization.mxfp4 import MXFP4Linear
 
         self.model.apply(
-            lambda op: op.set_backend(config.mxfp4_backend, activation_precision=config.mxfp4_activation_precision) if isinstance(op, MXFP4Linear) else None
+            lambda op: (
+                op.set_backend(
+                    config.mxfp4_backend, activation_precision=config.mxfp4_activation_precision
+                )
+                if isinstance(op, MXFP4Linear)
+                else None
+            )
         )
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
@@ -400,11 +400,7 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("distributed_backend must be auto, torch, pynccl or mnnvl")
     if config.distributed_backend == "mnnvl" and not config.distributed_provider:
         raise ValueError("distributed_provider is required for the mnnvl backend")
-    if config.kda_implementation == "auto" and config.kda_provider is not None:
-        raise ValueError(
-            "kda_implementation must name a registered backend when kda_provider is set"
-        )
-    resolve_bf16_precision(config.bf16_precision, config.attention_backend)
+    resolve_bf16_precision(config.bf16_precision)
     ParallelLayout(config.tp_info.rank, config.tp_info.size, config.dcp_size, config.ep_size)
     if config.dcp_size > 1 and config.model_config.cache_config is None:
         raise ValueError("DCP requires a context-sharded attention/cache implementation")
@@ -423,7 +419,7 @@ def _adjust_config(config: EngineConfig):
         if config.model_config.num_qo_heads % config.tp_info.size:
             raise ValueError("MLA heads must be divisible by TP size")
         if config.attention_backend == "auto":
-            override("attention_backend", "recurrent")
+            override("attention_backend", "torch")
         backends = [
             SUPPORTED_ATTENTION_BACKENDS[name] for name in config.attention_backend.split(",")
         ]

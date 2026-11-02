@@ -28,7 +28,7 @@ def fixture(root, args):
         config.linear_attn_config["head_dim"] = 32
         config.v_head_dim = 32
         config.intermediate_size = config.moe_intermediate_size = 32 * args.tp_size
-    if args.attention_backend.split(",")[-1] == "recurrent-fi":
+    if args.attention_backend.split(",")[-1] == "fi":
         config.hidden_size = config.routed_expert_hidden_size = 128
         config.q_lora_rank = 32
         config.kv_lora_rank, config.qk_nope_head_dim = 512, 192

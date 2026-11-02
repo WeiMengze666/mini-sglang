@@ -48,6 +48,9 @@ class ModelConfig:
     def has_recurrent_state(self) -> bool:
         return self.cache_config is not None and bool(self.cache_config.recurrent_layers)
 
+    def is_kda_layer(self, layer_id: int) -> bool:
+        return self.cache_config is not None and layer_id in self.cache_config.recurrent_layers
+
     @classmethod
     def from_hf(cls, config: PretrainedConfig) -> ModelConfig:
         if hasattr(config, "text_config") and config.text_config is not None:

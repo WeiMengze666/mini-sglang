@@ -121,7 +121,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         "--bf16-precision",
         choices=["auto", "default", "strict"],
         default=ServerArgs.bf16_precision,
-        help="BF16 arithmetic policy: auto selects strict kernels for recurrent-fi-triton.",
+        help="BF16 arithmetic policy: strict preserves reference rounding in attention and layers.",
     )
 
     parser.add_argument(
@@ -192,16 +192,10 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         help="Python module exposing create_provider for the mnnvl backend.",
     )
     parser.add_argument(
-        "--kda-implementation",
+        "--attention-provider",
         type=str,
-        default=ServerArgs.kda_implementation,
-        help="Registered KDA recurrence/decode backend; auto keeps the selected portable path.",
-    )
-    parser.add_argument(
-        "--kda-provider",
-        type=str,
-        default=ServerArgs.kda_provider,
-        help="Python module exposing register_kda_kernels for an external KDA backend.",
+        default=ServerArgs.attention_provider,
+        help="Optional module exposing register_attention_backends.",
     )
 
     parser.add_argument(
@@ -271,7 +265,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     parser.add_argument(
         "--attention-backend",
         "--attn",
-        type=validate_attn_backend,
+        type=str,
         default=ServerArgs.attention_backend,
         help="The attention backend to use. If two backends are specified,"
         " the first one is used for prefill and the second one for decode.",
@@ -308,6 +302,12 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     # Parse arguments
     kwargs = parser.parse_args(args).__dict__.copy()
+
+    if kwargs["attention_provider"] is not None:
+        from minisgl.attention import load_attention_provider
+
+        load_attention_provider(kwargs["attention_provider"])
+    validate_attn_backend(kwargs["attention_backend"])
 
     # resolve some arguments
     run_shell |= kwargs.pop("shell_mode")

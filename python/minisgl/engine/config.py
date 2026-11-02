@@ -37,8 +37,7 @@ class EngineConfig:
     use_pynccl: bool = True
     distributed_backend: str = "auto"
     distributed_provider: str | None = None
-    kda_implementation: str = "auto"
-    kda_provider: str | None = None
+    attention_provider: str | None = None
     max_seq_len_override: int | None = None
     num_page_override: int | None = None  # if not None, will override the number of pages
 

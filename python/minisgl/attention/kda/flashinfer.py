@@ -7,13 +7,13 @@ def recurrent_kda(q, k, v, forget, beta_logits, a_log, dt_bias, state, lower_bou
     if q.shape[0] == 1:
         # The small-BH public FI decode route stores BF16 state. Use our native
         # K,V recurrence so decode preserves the FP32 checkpoint contract.
-        from .kda_kernel import decode_kda
+        from .triton import decode_kda
 
         return decode_kda(q, k, v, forget, beta_logits, a_log, dt_bias, state, lower_bound)
     if lower_bound is None:
         # FI's unbounded prefill portfolio currently requires BF16 state.
         # Keep the portable FP32 contract for this unsupported combination.
-        from .kda import kda_log_decay, kda_recurrence
+        from .reference import kda_log_decay, kda_recurrence
 
         decay = kda_log_decay(forget, a_log, dt_bias)
         return kda_recurrence(q, k, v, decay, beta_logits.float().sigmoid(), state)

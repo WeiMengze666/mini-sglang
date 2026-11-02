@@ -6,7 +6,8 @@ import pytest
 import torch
 from minisgl.attention.config import KDAConfig
 from minisgl.attention.kda import KDAState, kda_log_decay, kda_recurrence
-from minisgl.attention.kda_fi import recurrent_kda
+from minisgl.attention.kda.flashinfer import recurrent_kda
+from minisgl.attention.kda.registry import get_kda_kernel
 from minisgl.layers.kda import KDALayer
 
 pytestmark = pytest.mark.skipif(
@@ -80,7 +81,7 @@ def test_batched_native_decode_keeps_request_states_separate(batch, bound):
         torch.randn(batch, 2, 128, 128, device="cuda") * 0.02,
     )
     saved = KDAState(*(part.clone() for part in initial))
-    output, final = layer.update(*projected, initial, implementation="flashinfer")
+    output, final = layer.update(*projected, initial, kernel=get_kda_kernel("flashinfer"))
     for index in range(batch):
         expected, state = layer.update(
             *(part[index] for part in projected),

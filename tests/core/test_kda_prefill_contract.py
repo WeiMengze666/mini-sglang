@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 from minisgl.attention.kda import kda_log_decay, kda_recurrence
-from minisgl.attention.kda_fi import recurrent_kda
+from minisgl.attention.kda.flashinfer import recurrent_kda
 
 
 @pytest.mark.parametrize("offset", [0, 1])
@@ -48,3 +48,25 @@ def test_native_prefill_preserves_fp32_state_and_aligns_contiguous_slices(monkey
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     torch.testing.assert_close(final, state, rtol=0, atol=0)
     torch.testing.assert_close(initial, saved, rtol=0, atol=0)
+
+
+def test_unbounded_prefill_uses_portable_fp32_state():
+    from minisgl.attention.kda.registry import get_kda_kernel
+
+    torch.manual_seed(17)
+    q, k, v, forget = [torch.randn(3, 2, 8) for _ in range(4)]
+    args = (
+        q,
+        k,
+        v,
+        forget,
+        torch.randn(3, 2),
+        torch.randn(2),
+        torch.randn(16),
+        torch.randn(2, 8, 8),
+        None,
+    )
+    actual = recurrent_kda(*args)
+    expected = get_kda_kernel("torch").recurrence(*args)
+    for a, b in zip(actual, expected):
+        torch.testing.assert_close(a, b, rtol=0, atol=0)

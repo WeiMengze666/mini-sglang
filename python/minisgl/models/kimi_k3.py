@@ -43,10 +43,7 @@ class KimiDecoderLayer(BaseOP):
             self.mlp_res_proj = Linear(config.hidden_size, 1)
 
     def _attention(self, x, batch, cache, page_table, backend=None):
-        from minisgl.attention.recurrent import forward_layer
-
-        run = backend.forward_layer if backend is not None else forward_layer
-        return run(self.self_attn, self._layer_id, x, batch, cache, page_table)
+        return backend.forward_layer(self.self_attn, self._layer_id, x, batch, cache, page_table)
 
     def forward(self, head, bank, batch, cache, page_table, backend=None):
         if self._block_size is None:
@@ -91,6 +88,7 @@ class KimiModel(BaseOP):
 
 class KimiK3LinearForCausalLM(BaseLLMModel):
     def __init__(self, config):
+        self._config = config
         text = config.hf_config
         self._tp = TensorParallel()
         layout = get_parallel_layout()
@@ -125,6 +123,11 @@ class KimiK3LinearForCausalLM(BaseLLMModel):
         real_tokens = sum(req.extend_len for req in batch.reqs)
         if len(batch.input_ids) < real_tokens or len(batch.positions) < real_tokens:
             raise ValueError("Batch tensors do not cover the real token rows")
+        if backend is None:
+            from minisgl.attention import create_torch_backend
+
+            backend = create_torch_backend(self._config, cache=cache)
+            backend.prepare_metadata(batch)
         hidden = self.model.forward(
             batch.input_ids[:real_tokens], batch, cache, page_table, backend
         )

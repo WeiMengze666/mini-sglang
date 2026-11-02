@@ -41,7 +41,9 @@ def test_cpu_rms_and_residual_helpers_match_reference():
     proj = type("Projection", (), {"weight": torch.randn(1, 8, dtype=torch.bfloat16)})()
     rows = torch.stack([*bank, head], dim=1).float()
     scores = F.linear(
-        rows * torch.rsqrt(rows.square().mean(-1, keepdim=True) + residual_norm.eps) * residual_norm.weight.float(),
+        rows
+        * torch.rsqrt(rows.square().mean(-1, keepdim=True) + residual_norm.eps)
+        * residual_norm.weight.float(),
         proj.weight.float(),
     ).squeeze(-1)
     expected_residual = (scores.softmax(1).unsqueeze(-1) * rows).sum(1).to(head.dtype)
@@ -53,5 +55,5 @@ def test_cpu_rms_and_residual_helpers_match_reference():
     )
 
 
-def test_recurrent_fi_triton_backend_is_registered():
-    assert "recurrent-fi-triton" in SUPPORTED_ATTENTION_BACKENDS.supported_names()
+def test_flashinfer_supports_hybrid_attention():
+    assert SUPPORTED_ATTENTION_BACKENDS["fi"].stateful_layers

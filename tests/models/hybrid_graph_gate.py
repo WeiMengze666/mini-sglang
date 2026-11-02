@@ -51,7 +51,7 @@ def main():
             torch.bfloat16,
             dcp_size=2,
             ep_size=world,
-            attention_backend="recurrent-fi",
+            attention_backend="fi",
             mxfp4_backend="triton",
             cuda_graph_bs=[1, 2, 4],
             max_running_req=8,

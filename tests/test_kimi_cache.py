@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from minisgl.attention.recurrent import RecurrentAttentionBackend
+from minisgl.attention import create_torch_backend
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.models.kimi_config import cache_bytes_per_token, cache_config, state_bytes_per_request
 
@@ -101,7 +101,10 @@ def test_metadata_only_uses_real_requests_and_portable_graphs_rejected(monkeypat
     ctx = core.Context(page_size=4)
     ctx.kv_cache = pool()
     monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
-    backend = RecurrentAttentionBackend(None)
+    backend = create_torch_backend(
+        SimpleNamespace(cache_config=cache_config(config()), is_kda_layer=lambda i: i != 1),
+        cache=ctx.kv_cache,
+    )
     batch = SimpleNamespace(
         reqs=[SimpleNamespace(extend_len=3), SimpleNamespace(extend_len=2)],
         padded_reqs=[SimpleNamespace(extend_len=999)],
@@ -112,7 +115,7 @@ def test_metadata_only_uses_real_requests_and_portable_graphs_rejected(monkeypat
     with pytest.raises(ValueError):
         batch.attn_metadata.get_last_indices(3)
     backend.init_capture_graph(100, [])
-    with pytest.raises(ValueError, match="native"):
+    with pytest.raises(ValueError, match="graph"):
         backend.init_capture_graph(100, [1])
     with pytest.raises(ValueError):
         backend.prepare_for_capture(batch)

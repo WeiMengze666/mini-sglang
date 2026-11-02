@@ -1,24 +1,23 @@
+"""Attention backend construction. Algorithm implementations live in subpackages."""
+
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
+from functools import cache
 from typing import TYPE_CHECKING, Protocol
 
-from minisgl.utils import Registry, init_logger
+from minisgl.utils import Registry
 
-from .base import BaseAttnBackend, BaseAttnMetadata, HybridBackend
-from .kda_backend import (
-    KDA_KERNELS,
-    KDADecodeResult,
-    get_kda_kernel,
-    load_kda_provider,
-    register_kda_decode_kernel,
-    register_kda_kernel,
+from .base import (
+    BaseAttnBackend,
+    BaseAttnMetadata,
+    HybridAttnBackend,
+    PrefillDecodeAttnBackend,
 )
 
 if TYPE_CHECKING:
     from minisgl.models import ModelConfig
-
-logger = init_logger(__name__)
 
 
 class BackendCreator(Protocol):
@@ -38,20 +37,8 @@ class AttentionBackendSpec:
 SUPPORTED_ATTENTION_BACKENDS = Registry[AttentionBackendSpec]("Attention Backend")
 
 
-def _configured_kda_implementation(default: str) -> str:
-    """Read the Engine-selected KDA backend, with a standalone-test fallback."""
-
-    from minisgl.core import get_global_ctx
-
-    try:
-        selected = get_global_ctx().kda_implementation
-    except AssertionError:
-        return default
-    return default if selected == "auto" else selected
-
-
 def register_attention_backend(name, *, stateful_layers=False, cuda_graphs=True):
-    """Declare configuration-time capabilities without constructing GPU resources."""
+    """Declare startup capabilities without constructing GPU resources."""
 
     def register(create):
         SUPPORTED_ATTENTION_BACKENDS.register(name)(
@@ -62,36 +49,47 @@ def register_attention_backend(name, *, stateful_layers=False, cuda_graphs=True)
     return register
 
 
-@register_attention_backend("recurrent", stateful_layers=True, cuda_graphs=False)
-def create_recurrent_backend(config: ModelConfig):
-    from .recurrent import RecurrentAttentionBackend
+@cache
+def load_attention_provider(module_name: str) -> None:
+    """Load an optional module that registers complete attention backends."""
+    if not module_name:
+        raise ValueError("An attention provider module is required")
+    module = importlib.import_module(module_name)
+    register = getattr(module, "register_attention_backends", None)
+    if not callable(register):
+        raise TypeError(f"Attention provider {module_name!r} lacks register_attention_backends")
+    register()
 
-    return RecurrentAttentionBackend(
-        config, kda_implementation=_configured_kda_implementation("torch")
+
+@register_attention_backend("torch", stateful_layers=True, cuda_graphs=False)
+def create_torch_backend(config: ModelConfig, *, cache=None):
+    from .kda.backend import KDAAttentionBackend
+    from .mla.backend import MLAAttentionBackend
+
+    if config.cache_config is None:
+        raise ValueError("The Torch reference backend requires a KDA/MLA cache layout")
+    return HybridAttnBackend(
+        KDAAttentionBackend(config, cache=cache),
+        MLAAttentionBackend(config, cache=cache),
+        config.is_kda_layer,
     )
 
 
-@register_attention_backend("recurrent-fi", stateful_layers=True)
-def create_recurrent_fi_backend(config: ModelConfig):
-    from .mla_fi import FlashInferMLA
-    from .recurrent import RecurrentAttentionBackend
+@register_attention_backend("fi", stateful_layers=True)
+def create_fi_backend(config: ModelConfig):
+    from minisgl.precision import use_strict_bf16
 
-    return RecurrentAttentionBackend(
-        config,
-        kda_implementation=_configured_kda_implementation("flashinfer"),
-        mla_attention=FlashInferMLA(),
-    )
+    from .fi import FlashInferBackend, FlashInferMLABackend
+    from .kda.backend import KDAAttentionBackend
+    from .kda.registry import get_kda_kernel
 
-
-@register_attention_backend("recurrent-fi-triton", stateful_layers=True)
-def create_recurrent_fi_triton_backend(config: ModelConfig):
-    from .mla_fi import FlashInferMLA
-    from .recurrent import RecurrentAttentionBackend
-
-    return RecurrentAttentionBackend(
-        config,
-        kda_implementation=_configured_kda_implementation("triton"),
-        mla_attention=FlashInferMLA(),
+    if config.cache_config is None:
+        return FlashInferBackend(config)
+    kernel = get_kda_kernel("triton" if use_strict_bf16() else "flashinfer")
+    return HybridAttnBackend(
+        KDAAttentionBackend(config, kernel),
+        FlashInferMLABackend(config),
+        config.is_kda_layer,
     )
 
 
@@ -100,13 +98,6 @@ def create_trtllm_backend(config: ModelConfig):
     from .trtllm import TensorRTLLMBackend
 
     return TensorRTLLMBackend(config)
-
-
-@register_attention_backend("fi")
-def create_fi_backend(config: ModelConfig):
-    from .fi import FlashInferBackend
-
-    return FlashInferBackend(config)
 
 
 @register_attention_backend("fa")
@@ -118,43 +109,35 @@ def create_fa_backend(config: ModelConfig):
 
 def validate_attn_backend(backend: str, allow_auto: bool = True):
     if backend != "auto":
-        required_backends = backend.split(",") if "," in backend else [backend]
-        SUPPORTED_ATTENTION_BACKENDS.assert_supported(required_backends)
+        names = backend.split(",")
+        assert len(names) <= 2, "Only one comma is allowed for prefill/decode selection"
+        SUPPORTED_ATTENTION_BACKENDS.assert_supported(names)
     else:
         assert allow_auto, "auto is not allowed here"
     return backend
 
 
-def create_attention_backend(
-    backend: str,
-    config: ModelConfig,
-) -> BaseAttnBackend:
+def create_attention_backend(backend: str, config: ModelConfig) -> BaseAttnBackend:
     validate_attn_backend(backend, allow_auto=False)
     if "," in backend:
-        assert backend.count(",") == 1, "Only one comma is allowed in hybrid backend"
-        p_backend, d_backend = backend.split(",", 1)
-        if p_backend != d_backend:
-            logger.info(f"Using hybrid attention backend: prefill={p_backend}, decode={d_backend}")
-            p_backend = create_attention_backend(p_backend, config)
-            d_backend = create_attention_backend(d_backend, config)
-            return HybridBackend(p_backend, d_backend)
-        backend = p_backend  # both are the same, fall through to single backend
-        logger.warning(f"P/D attention backends are the same: {backend}, using single backend.")
-
+        prefill, decode = backend.split(",")
+        if prefill != decode:
+            return PrefillDecodeAttnBackend(
+                create_attention_backend(prefill, config),
+                create_attention_backend(decode, config),
+            )
+        backend = prefill
     return SUPPORTED_ATTENTION_BACKENDS[backend](config)
 
 
 __all__ = [
     "BaseAttnMetadata",
     "BaseAttnBackend",
+    "HybridAttnBackend",
+    "PrefillDecodeAttnBackend",
     "create_attention_backend",
     "SUPPORTED_ATTENTION_BACKENDS",
     "register_attention_backend",
+    "load_attention_provider",
     "validate_attn_backend",
-    "KDA_KERNELS",
-    "KDADecodeResult",
-    "get_kda_kernel",
-    "register_kda_kernel",
-    "register_kda_decode_kernel",
-    "load_kda_provider",
 ]

@@ -3,22 +3,15 @@ from minisgl.precision import resolve_bf16_precision
 
 
 @pytest.mark.parametrize(
-    ("requested", "backend", "expected"),
-    [
-        ("auto", "recurrent-fi", "default"),
-        ("auto", "recurrent-fi-triton", "strict"),
-        ("auto", "recurrent-fi-triton,recurrent-fi", "strict"),
-        ("default", "recurrent-fi-triton", "default"),
-        ("strict", "recurrent-fi", "strict"),
-    ],
+    ("requested", "expected"), [("auto", "default"), ("default", "default"), ("strict", "strict")]
 )
-def test_bf16_precision_policy(requested, backend, expected):
-    assert resolve_bf16_precision(requested, backend) == expected
+def test_bf16_precision_policy(requested, expected):
+    assert resolve_bf16_precision(requested) == expected
 
 
 def test_bf16_precision_policy_rejects_unknown_values():
     with pytest.raises(ValueError, match="bf16_precision"):
-        resolve_bf16_precision("invalid", "recurrent-fi")
+        resolve_bf16_precision("invalid")
 
 
 def test_engine_config_defaults_to_auto_precision_policy():

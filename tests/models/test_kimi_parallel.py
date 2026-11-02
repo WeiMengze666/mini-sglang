@@ -63,6 +63,16 @@ def _attach_simulated_comm(op, comm):
             _attach_simulated_comm(child, comm)
 
 
+def _model_config(config):
+    # Layer-algebra fixtures include full-rank Q beyond the released checkpoint.
+    layout = cache_config(config)
+    return SimpleNamespace(
+        hf_config=config,
+        cache_config=layout,
+        is_kda_layer=layout.recurrent_layers.__contains__,
+    )
+
+
 def _config(*, vocab=24, full_gate=True, latent=4, shared=1, q_lora=4):
     return KimiTextConfig(
         hidden_size=8,
@@ -185,7 +195,7 @@ def _run_two_ranks(rank, init_file):
         ):
             # Capture the same global, unsharded checkpoint on each worker first.
             info._TP_INFO = None
-            reference = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
+            reference = KimiK3LinearForCausalLM(_model_config(c))
             _initialize(reference)
             full_state = {name: tensor.clone() for name, tensor in reference.state_dict().items()}
             table = torch.arange(64).reshape(2, 32)
@@ -207,7 +217,7 @@ def _run_two_ranks(rank, init_file):
             )
 
             info._TP_INFO = DistributedInfo(rank, 2)
-            parallel = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
+            parallel = KimiK3LinearForCausalLM(_model_config(c))
             local_state = {}
             for name, tensor in full_state.items():
                 spec = shard_spec(name, c, rank, 2)
@@ -314,7 +324,7 @@ def test_simulated_collectives_model_and_independent_moe(monkeypatch, odd_vocab)
         else _config()
     )
     monkeypatch.setattr(info, "_TP_INFO", None)
-    reference = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
+    reference = KimiK3LinearForCausalLM(_model_config(c))
     _initialize(reference)
     state = {name: tensor.clone() for name, tensor in reference.state_dict().items()}
     table = torch.arange(64).reshape(2, 32)
@@ -326,7 +336,7 @@ def test_simulated_collectives_model_and_independent_moe(monkeypatch, odd_vocab)
     group, models, caches = _SimulatedGroup(), [], []
     for rank in range(2):
         monkeypatch.setattr(info, "_TP_INFO", DistributedInfo(rank, 2))
-        model = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
+        model = KimiK3LinearForCausalLM(_model_config(c))
         local = {}
         for name, tensor in state.items():
             spec = shard_spec(name, c, rank, 2)

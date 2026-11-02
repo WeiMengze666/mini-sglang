@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 
-def resolve_bf16_precision(requested: str, attention_backend: str) -> str:
+def resolve_bf16_precision(requested: str) -> str:
     """Resolve the BF16 arithmetic policy without referring to a model."""
     if requested not in ("auto", "default", "strict"):
         raise ValueError("bf16_precision must be auto, default or strict")
     if requested != "auto":
         return requested
-    return "strict" if "recurrent-fi-triton" in attention_backend.split(",") else "default"
+    return "default"
 
 
 def use_strict_bf16() -> bool:

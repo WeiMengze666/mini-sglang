@@ -5,7 +5,7 @@ import os
 import pytest
 import torch
 from minisgl.attention.mla import CausalLayout, MLAPagedMetadata, mla_attention
-from minisgl.attention.mla_fi import FlashInferMLA
+from minisgl.attention.mla.flashinfer import FlashInferMLAAdapter
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="CUDA work must be explicitly queued"
@@ -37,7 +37,7 @@ def test_absorbed_decode_values_and_natural_lse(heads, length, tokens, start, of
     expected, expected_lse = mla_attention(
         q, latent, key, weight, query_pos, positions, nope_dim=192, value_dim=128, return_lse=True
     )
-    native = FlashInferMLA()
+    native = FlashInferMLAAdapter()
     for _ in range(2):
         actual, lse = native(
             q,
@@ -70,7 +70,7 @@ def test_prefill_plan_after_paged_decode_keeps_its_own_query_groups():
     expected, expected_lse = mla_attention(
         q, latent, key, weight, positions, history, nope_dim=192, value_dim=128, return_lse=True
     )
-    native = FlashInferMLA()
+    native = FlashInferMLAAdapter()
     pages = torch.randn(5, 4, 576, device="cuda", dtype=torch.bfloat16)
     metadata = MLAPagedMetadata(
         torch.tensor([0, 5], dtype=torch.int32),
@@ -131,7 +131,7 @@ def test_native_mla_uses_the_producer_stream():
             value_dim=128,
             return_lse=True,
         )
-        native = FlashInferMLA()
+        native = FlashInferMLAAdapter()
         for _ in range(3):
             actual, lse = native(
                 q,

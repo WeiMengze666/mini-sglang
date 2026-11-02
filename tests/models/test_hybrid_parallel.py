@@ -15,7 +15,7 @@ from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.models.kimi_config import cache_config
 from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
 from minisgl.models.kimi_parallel import owns_expert, shard_spec
-from test_kimi_parallel import _batch, _config, _initialize
+from test_kimi_parallel import _batch, _config, _initialize, _model_config
 
 
 def test_lse_merge_empty_partitions_and_extreme_scores():
@@ -83,7 +83,9 @@ def test_packed_checkpoint_preserves_global_expert_ids(tmp_path, monkeypatch):
                     divisor = (
                         2
                         if name.endswith("weight_packed")
-                        else 32 if name.endswith("weight_scale") else 1
+                        else 32
+                        if name.endswith("weight_scale")
+                        else 1
                     )
                     start, length = start // divisor, length // divisor
                 expected = expected.narrow(spec.axis, start, length)
@@ -113,7 +115,7 @@ def _worker(rank, world, init_file, device_type):
         c = _config(shared=2)
         c.moe_intermediate_size = 12
         info._TP_INFO = None
-        reference = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
+        reference = KimiK3LinearForCausalLM(_model_config(c))
         _initialize(reference)
         state = {name: value.clone() for name, value in reference.state_dict().items()}
         tokens = [2, 17, 4, 22, 8, 13, 7]
@@ -140,7 +142,7 @@ def _worker(rank, world, init_file, device_type):
             configure_parallel(dcp_size=dcp, ep_size=ep)
             init_context_parallel()
             layout = ParallelLayout(rank, world, dcp, ep)
-            model = KimiK3LinearForCausalLM(SimpleNamespace(hf_config=c))
+            model = KimiK3LinearForCausalLM(_model_config(c))
 
             def stream():
                 for name, value in state.items():

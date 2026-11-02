@@ -12,6 +12,7 @@ from minisgl.env import ENV
 from minisgl.utils import div_even, init_logger
 
 from .base import BaseAttnBackend, BaseAttnMetadata
+from .mla.backend import MLAAttentionBackend
 from .utils import BaseCaptureData
 
 if TYPE_CHECKING:
@@ -269,3 +270,14 @@ class FlashInferBackend(BaseAttnBackend):
         assert self.capture is not None and bs in self.capture_bs
         metadata.wrapper = self.graph_wrappers[bs]
         self._initialize_metadata_once(metadata)
+
+
+class FlashInferMLABackend(MLAAttentionBackend):
+    """MLA execution using FlashInfer's paged attention kernel and plans."""
+
+    cache_implementation = "triton"
+
+    def __init__(self, config):
+        from .mla.flashinfer import FlashInferMLAAdapter
+
+        super().__init__(config, attention=FlashInferMLAAdapter())

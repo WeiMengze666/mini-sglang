@@ -12,15 +12,16 @@ import importlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
+import torch
 from minisgl.utils import Registry
 
 if TYPE_CHECKING:
-    import torch
+    from minisgl.layers.kda import KDALayer
 
-    from .kda import KDAState
+    from .reference import KDAState
 
 RecurrenceKernel = Callable[..., tuple["torch.Tensor", "torch.Tensor"]]
-DecodeKernel = Callable[[object, "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
+DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,9 @@ class KDAKernelSpec:
 KDA_KERNELS = Registry[KDAKernelSpec]("KDA kernel backend")
 
 
-def register_kda_kernel(name: str, recurrence: RecurrenceKernel, decode: DecodeKernel | None = None):
+def register_kda_kernel(
+    name: str, recurrence: RecurrenceKernel, decode: DecodeKernel | None = None
+):
     """Register a recurrence backend without coupling it to a model class."""
 
     KDA_KERNELS.register(name)(KDAKernelSpec(name, recurrence, decode))
@@ -76,21 +79,29 @@ def get_kda_kernel(name: str) -> KDAKernelSpec:
 
 
 def _torch_recurrence(*args):
-    from .kda import kda_log_decay, kda_recurrence
+    from .reference import kda_log_decay, kda_recurrence
 
     q, k, v, forget, beta, a, dt, state, lower = args
     decay = kda_log_decay(forget, a, dt, lower)
     return kda_recurrence(q, k, v, decay, beta.float().sigmoid(), state)
 
 
+def _supports_cuda_recurrence(q):
+    return q.is_cuda and q.dtype == torch.bfloat16 and q.shape[-1] == 128
+
+
 def _triton_recurrence(*args):
-    from .kda_kernel import recurrent_kda
+    if not _supports_cuda_recurrence(args[0]):
+        return _torch_recurrence(*args)
+    from .triton import recurrent_kda
 
     return recurrent_kda(*args)
 
 
 def _flashinfer_recurrence(*args):
-    from .kda_fi import recurrent_kda
+    if not _supports_cuda_recurrence(args[0]):
+        return _torch_recurrence(*args)
+    from .flashinfer import recurrent_kda
 
     return recurrent_kda(*args)
 

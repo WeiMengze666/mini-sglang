@@ -320,7 +320,7 @@ def main():
     parser.add_argument("--tp-size", type=int, default=8)
     parser.add_argument("--dcp-size", type=int, default=2)
     parser.add_argument("--ep-size", type=int, default=8)
-    parser.add_argument("--attention-backend", default="recurrent-fi")
+    parser.add_argument("--attention-backend", default="fi")
     parser.add_argument("--cuda-graph", action="store_true")
     parser.add_argument("--flashinfer-autotune-skip-ops", nargs="*", default=[])
     args = parser.parse_args()

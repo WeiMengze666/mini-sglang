@@ -1,9 +1,12 @@
-"""Absorbed MLA with ordinary or interleaved causal query subsequences."""
+"""Adapt FlashInfer MLA plans to absorbed queries and DCP causal layouts.
+
+The attention kernel is supplied by FlashInfer, not implemented here.
+"""
 
 import torch
 import torch.nn.functional as F
 
-from .mla import CausalLayout, MLAPagedMetadata, causal_query_groups, mla_attention
+from .reference import CausalLayout, MLAPagedMetadata, causal_query_groups, mla_attention
 
 
 class _MLAPlan:
@@ -65,7 +68,7 @@ class _MLAPlan:
             return self.wrapper.run(**kwargs)
 
 
-class FlashInferMLA:
+class FlashInferMLAAdapter:
     def __init__(self):
         self._prefill_plan = None
         self._decode_plan = None

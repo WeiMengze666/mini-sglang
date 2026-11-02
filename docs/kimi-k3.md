@@ -6,6 +6,45 @@ request completion remain framework mechanisms. Code quality and numerical
 correctness precede further performance work.
 
 
+The attention layout is organized by backend composition in Phase-30. Engine and Context own a
+single attention backend; neither has a separate KDA implementation setting.
+`HybridAttnBackend` in `attention/base.py` dispatches with
+`ModelConfig.is_kda_layer(layer_id)`. Its KDA and MLA children have separate
+metadata, execution and graph resources. `PrefillDecodeAttnBackend` composes
+execution stages independently of layer types. See
+[the attention layout](../python/minisgl/attention/README.md).
+
+The active serving interface is `--attention-backend fi`, optionally with
+`--bf16-precision strict`. Precision is explicit and independent of the backend
+name; `auto` resolves to `default`. Old recurrent backend names and the former
+KDA-specific Engine/CLI flags have been removed. External attention providers
+register a complete composition through `--attention-provider MODULE`; the
+KDA kernel object belongs to that composition.
+
+The FlashInfer MLA adapter calls the library's own
+`BatchMLAPagedAttentionWrapper`. Mini supplies absorbed projections, physical
+KV pages, DCP causal groups and capture-safe plan lifetimes, not another MLA
+CUDA kernel. KDA implementation details live under `attention/kda/`, and MLA
+execution and library adaptation under `attention/mla/`.
+
+Phase-29 completed the generic communication capture lifecycle. CPU/Gloo passed
+515 checks with 297 skips. Job 599 passed ten BF16/FP32 all-reduce graph cases,
+including actual vendor graph-input registration and messages beyond the custom
+backend's size limit falling back to NCCL. The exact comparison used integer-valued
+payloads representable in BF16; it does not remove the previously measured BF16
+reduction-order difference for arbitrary inputs. Dense, MoE, hybrid and unified-cache
+Graph regressions each passed four request reorder/reuse cases in job 600, with
+exact logits and (for hybrid cases) exact recurrent states.
+
+
+Phase-30 validation passed 521 CPU/Gloo checks (297 skipped), 131 GPU
+component checks, and four cases each for dense/MoE/hybrid/unified-cache Graph
+execution. The complete K3 DCP2/EP8 strict BF16 before/after comparison preserved
+every raw vocabulary logit over 32 steps at batches 1 and 4 exactly (job 603).
+This verifies the refactor against mini's previous behavior; it is not an
+independent official numerical or performance acceptance. The machine-readable
+[evidence](validation/attention-layout.json) records source hashes and scope.
+
 The latest accepted optimization (Phase-28) is a generic four-tap single-token
 causal convolution, shared by the KDA path through its existing helper.
 It combines history shifting, FP32 convolution and SiLU in one Triton launch.
@@ -185,13 +224,12 @@ rechecked with the complete 93-layer strict gate (`max_abs=0`,
 `relative_l2=0`, greedy agreement; job 589), and the remote CPU/core/models
 regression remained at 496 passed, 260 skipped and 19 deselected cases.
 
-Phase-25 adds the matching KDA kernel provider seam. An external module can
-implement `register_kda_kernels()` and register a recurrence or complete
-one-token decode spec; `--kda-provider` loads it and
-`--kda-implementation` selects it through the normal recurrent attention
-backend. The layer still owns convolution state shape, output projection,
-tensor-parallel reduction and fallback behavior. With `auto`, the existing
-FlashInfer/Triton/Torch choices are unchanged. The provider loader and
+Phase-25 introduced the KDA kernel registration seam. Its original separate
+Engine/CLI selection was removed in Phase-30: attention providers now construct
+a complete backend containing the selected KDA kernel spec. The algorithm-level
+registry still supports recurrence and complete one-token decode kernels.
+The projection layer owns convolution state shape, output projection and
+tensor-parallel reduction; each kernel adapter owns its capability fallback. The provider loader and
 attention-selection tests passed, the remote CPU/core/models regression passed
 498 tests with 260 skips and 19 deselected cases, and the default 93-layer
 strict BF16 gate again passed with `max_abs=0`, `relative_l2=0` and greedy
@@ -484,14 +522,15 @@ composition in `models/kimi_*.py`. Reusable mechanisms are organized by operatio
 
 | Mechanism | Module |
 | --- | --- |
-| Causal convolution, delta recurrence, gated RMSNorm | `attention/kda.py` |
-| Compressed MLA, optional RoPE, paged metadata | `attention/mla.py` |
-| Native absorbed MLA plans | `attention/mla_fi.py` |
+| Causal convolution, delta recurrence, gated RMSNorm | `attention/kda/reference.py` |
+| Compressed MLA, optional RoPE, paged metadata | `attention/mla/reference.py` |
+| Native absorbed MLA plans | `attention/mla/flashinfer.py` |
 | KDA and gated MLA projection layers | `layers/kda.py`, `layers/mla.py` |
 | Grouped routing, shared experts, optional latent mixture | `layers/latent_moe.py` |
 | Optional canonical integer expert grouping | `moe/routing.py`, `moe_align_block_size(..., stable=True)` |
 | SiTU and block attention residuals | `layers/activation.py`, `layers/attn_residual.py` |
-| Hybrid batch metadata and real-row execution | `attention/recurrent.py` |
+| Layer/stage composition and independent metadata | `attention/base.py` |
+| Request-state and paged attention execution | `attention/kda/backend.py`, `attention/mla/backend.py` |
 | MLA pages and request-owned recurrent state | `kvcache/mla_pool.py`, `kvcache/recurrent_pool.py` |
 | Cache composition, sparse checkpoints, compact byte arena | `kvcache/hybrid_pool.py`, `hybrid_cache.py`, `unified.py` |
 | Logical DCP/EP partitions and checkpoint slices | `distributed/layout.py`, `distributed/partition.py` |
@@ -570,7 +609,7 @@ batches, since padding would mutate another request's state. Startup temporarily
 borrows idle slots, releases them after capture, and replay resolves current
 state rows/pages after compaction. Ordinary attention keeps padded graph support.
 
-`--attention-backend recurrent-fi` selects bounded FlashInfer KDA prefill,
+`--attention-backend fi` selects bounded FlashInfer KDA prefill,
 indexed FP32-state native decode and absorbed MLA. Current native graph geometry
 requires BF16 KDA128 and MLA512/64. Portable shapes retain eager operations;
 unsupported native state contracts are not made to work by downcasting state.
@@ -1325,7 +1364,7 @@ gpuq env PYTHONPATH=python OMP_NUM_THREADS=1 python -m torch.distributed.run \
 gpuq env PYTHONPATH=python OMP_NUM_THREADS=1 python -m torch.distributed.run \
   --standalone --nproc-per-node=8 tests/validation/released_k3.py \
   --model /data/models/Kimi-K3 --output /path/to/run --dtype float32 --trace \
-  --dcp-size 2 --ep-size 8 --mxfp4-backend triton --attention-backend recurrent-fi
+  --dcp-size 2 --ep-size 8 --mxfp4-backend triton --attention-backend fi
 ```
 
 A bounded native serving configuration is:
@@ -1335,7 +1374,7 @@ gpuq env OMP_NUM_THREADS=1 python -m minisgl --model /data/models/Kimi-K3 \
   --tp-size 8 --dcp-size 2 --ep-size 8 --dtype bfloat16 --page-size 64 \
   --max-running-requests 4 --max-cached-states 8 --num-pages 2048 \
   --max-seq-len-override 4096 --max-extend-length 1024 \
-  --attention-backend recurrent-fi --mxfp4-backend triton --enable-unified-memory
+  --attention-backend fi --mxfp4-backend triton --enable-unified-memory
 ```
 
 The queue task must own the server throughout its lifetime. Size working state,
@@ -1427,12 +1466,12 @@ The server CLI exposes the opt-in policy explicitly:
 For K3 SiTU this mode is required by the available FlashInfer tactic and carries
 the recorded MXFP8 precision boundary; the default CLI remains Triton/BF16.
 
-The strict BF16 path is now expressed as a reusable attention composition:
-'recurrent-fi-triton' combines the FlashInfer paged MLA backend with the
-framework's Triton KDA scan. It is available for any hybrid model through the
-normal --attention-backend option; no model class checks for Kimi-K3. The
-ordinary 'recurrent-fi' composition remains available for the lower-latency
-FlashInfer KDA prefill path, whose numerical boundary is recorded separately.
+The strict BF16 path uses the reusable FlashInfer attention composition with
+`--attention-backend fi --bf16-precision strict`. Its KDA child uses the
+framework's Triton scan; its MLA child calls FlashInfer's paged MLA kernel.
+The same backend with default precision uses FlashInfer KDA prefill, whose
+numerical boundary is recorded separately. The measurements below retain their
+historical experiment names; those names are no longer runtime options.
 
 The precision layer uses device- and dtype-gated generic kernels for BF16
 linear projections, headwise MLA projections, RMSNorm, gated RMSNorm, and
@@ -1459,12 +1498,11 @@ adapter deliberately uses the native decode kernel for one-token updates to
 preserve the FP32 recurrent-state contract. The composition is therefore a
 correctness and lifecycle seam, not an unqualified performance switch.
 
-The BF16 arithmetic policy is explicit and model-independent. 'auto' keeps
-ordinary 'recurrent-fi' on the default Torch/BF16 kernels and selects strict
-rounding kernels only when 'recurrent-fi-triton' is present in the attention
-composition. '--bf16-precision strict' and '--bf16-precision default' override
-that selection for controlled comparisons. After this policy split, the
-ordinary recurrent-fi DCP=2/EP=8 CUDA Graph boundary returned to
+The BF16 arithmetic policy is explicit and model-independent. In the current
+tree, `auto` resolves to `default`; `--bf16-precision strict` selects strict
+rounding without encoding precision in an attention backend name. At the time
+of the earlier policy experiment, the ordinary FlashInfer DCP=2/EP=8 CUDA Graph
+boundary returned to
 13.41/24.84/48.37/93.08 tokens/s for batches 1/2/4/8 (job 513), matching the
 pre-policy production baseline, while job 512 retained strict full/chunk
 correctness.

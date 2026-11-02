@@ -69,7 +69,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--attention-backend", default="recurrent-fi")
+    parser.add_argument("--attention-backend", default="fi")
     parser.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float32"])
     parser.add_argument("--dcp-size", type=int, default=2)
     parser.add_argument("--ep-size", type=int, default=8)

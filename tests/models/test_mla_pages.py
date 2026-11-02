@@ -7,7 +7,7 @@ import minisgl.distributed.layout as layout
 import pytest
 import torch
 from minisgl.attention.mla import mla_attention
-from minisgl.attention.mla_fi import FlashInferMLA
+from minisgl.attention.mla.flashinfer import FlashInferMLAAdapter
 from minisgl.distributed import DistributedInfo
 from minisgl.kvcache.mla_pool import MLACache
 from minisgl.kvcache.unified import UnifiedMemory
@@ -104,7 +104,7 @@ def test_page_metadata_matches_gather_after_compaction(monkeypatch, cp, unified)
 def test_paged_decode_matches_independent_sequences(monkeypatch, heads, cp, unified, long):
     torch.manual_seed(173)
     cache, table, lengths = make_cache(monkeypatch, cp, unified, "cuda", native=True, long=long)
-    native = FlashInferMLA()
+    native = FlashInferMLAAdapter()
     weight = torch.randn(heads * 320, 512, dtype=torch.bfloat16, device="cuda") * 0.05
     for iteration, order in enumerate(([2, 0, 1], [1, 2, 0])):
         if iteration and unified:
@@ -150,7 +150,7 @@ def test_paged_decode_matches_independent_sequences(monkeypatch, heads, cp, unif
 def test_paged_decode_graph_replans_after_compaction(monkeypatch, cp, unified, long):
     torch.manual_seed(179)
     cache, table, lengths = make_cache(monkeypatch, cp, unified, "cuda", native=True, long=long)
-    native = FlashInferMLA()
+    native = FlashInferMLAAdapter()
     native.init_graphs([3], table.shape[1] // cache.page_size, torch.device("cuda"))
     q = torch.randn(3, 12, 256, dtype=torch.bfloat16, device="cuda") * 0.1
     weight = torch.randn(12 * 320, 512, dtype=torch.bfloat16, device="cuda") * 0.05

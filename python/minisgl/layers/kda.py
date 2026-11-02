@@ -9,7 +9,7 @@ from minisgl.attention.kda import (
     causal_conv1d,
     gated_rms_norm,
 )
-from minisgl.attention.kda_backend import KDADecodeResult, get_kda_kernel
+from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
 from minisgl.layers.linear import Linear
@@ -62,7 +62,7 @@ class KDALayer(BaseOP):
             self.b_proj.forward(x),
         )
 
-    def update(self, q, k, v, forget, beta, state=None, *, implementation="torch"):
+    def update(self, q, k, v, forget, beta, state=None, *, kernel: KDAKernelSpec | None = None):
         """Update one sequence [T,C] or independent equal-length sequences [B,T,C]."""
         if q.ndim not in (2, 3):
             raise ValueError("KDA projections must have shape [T,C] or [B,T,C]")
@@ -88,40 +88,23 @@ class KDALayer(BaseOP):
             beta = beta.transpose(0, 1).flatten(1, 2)
             a, dt = a.repeat(batch), dt.repeat(batch)
         previous = None if state is None else state.recurrent.reshape(-1, self._dim, self._dim)
-        kernel = get_kda_kernel(implementation)
-        use_kernel = (
-            implementation != "torch"
-            and q.is_cuda
-            and q.dtype == torch.bfloat16
-            and self._dim == 128
+        kernel = get_kda_kernel("torch") if kernel is None else kernel
+        output, recurrent = kernel.recurrence(
+            *values, forget, beta, a, dt, previous, self._config.gate_lower_bound
         )
-        if use_kernel:
-            output, recurrent = kernel.recurrence(
-                *values,
-                forget,
-                beta,
-                a,
-                dt,
-                previous,
-                self._config.gate_lower_bound,
-            )
-        else:
-            output, recurrent = get_kda_kernel("torch").recurrence(
-                *values, forget, beta, a, dt, previous, self._config.gate_lower_bound
-            )
         if batched:
             output = output.reshape(tokens, batch, self._heads, self._dim).transpose(0, 1)
             recurrent = recurrent.reshape(batch, self._heads, self._dim, self._dim)
         return output, KDAState(torch.stack(histories, dim=-3), recurrent)
 
-    def decode(self, x, state=None, *, implementation="torch"):
+    def decode(self, x, state=None, *, kernel: KDAKernelSpec | None = None):
         """Try a complete fused one-token backend, then return ``None``.
 
         The backend owns only its supported kernel and state update.  This
         layer still applies the tensor-parallel output projection, which keeps
         fused KDA kernels reusable across models with different TP layouts.
         """
-        kernel = get_kda_kernel(implementation)
+        kernel = get_kda_kernel("torch") if kernel is None else kernel
         if kernel.decode is None:
             return None
         result = kernel.decode(self, x, state)
@@ -153,6 +136,13 @@ class KDALayer(BaseOP):
         ).flatten(-2)
         return self._tp.all_reduce(self.o_proj.forward(output))
 
-    def forward(self, x, positions=None, state: KDAState | None = None, *, implementation="torch"):
-        output, state = self.update(*self.project(x), state, implementation=implementation)
+    def forward(
+        self,
+        x,
+        positions=None,
+        state: KDAState | None = None,
+        *,
+        kernel: KDAKernelSpec | None = None,
+    ):
+        output, state = self.update(*self.project(x), state, kernel=kernel)
         return self.finish(x, output), state
