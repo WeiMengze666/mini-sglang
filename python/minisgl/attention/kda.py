@@ -25,6 +25,21 @@ def causal_conv1d(x, weight, state=None):
         state = x.new_zeros(shape)
     if state.shape != shape:
         raise ValueError("Convolution history has incorrect shape")
+    if (
+        x.is_cuda
+        and x.ndim in (2, 3)
+        and x.shape[-2] == 1
+        and width == 4
+        and x.dtype in (torch.bfloat16, torch.float32)
+        and state.dtype == x.dtype
+        and weight.dtype == torch.float32
+        and x.device == state.device == weight.device
+        and x.stride(-1) == 1
+        and weight.is_contiguous()
+    ):
+        from .causal_conv import causal_conv1d_update
+
+        return causal_conv1d_update(x, weight, state)
     history = torch.cat((state.to(x), x.transpose(-2, -1)), dim=-1)
     if x.shape[-2] == 0:
         return x.clone(), state.clone()

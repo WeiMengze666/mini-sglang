@@ -5,6 +5,54 @@ MoE operations. Admission, prefix reuse, token pages, distributed layouts and
 request completion remain framework mechanisms. Code quality and numerical
 correctness precede further performance work.
 
+
+The latest accepted optimization (Phase-28) is a generic four-tap single-token
+causal convolution, shared by the KDA path through its existing helper.
+It combines history shifting, FP32 convolution and SiLU in one Triton launch.
+The existing Torch path handles prefill, unsupported widths/dtypes and CPU.
+History remains request-owned: the kernel reads strided history and returns a
+separate new state. It contains no model-name checks or TP/DCP/EP assumptions.
+
+The arithmetic probe isolated the required four-term reduction order and FP32
+SiLU division (jobs 593--594). The final GPU component regression passed 57
+cases, including BF16/FP32, 16-step continuation, strided inputs and history,
+zero-history admission, unbatched decode and CUDA Graph replay (job 597).
+CPU/Gloo regression passed 509 checks with 297 skips after the existing ninja
+binary was added to PATH; its initial 17 CPU-extension build failures are kept
+in the experiment log rather than attributed to model arithmetic.
+
+Job 596 compared frozen baseline and candidate sources in the same Python
+3.11.18, Torch 2.14.1+cu130, Transformers 4.57.3 environment on DCP2/EP8:
+the single-prompt 93-layer full/chunk prefill check stayed bitwise equal, and
+every full-vocabulary logit over 32 steps at batches 1 and 4 was bitwise equal
+to the previous mini implementation. The 64-token CUDA Graph performance
+pair used two repeats per batch:
+
+| Batch | Baseline tokens/s | Fused convolution tokens/s | Speedup |
+| --- | ---: | ---: | ---: |
+| 1 | 13.6377 | 14.1423 | 1.0370x |
+| 2 | 24.8891 | 25.7458 | 1.0344x |
+| 4 | 48.4449 | 50.1420 | 1.0350x |
+| 8 | 93.8713 | 97.2633 | 1.0361x |
+
+All eight baseline/candidate generation sequences matched. This establishes
+an optimization relative to mini's previous implementation on the recorded
+workload. Neither the prefill consistency check nor this decode comparison is
+a claim of independent accuracy or strict alignment to official SGLang across
+prompts. The scripts, frozen sources, full logits and reports remain under
+remote `experiment/phase28-*`.
+
+Phase-27 separately exercised the actual official fused KDA decode kernel at
+SGLang commit `baa9befa381511cd4d56f83980951e5a45fffc6d`. Twelve same-input
+cases (batches 1/2/8, heads 3/12, bounded and unbounded gates) preserved
+convolution history exactly, but outputs differed by up to 0.0078125 and FP32
+recurrent state by up to 6.8151e-5. Its core CUDA Graph latency was about
+6.18 us versus 45.1--56.1 us for the mini convolution/recurrence/norm chain
+(job 591); this excludes projections, collectives and state-layout conversion.
+It demonstrates a useful fusion opportunity, with an arithmetic boundary that
+still needs calibration before strict-mode integration. The small native
+convolution optimization above preserves the existing recurrent arithmetic.
+
 Phase-13 performance probes kept the production tree unchanged. A strict BF16
 linear projection candidate with `num_warps=2` was bitwise equal on 28 component
 shapes and passed the complete 93-layer gate (jobs 522 and 524). A shape-based
@@ -125,10 +173,14 @@ path. The real official `CustomAllReduceV2` provider passed an isolated
 
 The Kimi-K3 opt-in model run confirmed the same boundary: DCP2/EP8 CUDA Graph
 throughput was `12.785/23.550/46.137/88.619` tokens/s for batches 1/2/4/8,
-about 4.4--5.8% below the matched default baseline, and all four greedy token
-sequences differed (job 588). MNNVL is therefore an explicit performance
-backend with a documented precision boundary; it is not selected by `auto` and
-is not accepted as the strict BF16 reference. The default configuration was
+lower than the previously recorded default baseline, and all four greedy
+token sequences differed (job 588). This model run used the external provider's
+Python 3.12 / Transformers 5.19.0 environment, whereas the previous default
+baseline used Python 3.11 / Transformers 4.57.3. It is therefore a runtime
+smoke result, not an isolated estimate of MNNVL's model-level performance or
+numerical effect. The same-environment component comparison in job 584 still
+establishes its BF16 reduction-order difference. MNNVL remains explicitly
+selected and is not accepted as the strict BF16 reference. The default configuration was
 rechecked with the complete 93-layer strict gate (`max_abs=0`,
 `relative_l2=0`, greedy agreement; job 589), and the remote CPU/core/models
 regression remained at 496 passed, 260 skipped and 19 deselected cases.
@@ -1247,9 +1299,9 @@ The last distribution retains the public `sgl_kernel` import namespace.
 Mini uses Transformers 4.57.3; the independent official environment is separate.
 
 Run GPU work through `gpuq`, with one complete experiment and owned-process
-cleanup per queue task. The remote checkout is
-`/home/axis/mengze/mini-sglang-k3/mini-sglang`; frozen sources/logs live in sibling
-`experiment`. Attested inputs are immutable. No model payload is committed.
+cleanup per queue task. The current remote checkout is
+`/home/axis/mengze/mini-sglang-k3`; frozen sources/logs live in its
+`experiment/` directory. Attested inputs are immutable. No model payload is committed.
 
 ```sh
 # Pin and verify independent formula sources, then run CPU/Gloo checks.
