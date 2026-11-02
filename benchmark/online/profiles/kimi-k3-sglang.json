@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "status": "requested; runtime resolution and equivalent Mini configuration pending",
+  "reference": {
+    "repository": "https://github.com/sgl-project/sglang",
+    "inspected_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "argv": [
+      "sglang",
+      "serve",
+      "--trust-remote-code",
+      "--model-path",
+      "/data/models/Kimi-K3",
+      "--served-model-name",
+      "moonshotai/Kimi-K3",
+      "--tp-size",
+      "8",
+      "--dcp-size",
+      "8",
+      "--page-size",
+      "64",
+      "--context-length",
+      "1048576",
+      "--mem-fraction-static",
+      "0.90",
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--mamba-ssm-dtype",
+      "bfloat16",
+      "--mamba-radix-cache-strategy",
+      "extra_buffer",
+      "--mamba-full-memory-ratio",
+      "0.31",
+      "--max-running-requests",
+      "48",
+      "--max-prefill-tokens",
+      "32768",
+      "--chunked-prefill-size",
+      "32768",
+      "--cuda-graph-max-bs-decode",
+      "48",
+      "--reasoning-parser",
+      "kimi_k3",
+      "--tool-call-parser",
+      "kimi_k3",
+      "--enable-metrics",
+      "--enable-cache-report",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "38080"
+    ]
+  },
+  "required_runtime_evidence": [
+    "resolved server arguments and backend fallback warnings",
+    "weight format, MoE GEMM1/GEMM2 input and intermediate activation format, group scales and routing-weight rounding",
+    "MLA KV resident dtype, quantization/scales layout and backend",
+    "KDA recurrent and convolution state resident dtype, accumulator dtype and state write rounding",
+    "effective TP/DCP/EP/expert-TP/dense-MLP groups",
+    "page size, memory allocation split, cache checkpoint/rollback strategy and actual capacities",
+    "captured decode batch sizes, prefill chunk size and request/token limits",
+    "model/tokenizer revision and checkpoint hash, code commit and dirty diff hash, CUDA/NCCL/Torch/FlashInfer versions",
+    "workload seeds, lengths, concurrency/arrival policy, warmup and prefix-cache hit/miss definitions"
+  ],
+  "source_expectations": {
+    "ep_size": {
+      "value": 1,
+      "status": "source default; runtime verification pending",
+      "path": "python/sglang/srt/arg_groups/fields/parallel.py"
+    },
+    "moe_runner_backend": {
+      "value": "flashinfer_mxfp4",
+      "status": "SM100/SM103/SM107 packed-K3 model override; runtime verification pending",
+      "path": "python/sglang/srt/arg_groups/model_overrides/kimi_k3.py"
+    },
+    "moe_activation_precision": {
+      "value": "mxfp8",
+      "status": "source-derived for flashinfer_mxfp4/default on SM100; runtime tensors and both GEMM stages still require verification",
+      "path": "python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py:1088-1098"
+    }
+  },
+  "acceptance": {
+    "numerical_diagnostic_reference": "Keep the calibrated BF16/Marlin TP8/DCP2/EP8 reference for numerical localization; it does not substitute for this serving performance profile.",
+    "precision_parity": "Required before publishing a fair performance ratio. Do not silently substitute BF16 KV, FP32 persistent KDA states, or a different MoE activation quantization.",
+    "parallel_parity": "Match the reference's actual resolved EP and expert-TP; EP8 is a separate experiment unless selected by the unmodified reference.",
+    "runtime_parity": "Match serving boundary, graph/cache/chunk policy, request limits and memory budget. Record kernel choices as implementation differences.",
+    "performance_metrics": [
+      "output_tokens_per_second",
+      "TTFT",
+      "ITL_or_TPOT",
+      "request_latency",
+      "peak_device_memory",
+      "prefix_cache_and_state_cache_metrics"
+    ]
+  }
+}

@@ -1,5 +1,8 @@
 # Kimi-K3 text support
 
+The primary serving performance target and precision-parity requirements are
+recorded in [the performance profile](kimi-k3-performance.md).
+
 K3 is assembled from reusable KDA, compressed MLA, attention-residual and latent
 MoE operations. Admission, prefix reuse, token pages, distributed layouts and
 request completion remain framework mechanisms. Code quality and numerical

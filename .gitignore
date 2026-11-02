@@ -31,3 +31,6 @@ env/
 # .vscode
 .vscode/
 .coverage
+
+# Checked-in serving benchmark profiles.
+!benchmark/online/profiles/*.json
