@@ -103,6 +103,10 @@ class Context:
     # BF16 arithmetic policy selected by EngineConfig; standalone layer tests
     # default to strict kernels through minisgl.precision.use_strict_bf16().
     bf16_precision: str = "strict"
+    # ``auto`` lets each registered attention composition choose its portable
+    # KDA recurrence. An external provider can set a registered implementation
+    # name before attention backend construction.
+    kda_implementation: str = "auto"
     # NOTE: this table always treat page_size = 1
     page_table: torch.Tensor = field(init=False)
     attn_backend: BaseAttnBackend = field(init=False)

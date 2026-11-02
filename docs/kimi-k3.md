@@ -133,6 +133,19 @@ rechecked with the complete 93-layer strict gate (`max_abs=0`,
 `relative_l2=0`, greedy agreement; job 589), and the remote CPU/core/models
 regression remained at 496 passed, 260 skipped and 19 deselected cases.
 
+Phase-25 adds the matching KDA kernel provider seam. An external module can
+implement `register_kda_kernels()` and register a recurrence or complete
+one-token decode spec; `--kda-provider` loads it and
+`--kda-implementation` selects it through the normal recurrent attention
+backend. The layer still owns convolution state shape, output projection,
+tensor-parallel reduction and fallback behavior. With `auto`, the existing
+FlashInfer/Triton/Torch choices are unchanged. The provider loader and
+attention-selection tests passed, the remote CPU/core/models regression passed
+498 tests with 260 skips and 19 deselected cases, and the default 93-layer
+strict BF16 gate again passed with `max_abs=0`, `relative_l2=0` and greedy
+agreement (job 590). No fused KDA implementation is enabled until a provider
+passes the same state-level and full-model gates.
+
 These paired results
 use the same released checkpoint, DCP2/EP8 layout, 64-token output boundary and
 CUDA-Graph request sizes; they are performance evidence, not new correctness

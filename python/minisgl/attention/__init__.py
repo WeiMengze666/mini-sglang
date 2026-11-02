@@ -10,6 +10,7 @@ from .kda_backend import (
     KDA_KERNELS,
     KDADecodeResult,
     get_kda_kernel,
+    load_kda_provider,
     register_kda_decode_kernel,
     register_kda_kernel,
 )
@@ -37,6 +38,18 @@ class AttentionBackendSpec:
 SUPPORTED_ATTENTION_BACKENDS = Registry[AttentionBackendSpec]("Attention Backend")
 
 
+def _configured_kda_implementation(default: str) -> str:
+    """Read the Engine-selected KDA backend, with a standalone-test fallback."""
+
+    from minisgl.core import get_global_ctx
+
+    try:
+        selected = get_global_ctx().kda_implementation
+    except AssertionError:
+        return default
+    return default if selected == "auto" else selected
+
+
 def register_attention_backend(name, *, stateful_layers=False, cuda_graphs=True):
     """Declare configuration-time capabilities without constructing GPU resources."""
 
@@ -53,7 +66,9 @@ def register_attention_backend(name, *, stateful_layers=False, cuda_graphs=True)
 def create_recurrent_backend(config: ModelConfig):
     from .recurrent import RecurrentAttentionBackend
 
-    return RecurrentAttentionBackend(config)
+    return RecurrentAttentionBackend(
+        config, kda_implementation=_configured_kda_implementation("torch")
+    )
 
 
 @register_attention_backend("recurrent-fi", stateful_layers=True)
@@ -62,7 +77,9 @@ def create_recurrent_fi_backend(config: ModelConfig):
     from .recurrent import RecurrentAttentionBackend
 
     return RecurrentAttentionBackend(
-        config, kda_implementation="flashinfer", mla_attention=FlashInferMLA()
+        config,
+        kda_implementation=_configured_kda_implementation("flashinfer"),
+        mla_attention=FlashInferMLA(),
     )
 
 
@@ -72,7 +89,9 @@ def create_recurrent_fi_triton_backend(config: ModelConfig):
     from .recurrent import RecurrentAttentionBackend
 
     return RecurrentAttentionBackend(
-        config, kda_implementation="triton", mla_attention=FlashInferMLA()
+        config,
+        kda_implementation=_configured_kda_implementation("triton"),
+        mla_attention=FlashInferMLA(),
     )
 
 
@@ -137,4 +156,5 @@ __all__ = [
     "get_kda_kernel",
     "register_kda_kernel",
     "register_kda_decode_kernel",
+    "load_kda_provider",
 ]

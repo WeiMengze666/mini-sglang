@@ -191,6 +191,18 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         default=ServerArgs.distributed_provider,
         help="Python module exposing create_provider for the mnnvl backend.",
     )
+    parser.add_argument(
+        "--kda-implementation",
+        type=str,
+        default=ServerArgs.kda_implementation,
+        help="Registered KDA recurrence/decode backend; auto keeps the selected portable path.",
+    )
+    parser.add_argument(
+        "--kda-provider",
+        type=str,
+        default=ServerArgs.kda_provider,
+        help="Python module exposing register_kda_kernels for an external KDA backend.",
+    )
 
     parser.add_argument(
         "--host",

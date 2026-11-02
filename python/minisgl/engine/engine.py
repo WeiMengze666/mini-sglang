@@ -4,7 +4,12 @@ from datetime import timedelta
 from typing import Any, Dict, Iterator, NamedTuple, Tuple
 
 import torch
-from minisgl.attention import SUPPORTED_ATTENTION_BACKENDS, create_attention_backend
+from minisgl.attention import (
+    SUPPORTED_ATTENTION_BACKENDS,
+    create_attention_backend,
+    get_kda_kernel,
+    load_kda_provider,
+)
 from minisgl.core import Batch, Context, Req, set_global_ctx
 from minisgl.distributed import (
     destroy_distributed,
@@ -52,6 +57,11 @@ class Engine:
         self.ctx.bf16_precision = resolve_bf16_precision(
             config.bf16_precision, config.attention_backend
         )
+        if config.kda_provider is not None:
+            load_kda_provider(config.kda_provider)
+        if config.kda_implementation != "auto":
+            get_kda_kernel(config.kda_implementation)
+        self.ctx.kda_implementation = config.kda_implementation
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
@@ -390,6 +400,10 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("distributed_backend must be auto, torch, pynccl or mnnvl")
     if config.distributed_backend == "mnnvl" and not config.distributed_provider:
         raise ValueError("distributed_provider is required for the mnnvl backend")
+    if config.kda_implementation == "auto" and config.kda_provider is not None:
+        raise ValueError(
+            "kda_implementation must name a registered backend when kda_provider is set"
+        )
     resolve_bf16_precision(config.bf16_precision, config.attention_backend)
     ParallelLayout(config.tp_info.rank, config.tp_info.size, config.dcp_size, config.ep_size)
     if config.dcp_size > 1 and config.model_config.cache_config is None:

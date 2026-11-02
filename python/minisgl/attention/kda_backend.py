@@ -8,6 +8,7 @@ specific fusion out of model definitions while preserving a portable fallback.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
@@ -58,6 +59,18 @@ def register_kda_decode_kernel(name: str, decode: DecodeKernel):
     register_kda_kernel(name, _torch_recurrence, decode)
 
 
+def load_kda_provider(module_name: str) -> None:
+    """Load an external module that registers one or more KDA kernel specs."""
+
+    if not module_name:
+        raise ValueError("A KDA provider module is required for an external KDA backend")
+    module = importlib.import_module(module_name)
+    register = getattr(module, "register_kda_kernels", None)
+    if register is None:
+        raise AttributeError(f"KDA provider module {module_name!r} lacks register_kda_kernels")
+    register()
+
+
 def get_kda_kernel(name: str) -> KDAKernelSpec:
     return KDA_KERNELS[name]
 
@@ -94,4 +107,5 @@ __all__ = [
     "get_kda_kernel",
     "register_kda_kernel",
     "register_kda_decode_kernel",
+    "load_kda_provider",
 ]
