@@ -49,6 +49,14 @@ DCP2/EP8 default-backend benchmark nevertheless regressed from
 tokens/s at batch 1/2/4/8. The side-stream implementation was rejected; no
 additional stream or synchronization state was added to production.
 
+A Phase-17 LatentMoE front-GEMM candidate merged the router and latent
+routed-down projections into one cached BF16 front weight. It passed 26 CPU
+structural tests and the complete strict 93-layer gate (job 556), but its paired
+DCP2/EP8 CUDA-Graph throughput regressed from 13.31235/24.70465/48.34576/93.12070
+to 12.31463/22.47452/43.66925/80.93491 tokens/s at batch 1/2/4/8, while also
+reserving extra front-weight memory (job 557). The larger fused shape was
+rejected; production retains the two projection boundaries.
+
 The current production tree was rechecked after these probes: the strict
 BF16 full/chunk gate with reduced-precision partials disabled passed for all 93
 layers (job 544), and the default `recurrent-fi` DCP2/EP8 CUDA-Graph benchmark
