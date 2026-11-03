@@ -1,0 +1,490 @@
+{
+  "scope": "Expanded MLA prefill GPU components; full task quality and serving acceptance remain pending",
+  "job": 878,
+  "mini_commit": "743a4f53e79d9c6cf844bed7b02aecf68e965e6c",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "passed": 304,
+  "failed": 0,
+  "skipped": 0,
+  "ranks": [
+    {
+      "rank_file": "rank0.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "75bcfd30bde5863283a60cfc8726f24e3f5f7e71b128956458e6a89e8db73ce8"
+    },
+    {
+      "rank_file": "rank1.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "8b092ab995bc7d2b2046be3533e39649a5affa4145a54f53938bb548a0f6f14f"
+    },
+    {
+      "rank_file": "rank2.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "db04a5046996110b9fc23cf0e7ff3e5ecc08774bc17e7ef6e25c505d5b906969"
+    },
+    {
+      "rank_file": "rank3.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "0be8942a0f9c461f9b158185b1bc4d3205d95a5c672ceda127c783861717042e"
+    },
+    {
+      "rank_file": "rank4.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "c30414979ec8c12d41b60ec97056ee24dd9cf6f637465375f882e079da48860b"
+    },
+    {
+      "rank_file": "rank5.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "6e9150ebb7e8b125b46f49abb986bbf03150a8c6da5c176f57d91b241b2b9d81"
+    },
+    {
+      "rank_file": "rank6.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "dd5d4dc6e5b17d1b4141bc4f0f615686271f93bdc1c89e68556b4c4c74778ff8"
+    },
+    {
+      "rank_file": "rank7.xml",
+      "tests": 38,
+      "passed": 38,
+      "sha256": "eaa54600fe2da261e23038f7737317aa8413a4c25782d3c8db41ef74fa207b0e"
+    }
+  ],
+  "exact_native_api_control_cases": 48,
+  "native_control": "Actual TRTLLMMLABackend._run_prefill_kernel method, including FP8 quantization and native launch API options; same ABI exact output, three repetitions, independent producer stream restored",
+  "contracts_shared_across_ranks": [
+    {
+      "case": "test_prefill_precision_matches_native_runner[17-7-cache_dtype0]",
+      "contract": {
+        "host_options": {
+          "batch_size": 1,
+          "bmm1_scale": 0.07216878364870322,
+          "bmm2_scale": 1.0,
+          "enable_pdl": false,
+          "is_causal": true,
+          "max_kv_len": 17,
+          "max_q_len": 7,
+          "o_sf_scale": 1.0,
+          "return_lse": false,
+          "skip_softmax_threshold_scale_factor": null,
+          "window_left": -1
+        },
+        "key": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            17,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            7,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        },
+        "query": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            7,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "value": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            17,
+            16,
+            128
+          ],
+          "stride": [
+            4096,
+            256,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "case": "test_prefill_precision_matches_native_runner[17-7-cache_dtype1]",
+      "contract": {
+        "host_options": {
+          "batch_size": 1,
+          "bmm1_scale": 0.07216878364870322,
+          "bmm2_scale": 1.0,
+          "enable_pdl": false,
+          "is_causal": true,
+          "max_kv_len": 17,
+          "max_q_len": 7,
+          "o_sf_scale": 1.0,
+          "return_lse": false,
+          "skip_softmax_threshold_scale_factor": null,
+          "window_left": -1
+        },
+        "key": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            17,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            7,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        },
+        "query": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            7,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "value": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            17,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "case": "test_prefill_precision_matches_native_runner[143-64-cache_dtype0]",
+      "contract": {
+        "host_options": {
+          "batch_size": 1,
+          "bmm1_scale": 0.07216878364870322,
+          "bmm2_scale": 1.0,
+          "enable_pdl": false,
+          "is_causal": true,
+          "max_kv_len": 143,
+          "max_q_len": 64,
+          "o_sf_scale": 1.0,
+          "return_lse": false,
+          "skip_softmax_threshold_scale_factor": null,
+          "window_left": -1
+        },
+        "key": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            143,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            64,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        },
+        "query": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            64,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "value": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            143,
+            16,
+            128
+          ],
+          "stride": [
+            4096,
+            256,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "case": "test_prefill_precision_matches_native_runner[143-64-cache_dtype1]",
+      "contract": {
+        "host_options": {
+          "batch_size": 1,
+          "bmm1_scale": 0.07216878364870322,
+          "bmm2_scale": 1.0,
+          "enable_pdl": false,
+          "is_causal": true,
+          "max_kv_len": 143,
+          "max_q_len": 64,
+          "o_sf_scale": 1.0,
+          "return_lse": false,
+          "skip_softmax_threshold_scale_factor": null,
+          "window_left": -1
+        },
+        "key": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            143,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            64,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        },
+        "query": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            64,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "value": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            143,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "case": "test_prefill_precision_matches_native_runner[129-129-cache_dtype0]",
+      "contract": {
+        "host_options": {
+          "batch_size": 1,
+          "bmm1_scale": 0.07216878364870322,
+          "bmm2_scale": 1.0,
+          "enable_pdl": false,
+          "is_causal": true,
+          "max_kv_len": 129,
+          "max_q_len": 129,
+          "o_sf_scale": 1.0,
+          "return_lse": false,
+          "skip_softmax_threshold_scale_factor": null,
+          "window_left": -1
+        },
+        "key": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            129,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            129,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        },
+        "query": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            129,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "value": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            129,
+            16,
+            128
+          ],
+          "stride": [
+            4096,
+            256,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "case": "test_prefill_precision_matches_native_runner[129-129-cache_dtype1]",
+      "contract": {
+        "host_options": {
+          "batch_size": 1,
+          "bmm1_scale": 0.07216878364870322,
+          "bmm2_scale": 1.0,
+          "enable_pdl": false,
+          "is_causal": true,
+          "max_kv_len": 129,
+          "max_q_len": 129,
+          "o_sf_scale": 1.0,
+          "return_lse": false,
+          "skip_softmax_threshold_scale_factor": null,
+          "window_left": -1
+        },
+        "key": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            129,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            129,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        },
+        "query": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            129,
+            16,
+            192
+          ],
+          "stride": [
+            3072,
+            192,
+            1
+          ]
+        },
+        "value": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            129,
+            16,
+            128
+          ],
+          "stride": [
+            2048,
+            128,
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "remaining_cases": "256 BF16 expanded-prefill mathematical/workspace/stream checks, retaining their existing tolerances",
+  "limitations": [
+    "Kernel API scalar options and tensor metadata are recorded; this is not actual CUDA grid/block launch tracing.",
+    "Unit K/V scales for released checkpoint. Nonunit checkpoint scales are outside this gate.",
+    "R0 BF16 prefill results remain an initial baseline; this corrected path is not yet a serving-performance acceptance."
+  ],
+  "manifest_sha256": "39d75013b84dee49bcce9be55e97d48d91117766bc4638021c81a64d8e08214a"
+}

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "Native S0 measured; frozen Mini R0 target quality/lifecycle complete within recorded scopes; exact Mini serving measurement pending",
+  "status": "Canonical S0 and initial Mini R0 measured; R0 has explicit precision/cache/graph gaps, final parity not accepted",
   "reference": {
     "repository": "https://github.com/sgl-project/sglang",
     "inspected_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
@@ -79,7 +79,7 @@
     },
     "prefill_attention_precision": {
       "value": "fp8_e4m3fn Q/K/V, BF16 destination",
-      "status": "Pinned native source verified; native method GPU contract control prepared",
+      "status": "Pinned native method confirmed by48 exact same-ABI GPU controls across8ranks",
       "path": "python/sglang/srt/layers/attention/trtllm_mla_backend.py:TRTLLMMLABackend._run_prefill_kernel"
     }
   },
@@ -159,16 +159,16 @@
       "--ui",
       "simple"
     ],
-    "status": "Canonical native S0 complete, exact Mini R0 pending"
+    "status": "Exact canonical workload measured on native S0 and initial Mini R0"
   },
   "baseline": {
     "minisgl_revision": "eb3bd7bc6d8173396d2907474a7f9ef8771990f7",
-    "status": "Prior BF16 diagnostic and target-format quality baselines established; target Mini serving R0 pending",
+    "status": "Initial serving R0 and quality evidence recorded; corrected prefill/full-parity acceptance pending",
     "policy": "Freeze baseline before optimization. Fix semantic/precision/state/protocol errors before fair comparison. Strict logits/greedy agreement is diagnostic; verified floating rounding/reduction differences allowed.",
     "next": [
-      "Measure frozen Mini R0 with the exact canonical workload and preserve known initial implementation gaps",
-      "Attribute serving gaps using measured cache/concurrency/latency evidence",
-      "Integrate mature communication/cache/attention/MoE backends through generic abstractions; run quality/state regressions and the same workload"
+      "Finish native-FP8 prefill whole-model quality and all1..48 real graph qualification",
+      "Measure the qualified corrected candidate with the same canonical AIPerf workload",
+      "Address measured state-cache reuse, budget/policy and mature communication/backend gaps through generic abstractions"
     ],
     "mini_r0_revision": "07d94b5de00b883be81a45f6c6cc7c3d92d8de45"
   },
@@ -227,7 +227,7 @@
       "--distributed-timeout",
       "1800"
     ],
-    "status": "Frozen R0; first launcher probe failed before readiness/AIPerf, retry uses same model source/argv with robust readiness polling",
+    "status": "Frozen R0 measured in job877; see docs/validation/kimi-k3-aiperf-mini-r0.json. This argv/source record is not the corrected candidate.",
     "precision": {
       "model": "torch.bfloat16",
       "moe_activation": "mxfp8",

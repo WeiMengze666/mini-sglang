@@ -92,8 +92,8 @@ requested serving performance ratio.
 The BF16 quality baseline is commit `eb3bd7b`: paired full GSM8K scores are
 1281/1319 for Mini and 1282/1319 for SGLang, with no invalid/truncated answers.
 Its TP8/DCP2/EP8, BF16 KV and FP32 KDA profile is explicitly separate from the
-requested serving profile. The native S0 measurement is complete; Mini R0
-measurement and final target-profile acceptance remain pending.
+requested serving profile. Native S0 and initial Mini R0 measurements are complete; final precision-path
+and serving acceptance remain pending.
 
 The profile JSON now preserves the exact requested AIPerf command:
 `inferencex-agentx-mvp`, `semianalysis-cc-traces-weka-062126`, 393 dataset entries,
@@ -135,7 +135,8 @@ separate from model and serving-performance acceptance.
 [Versioned result](validation/kimi-k3-aiperf-reference.json) freezes job 863,
 SGLang `baa9befa381511cd4d56f83980951e5a45fffc6d`, AIPerf 0.13.0, the canonical
 argument vectors, model/tokenizer metadata hashes and raw export location.
-This is one reference run; Mini has no corresponding serving result yet.
+This is one reference run; the initial Mini R0 result below retains its explicit
+precision and implementation gaps.
 
 | AIPerf metric | Native S0 |
 | --- | ---: |
@@ -217,12 +218,12 @@ The native-kernel audit observes the official KDA/convolution/MLA-cache kernels
 and FlashInfer expert/MLA calls. Mini's only observed FFI module is the PyNCCL
 communication shim. Python call counts include graph capture, not graph replays.
 
-GPUq job 877 retries this frozen R0 with the exact requested AIPerf command.
+GPUq job 877 completed this frozen R0 with the exact requested AIPerf command.
 Its profile explicitly retains initial implementation gaps: eight state-cache
 slots instead of native ratio-based capacity, no built-in native MNNVL transport,
 unfused FP32 routing weights, and serial default scheduling. Those are measured
-baseline limitations, not final parity settings. Do not publish a Mini/native
-serving ratio before the run completes and its raw exports are checked.
+baseline limitations, not final parity settings. Use these measurements as the initial baseline; a precision-matched serving
+acceptance still requires the corrected path and remaining policy work.
 
 The first R0 attempt (job 876) stopped before server readiness and before AIPerf:
 a probe received its own `GET /v1/models HTTP/1.1` as an invalid status line.
@@ -270,5 +271,46 @@ Producer output stays BF16. There is no new numerical kernel or model-name
 condition. Focused CPU coverage reports 89 passed and one skipped. Six opt-in
 GPU cases are prepared to compare against the actual native backend prefill
 method, recording Q/K/V/output dtype, shape and stride, with exact same-ABI
-output and producer-stream checks. GPU and renewed whole-model quality
-acceptance are pending; the graph-only R1 gate remains prepared but unsubmitted.
+output and producer-stream checks. The native-API control now passes all 48 cases across eight ranks, and the
+complete prefill component gate passes 304 checks with no skips. See
+[the precision evidence](validation/kimi-k3-prefill-precision.json). Renewed
+whole-model quality and 1–48 graph coverage are running in job 878; the
+graph-only R1 gate remains prepared but unsubmitted.
+
+## Initial Mini R0 serving result
+
+[Versioned R0 evidence](validation/kimi-k3-aiperf-mini-r0.json) records job 877,
+source `07d94b5`, the same canonical AIPerf argv/resolved workload as S0, package
+versions, raw export hashes and the completed run. Both runs complete all 51
+warmup requests, then the nominal 900-second profiling phase with its configured
+grace boundary. No input truncation, shorter duration or changed concurrency is
+used. This is the runnable initial baseline, with the precision and policy gaps
+above; it is not a final precision-matched comparison.
+
+| Unmodified AIPerf metric | Mini R0 | Native S0 |
+| --- | ---: | ---: |
+| Output throughput | 22.84 tokens/s | 378.53 tokens/s |
+| Request throughput | 0.0936 requests/s | 0.5447 requests/s |
+| TTFT P50 / P95 | 10.02 / 233.02 s | 0.59 / 4.48 s |
+| ITL P50 / P95 | 428.34 / 957.69 ms | 26.76 / 51.08 ms |
+| Request latency P50 / P95 | 119.84 / 458.24 s | 9.51 / 79.14 s |
+| Completed / HTTP errors / deadline cancellations | 88 / 0 / 20 | 512 / 0 / 3 |
+| Prompt cache reads / total reported prompt tokens | 942,592 / 8,543,041 | 52,267,520 / 56,177,301 |
+| Reported prompt cache-read fraction | 11.03% | 93.04% |
+| Effective concurrency, mean | 14.84 requests | 11.86 requests |
+
+Both exports are complete and mark the submission valid. Deadline cancellations
+are recorded separately from HTTP errors, and the incomplete requests are
+subject to AIPerf's normal accounting. Preserve its exported throughput and phase
+denominators. Native prompt billing omits three input framing tokens per
+request; the evidence separately normalizes input-derived totals to model tokens.
+This tiny accounting difference does not explain the cache-reuse gap. Neither
+run collects peak request GPU memory under the requested telemetry settings;
+post-initialization free-memory logs are not peak-memory measurements.
+
+The baseline falls far short of the target. Low state-backed prefix reuse and
+missing graph coverage are measured/confirmed gaps; their individual performance
+contributions are not yet isolated. First qualify the prefill precision correction
+and graph policy, measure that candidate, then evaluate generic ratio-based
+state/KV capacity and checkpoint ownership/policy improvements. The post-run
+audit finds no owned R0 server processes remaining.

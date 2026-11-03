@@ -85,7 +85,7 @@ qualification and Mini AIPerf measurements remain pending.
 
 The canonical native S0 AIPerf run is now recorded in
 [the serving report](kimi-k3-performance.md#native-s0-result): 378.53 output
-tokens/s, TTFT P50 590.35 ms and ITL P50 26.76 ms. Mini R0 remains pending.
+tokens/s, TTFT P50 590.35 ms and ITL P50 26.76 ms. The initial Mini R0 measurement is now recorded with its known precision/cache gaps.
 Cache reads are exposed through standard prompt-token details and a completed
 cache-read token counter, preserving the original admission hit across chunks.
 
@@ -97,7 +97,7 @@ BF16 destination without an FP32 cast before TP reduction. Tests cover real
 local experts, so it does not replace whole-checkpoint validation. KDA BF16 state
 updates match both canonical and indexed native pools exactly. FP32-state native
 layout variation is preserved as a diagnostic while identical-ABI comparisons
-remain exact. Full target-format GSM8K is complete; Mini serving measurement remains pending.
+remain exact. The initial GSM8K and Mini serving baseline are complete; full precision-path acceptance remains pending.
 
 Weight loading uses aligned, bounded arenas shared across ordinary parameters.
 Declared contiguous projection groups stay intact; separate arenas can be freed
@@ -112,5 +112,19 @@ The frozen target-format R0 at `07d94b5` scores 1281/1319 on GSM8K versus
 failure. All eight ranks pass real-checkpoint checkpoint/restore/eviction and
 request cancellation/slot-reuse checks. See [the target quality record](validation/kimi-k3-target-quality.json)
 for precision, coverage, hashes and unresolved attribution limits. The exact
-AIPerf R0 measurement is GPUq job 877 (launcher-only retry after a startup probe
-protocol failure); serving parity remains unaccepted.
+AIPerf R0 measurement is complete in GPUq job 877 (launcher-only retry after a
+startup probe failure); serving parity remains unaccepted.
+
+Initial R0 measures 22.84 output tokens/s versus native S0's 378.53, with TTFT
+P50 10.02 s versus 0.59 s and cache-read fraction 11.03% versus 93.04%. There
+are 88 completed requests, zero HTTP errors and 20 grace-deadline cancellations.
+The [serving evidence](validation/kimi-k3-aiperf-mini-r0.json) preserves the
+canonical workload, accounting boundary and the initial precision/cache/graph
+limitations. The baseline is far from the final performance goal.
+
+A subsequent audit identifies a missing FP8 prefill Q/K/V boundary in R0.
+The generic MLA correction at `743a4f5` now passes 304 GPU prefill checks,
+including 48 exact comparisons with the pinned native backend method and
+recorded tensor metadata/kernel options. Full task and graph-size qualification
+of that corrected candidate are running separately; no final performance or
+complete precision-path parity is claimed. See [the precision record](validation/kimi-k3-prefill-precision.json).

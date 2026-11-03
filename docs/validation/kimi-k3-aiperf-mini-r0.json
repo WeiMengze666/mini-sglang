@@ -1,0 +1,378 @@
+{
+  "scope": "Extract unmodified AIPerf exports; initial R0 is not precision-path parity.",
+  "mini_source_commit": "07d94b5de00b883be81a45f6c6cc7c3d92d8de45",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "same_benchmark_argv": true,
+  "benchmark_argv": [
+    "aiperf",
+    "profile",
+    "--scenario",
+    "inferencex-agentx-mvp",
+    "--url",
+    "http://127.0.0.1:38080",
+    "--endpoint",
+    "/v1/chat/completions",
+    "--endpoint-type",
+    "chat",
+    "--streaming",
+    "--model",
+    "moonshotai/Kimi-K3",
+    "--tokenizer",
+    "/data/models/Kimi-K3",
+    "--tokenizer-trust-remote-code",
+    "--max-context-length",
+    "1048576",
+    "--public-dataset",
+    "semianalysis-cc-traces-weka-062126",
+    "--num-dataset-entries",
+    "393",
+    "--concurrency",
+    "48",
+    "--use-server-token-count",
+    "--extra-inputs",
+    "ignore_eos:true",
+    "--cache-bust",
+    "first_turn_prefix",
+    "--system-idle-gap-cap-seconds",
+    "10",
+    "--trajectory-start-min-ratio",
+    "0.25",
+    "--trajectory-start-max-ratio",
+    "0.75",
+    "--benchmark-duration",
+    "900",
+    "--random-seed",
+    "42",
+    "--stats-interval",
+    "30",
+    "--failed-request-threshold",
+    "0.10",
+    "--no-gpu-telemetry",
+    "--server-metrics",
+    "http://127.0.0.1:38080/metrics",
+    "--server-metrics-formats",
+    "json",
+    "csv",
+    "parquet",
+    "jsonl",
+    "--slice-duration",
+    "1.0",
+    "--export-level",
+    "raw",
+    "--ui",
+    "simple"
+  ],
+  "same_resolved_workload_except_artifact_directory": true,
+  "fair_precision_and_cache_policy_parity": false,
+  "reference": {
+    "run": "experiment/phase268-reference-aiperf",
+    "benchmark_id": "cdcc978f8f0f",
+    "is_complete": true,
+    "submission_valid": true,
+    "was_cancelled": false,
+    "error_summary": [],
+    "metrics": {
+      "output_token_throughput": {
+        "unit": "tokens/sec",
+        "avg": 378.5267180565058
+      },
+      "request_throughput": {
+        "unit": "requests/sec",
+        "avg": 0.5446794962703503
+      },
+      "time_to_first_token": {
+        "unit": "ms",
+        "avg": 1558.3744817148436,
+        "p50": 590.352266,
+        "p95": 4482.193136599998,
+        "count": 512
+      },
+      "inter_token_latency": {
+        "unit": "ms",
+        "avg": 29.770121054052762,
+        "p50": 26.75742234834773,
+        "p95": 51.0779616249972,
+        "count": 512
+      },
+      "request_latency": {
+        "unit": "ms",
+        "avg": 21779.80054390625,
+        "p50": 9506.340909499999,
+        "p95": 79143.59219439999,
+        "count": 512
+      },
+      "request_error_rate": {
+        "unit": "%",
+        "avg": 0.0
+      },
+      "completed_request_count": {
+        "unit": "requests",
+        "avg": 512.0
+      },
+      "effective_concurrency": {
+        "unit": "requests",
+        "avg": 11.863185848789417,
+        "p50": 11.0,
+        "p95": 20.0
+      },
+      "benchmark_duration": {
+        "unit": "sec",
+        "avg": 917.922285824
+      },
+      "total_usage_completion_tokens": {
+        "unit": "tokens",
+        "avg": 355816.0
+      },
+      "total_usage_prompt_tokens": {
+        "unit": "tokens",
+        "avg": 56177301.0
+      },
+      "total_usage_prompt_cache_read_tokens": {
+        "unit": "tokens",
+        "avg": 52267520.0
+      },
+      "overall_usage_prompt_cache_read_pct": {
+        "unit": "%",
+        "avg": 93.0402832987651
+      }
+    },
+    "warmup_returned_with_first_token": 51,
+    "server_argv": [
+      "sglang",
+      "serve",
+      "--trust-remote-code",
+      "--model-path",
+      "/data/models/Kimi-K3",
+      "--served-model-name",
+      "moonshotai/Kimi-K3",
+      "--tp-size",
+      "8",
+      "--dcp-size",
+      "8",
+      "--page-size",
+      "64",
+      "--context-length",
+      "1048576",
+      "--mem-fraction-static",
+      "0.90",
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--mamba-ssm-dtype",
+      "bfloat16",
+      "--mamba-radix-cache-strategy",
+      "extra_buffer",
+      "--mamba-full-memory-ratio",
+      "0.31",
+      "--max-running-requests",
+      "48",
+      "--max-prefill-tokens",
+      "32768",
+      "--chunked-prefill-size",
+      "32768",
+      "--cuda-graph-max-bs-decode",
+      "48",
+      "--reasoning-parser",
+      "kimi_k3",
+      "--tool-call-parser",
+      "kimi_k3",
+      "--enable-metrics",
+      "--enable-cache-report",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "38080"
+    ],
+    "input_accounting": {
+      "reported_to_model_offset_per_request": 3,
+      "model_prompt_tokens": 56178837.0,
+      "cache_read_pct_of_model_tokens": 93.03773946050183
+    },
+    "export": "experiment/phase268-reference-aiperf/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json",
+    "export_sha256": "2c5919ba9e619e78f44d8248daa025f168481e75ceb8ac4c6b0496c1c168fe4f",
+    "run_sha256": "6cc4deb011e6047c754bfbce319dfc7af8dc417d07eb85a65a428bbb038eba9b",
+    "profile_sha256": "648230b6236f8742376d396aecf04bdc0feec2991528428ef39270b9c845d685",
+    "packages": {
+      "aiperf": "0.13.0",
+      "torch": "2.14.1+cu130",
+      "triton": "3.8.0",
+      "flashinfer-python": "0.7.1",
+      "transformers": "5.19.0"
+    },
+    "profiling_phase_records": {
+      "final_requests_completed": 512,
+      "final_requests_cancelled": 3,
+      "final_request_errors": 0
+    }
+  },
+  "mini_r0": {
+    "run": "experiment/phase280-mini-r0-aiperf",
+    "benchmark_id": "95a1e8c3d782",
+    "is_complete": true,
+    "submission_valid": true,
+    "was_cancelled": false,
+    "error_summary": [],
+    "metrics": {
+      "output_token_throughput": {
+        "unit": "tokens/sec",
+        "avg": 22.84357349486434
+      },
+      "request_throughput": {
+        "unit": "requests/sec",
+        "avg": 0.09361684289796778
+      },
+      "time_to_first_token": {
+        "unit": "ms",
+        "avg": 43423.76616172727,
+        "p50": 10023.863234999999,
+        "p95": 233017.3571349,
+        "count": 88
+      },
+      "inter_token_latency": {
+        "unit": "ms",
+        "avg": 456.87906514053634,
+        "p50": 428.34349119639563,
+        "p95": 957.6933066942831,
+        "count": 88
+      },
+      "request_latency": {
+        "unit": "ms",
+        "avg": 158543.12396151136,
+        "p50": 119839.24692399999,
+        "p95": 458235.2632445498,
+        "count": 88
+      },
+      "request_error_rate": {
+        "unit": "%",
+        "avg": 0.0
+      },
+      "completed_request_count": {
+        "unit": "requests",
+        "avg": 88.0
+      },
+      "effective_concurrency": {
+        "unit": "requests",
+        "avg": 14.84233860602529,
+        "p50": 17.0,
+        "p95": 18.0
+      },
+      "benchmark_duration": {
+        "unit": "sec",
+        "avg": 926.8662330880001
+      },
+      "total_usage_completion_tokens": {
+        "unit": "tokens",
+        "avg": 21473.0
+      },
+      "total_usage_prompt_tokens": {
+        "unit": "tokens",
+        "avg": 8543041.0
+      },
+      "total_usage_prompt_cache_read_tokens": {
+        "unit": "tokens",
+        "avg": 942592.0
+      },
+      "overall_usage_prompt_cache_read_pct": {
+        "unit": "%",
+        "avg": 11.033448159736094
+      }
+    },
+    "warmup_returned_with_first_token": 51,
+    "server_argv": [
+      "python",
+      "-m",
+      "minisgl",
+      "--model",
+      "/data/models/Kimi-K3",
+      "--trust-remote-code",
+      "--served-model-name",
+      "moonshotai/Kimi-K3",
+      "--tp-size",
+      "8",
+      "--dcp-size",
+      "8",
+      "--ep-size",
+      "1",
+      "--page-size",
+      "64",
+      "--max-seq-len-override",
+      "1048576",
+      "--memory-ratio",
+      "0.90",
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--recurrent-state-dtype",
+      "bfloat16",
+      "--max-running-requests",
+      "48",
+      "--max-cached-states",
+      "8",
+      "--max-extend-length",
+      "32768",
+      "--cuda-graph-max-bs",
+      "48",
+      "--mxfp4-backend",
+      "flashinfer",
+      "--mxfp4-activation-precision",
+      "mxfp8",
+      "--moe-backend",
+      "auto",
+      "--bf16-precision",
+      "default",
+      "--attention-backend",
+      "auto",
+      "--reasoning-parser",
+      "kimi_k3",
+      "--tool-call-parser",
+      "kimi_k3",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "38080",
+      "--distributed-timeout",
+      "1800"
+    ],
+    "input_accounting": {
+      "reported_to_model_offset_per_request": 0,
+      "model_prompt_tokens": 8543041.0,
+      "cache_read_pct_of_model_tokens": 11.033448159736094
+    },
+    "export": "experiment/phase280-mini-r0-aiperf/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json",
+    "export_sha256": "b7cde12afbb02d557d44a01bf7ca168adebf5bf6d48e7719312c0c96d6a7870e",
+    "run_sha256": "88c04434bf09564627e589dcfec76bccc6767b712625a088310b1dda055e6762",
+    "profile_sha256": "4a427345c81c21764e18f40dbf72d092e04b8eb7082851cc6341a36136aead41",
+    "packages": {
+      "aiperf": "0.13.0",
+      "torch": "2.14.1+cu130",
+      "triton": "3.8.0",
+      "flashinfer-python": "0.7.1",
+      "transformers": "5.19.0"
+    },
+    "profiling_phase_records": {
+      "final_requests_completed": 88,
+      "final_requests_cancelled": 20,
+      "final_request_errors": 0
+    }
+  },
+  "known_r0_gaps": [
+    "BF16 ragged prefill Q/K/V vs native FP8 (KV storage FP8 and decode query quantization already match)",
+    "Fixed8 cached recurrent checkpoints vs native ratio0.31 extra_buffer sizing/policy",
+    "Sparse9 decode graph buckets; unpadded intermediate batch sizes execute eagerly",
+    "Native unfused FP32 routing weights vs default fused BF16-packed routing",
+    "No built-in native MNNVL transport; serial default scheduling"
+  ],
+  "interpretation": "Initial runnable baseline only. Preserve exported tool denominators and report input billing normalization separately. Do not infer a model-quality or final precision-matched performance acceptance from these numbers.",
+  "peak_device_memory": "Not captured by this canonical no-gpu-telemetry workload; initialization free-memory logs are not peak request memory.",
+  "recorded_utc": "2026-11-03T20:28:45.302065+00:00",
+  "mini_job": 877,
+  "reference_job": 863,
+  "failed_startup_attempt": 876,
+  "mini_source_archive_sha256": "9450861226ce410c7062f6c73b32a0151d0e04a1dd95361d51ff5f2a0d0bd656",
+  "submission_manifest_sha256": "01d5471e3510b0516afb50ccfa6862c603b46807c8e8f4ba93c957fa659d607f",
+  "report_script_sha256": "3135f09a37d7fcaaf0137e779d3e25d13bef1f39996a84e801d1bf4ca5392555",
+  "post_job_process_audit": {
+    "utc": "2026-11-03T20:28:45.306905+00:00",
+    "owned_pids": [],
+    "snapshot": "K3_SNAPSHOT=/home/axis/mengze/mini-sglang-k3/experiment/phase279-mini-r0-source",
+    "sha256": "c6ed6f76d4f3d4968852f57715290e666fc534b02270d54e8dcadbe50faec538"
+  }
+}
