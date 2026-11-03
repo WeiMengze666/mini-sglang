@@ -217,9 +217,22 @@ The native-kernel audit observes the official KDA/convolution/MLA-cache kernels
 and FlashInfer expert/MLA calls. Mini's only observed FFI module is the PyNCCL
 communication shim. Python call counts include graph capture, not graph replays.
 
-GPUq job 876 measures this frozen R0 with the exact requested AIPerf command.
+GPUq job 877 retries this frozen R0 with the exact requested AIPerf command.
 Its profile explicitly retains initial implementation gaps: eight state-cache
 slots instead of native ratio-based capacity, no built-in native MNNVL transport,
 unfused FP32 routing weights, and serial default scheduling. Those are measured
 baseline limitations, not final parity settings. Do not publish a Mini/native
 serving ratio before the run completes and its raw exports are checked.
+
+The first R0 attempt (job 876) stopped before server readiness and before AIPerf:
+a probe received its own `GET /v1/models HTTP/1.1` as an invalid status line.
+A CPU-only Linux TCP self-connect reproduces that response on an unused
+loopback port; the requested port 38080 lies in the host ephemeral range.
+Original socket endpoints were not captured, so self-connect is a supported
+explanation rather than a directly observed original connection. The launcher
+now retries HTTP protocol exceptions alongside connection failures, records
+probe errors, and still detects server exit/readiness timeout. Four real local
+HTTP/process integration checks pass, including malformed responses and failed
+benchmark cleanup. Job 877 changes only the launcher; model source, server argv,
+precision and the 900-second AIPerf argv remain identical. Job 876 leaves no
+owned processes and contributes no performance number.

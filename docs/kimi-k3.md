@@ -112,4 +112,5 @@ The frozen target-format R0 at `07d94b5` scores 1281/1319 on GSM8K versus
 failure. All eight ranks pass real-checkpoint checkpoint/restore/eviction and
 request cancellation/slot-reuse checks. See [the target quality record](validation/kimi-k3-target-quality.json)
 for precision, coverage, hashes and unresolved attribution limits. The exact
-AIPerf R0 measurement is GPUq job 876; serving parity remains unaccepted.
+AIPerf R0 measurement is GPUq job 877 (launcher-only retry after a startup probe
+protocol failure); serving parity remains unaccepted.

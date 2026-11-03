@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "requested; runtime resolution and equivalent Mini configuration pending",
+  "status": "Native S0 measured; frozen Mini R0 target quality/lifecycle complete within recorded scopes; exact Mini serving measurement pending",
   "reference": {
     "repository": "https://github.com/sgl-project/sglang",
     "inspected_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
@@ -64,17 +64,17 @@
   "source_expectations": {
     "ep_size": {
       "value": 1,
-      "status": "source default; runtime verification pending",
+      "status": "Confirmed in canonical S0 runtime server-info; see docs/validation/kimi-k3-aiperf-reference.json",
       "path": "python/sglang/srt/arg_groups/fields/parallel.py"
     },
     "moe_runner_backend": {
       "value": "flashinfer_mxfp4",
-      "status": "SM100/SM103/SM107 packed-K3 model override; runtime verification pending",
+      "status": "Confirmed in canonical S0 runtime server-info; see docs/validation/kimi-k3-aiperf-reference.json",
       "path": "python/sglang/srt/arg_groups/model_overrides/kimi_k3.py"
     },
     "moe_activation_precision": {
       "value": "mxfp8",
-      "status": "source-derived for flashinfer_mxfp4/default on SM100; runtime tensors and both GEMM stages still require verification",
+      "status": "Confirmed in canonical S0 runtime server-info; see docs/validation/kimi-k3-aiperf-reference.json",
       "path": "python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py:1088-1098"
     }
   },
@@ -154,17 +154,90 @@
       "--ui",
       "simple"
     ],
-    "status": "Exact user workload preserved; CPU CLI/environment preflight and paired runs pending"
+    "status": "Canonical native S0 complete, exact Mini R0 pending"
   },
   "baseline": {
     "minisgl_revision": "eb3bd7bc6d8173396d2907474a7f9ef8771990f7",
-    "status": "BF16 quality baseline established; target-profile serving baseline pending",
+    "status": "Prior BF16 diagnostic and target-format quality baselines established; target Mini serving R0 pending",
     "policy": "Freeze baseline before optimization. Fix semantic/precision/state/protocol errors before fair comparison. Strict logits/greedy agreement is diagnostic; verified floating rounding/reduction differences allowed.",
     "next": [
-      "Verify exact AIPerf scenario, dataset and streaming usage/metrics contract",
-      "Capture official resolved target precision and reference AIPerf run",
-      "Establish Mini target-precision correctness and serving baseline",
-      "Optimize mature kernel integration and generic communication/cache paths one change at a time; compare against frozen baseline"
+      "Measure frozen Mini R0 with the exact canonical workload and preserve known initial implementation gaps",
+      "Attribute serving gaps using measured cache/concurrency/latency evidence",
+      "Integrate mature communication/cache/attention/MoE backends through generic abstractions; run quality/state regressions and the same workload"
+    ],
+    "mini_r0_revision": "07d94b5de00b883be81a45f6c6cc7c3d92d8de45"
+  },
+  "mini": {
+    "argv": [
+      "python",
+      "-m",
+      "minisgl",
+      "--model",
+      "/data/models/Kimi-K3",
+      "--trust-remote-code",
+      "--served-model-name",
+      "moonshotai/Kimi-K3",
+      "--tp-size",
+      "8",
+      "--dcp-size",
+      "8",
+      "--ep-size",
+      "1",
+      "--page-size",
+      "64",
+      "--max-seq-len-override",
+      "1048576",
+      "--memory-ratio",
+      "0.90",
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--recurrent-state-dtype",
+      "bfloat16",
+      "--max-running-requests",
+      "48",
+      "--max-cached-states",
+      "8",
+      "--max-extend-length",
+      "32768",
+      "--cuda-graph-max-bs",
+      "48",
+      "--mxfp4-backend",
+      "flashinfer",
+      "--mxfp4-activation-precision",
+      "mxfp8",
+      "--moe-backend",
+      "auto",
+      "--bf16-precision",
+      "default",
+      "--attention-backend",
+      "auto",
+      "--reasoning-parser",
+      "kimi_k3",
+      "--tool-call-parser",
+      "kimi_k3",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "38080",
+      "--distributed-timeout",
+      "1800"
+    ],
+    "status": "Frozen R0; first launcher probe failed before readiness/AIPerf, retry uses same model source/argv with robust readiness polling",
+    "precision": {
+      "model": "torch.bfloat16",
+      "moe_activation": "mxfp8",
+      "kv": "torch.float8_e4m3fn",
+      "kda_state": "torch.bfloat16"
+    },
+    "orchestration_note": "1800s bootstrap/collective timeout for large checkpoint loading; not a precision or workload change",
+    "source_commit": "07d94b5de00b883be81a45f6c6cc7c3d92d8de45",
+    "baseline": "R0; first runnable Mini serving baseline, no parity claim",
+    "known_gaps": [
+      "Fixed8 cached states instead of native ratio-based extra_buffer budget/capacity; checkpoint/restore/eviction lifecycle validated",
+      "No built-in native MNNVL transport",
+      "No native small-batch fused route+quant prepared input; FP32 unfused routing weights",
+      "Serial hybrid scheduling by default"
     ]
-  }
+  },
+  "accounting_note": "Native K3 API deducts3 generation-stub tokens from prompt usage; model input IDs verified identical on all512 completed S0 requests. Mini reports actual IDs. Normalize input-derived metrics in comparison; retain raw exports."
 }

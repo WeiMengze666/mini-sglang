@@ -11,6 +11,7 @@ import socket
 import subprocess
 import time
 from datetime import datetime, timezone
+from http.client import HTTPException
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from urllib.parse import urlparse
@@ -92,8 +93,11 @@ def run_profile(
                         if response.status == 200:
                             ready = True
                             break
-                except OSError:
-                    pass
+                except (OSError, HTTPException) as exc:
+                    errors = result.setdefault("readiness_probe_errors", {})
+                    name = type(exc).__name__
+                    errors[name] = errors.get(name, 0) + 1
+                    result["last_readiness_error"] = f"{name}: {exc}"
                 time.sleep(0.5)
             if not ready:
                 raise TimeoutError("Server readiness timed out")

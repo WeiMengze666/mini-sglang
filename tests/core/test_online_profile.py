@@ -16,7 +16,8 @@ def _runner():
 
 
 @pytest.mark.parametrize("code", [0, 4])
-def test_profile_preserves_commands_and_cleans_owned_server(tmp_path, code):
+@pytest.mark.parametrize("malformed", [False, True])
+def test_profile_preserves_commands_and_cleans_owned_server(tmp_path, code, malformed):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
@@ -24,6 +25,8 @@ def test_profile_preserves_commands_and_cleans_owned_server(tmp_path, code):
     server.write_text("""import http.server,sys
 class Handler(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
+  if sys.argv[2]=='malformed' and not getattr(self.server,'responded',False):
+   self.server.responded=True;self.wfile.write(self.raw_requestline);self.close_connection=True;return
   self.send_response(200);self.end_headers();self.wfile.write(b'{"ready":true}')
 http.server.HTTPServer(('127.0.0.1',int(sys.argv[1])),Handler).serve_forever()
 """)
@@ -35,7 +38,7 @@ raise SystemExit(int(sys.argv[3]))
 """)
     url = f"http://127.0.0.1:{port}"
     profile = {
-        "reference": {"argv": [sys.executable, str(server), str(port)]},
+        "reference": {"argv": [sys.executable, str(server), str(port), "malformed" if malformed else "ready"]},
         "benchmark": {"argv": [sys.executable, str(bench), "--url", url, str(code)]},
     }
     path = tmp_path / "profile.json"
@@ -52,6 +55,9 @@ raise SystemExit(int(sys.argv[3]))
     assert saved["server_argv"] == profile["reference"]["argv"]
     assert saved["benchmark_argv"] == profile["benchmark"]["argv"]
     assert saved["benchmark_returncode"] == code
+    if malformed:
+        assert saved["readiness_probe_errors"]["BadStatusLine"] == 1
+        assert saved["last_readiness_error"].startswith("BadStatusLine:")
     assert saved["status"] == ("failed" if code else "completed")
     assert (output / "metrics-before.txt").exists() and (output / "metrics-after.txt").exists()
     with socket.socket() as probe:
