@@ -1,0 +1,32 @@
+{
+  "scope": "Validation diagnostics only; released-checkpoint correctness and serving performance remain incomplete",
+  "source_base": "f0d965b08c03c94c3f0df0ab1badd8b9f2dc1ba5",
+  "files_sha256": {
+    "tests/validation/gsm8k_suite.py": "0a42a9d7944158e686135cdc46336638c1bac19b04fc9c9813bffb35fffbcca7",
+    "tests/core/test_gsm8k_scoring.py": "a2f1b030c81b178360f544c0ccd5633d5bf0024e30f5698823f78a305edd6de4"
+  },
+  "cpu": {
+    "passed": 32,
+    "failed": 0,
+    "skipped": 0,
+    "command": "CUDA_VISIBLE_DEVICES='' MINISGL_RUN_CUDA_TESTS=0 OMP_NUM_THREADS=1 PYTHONPATH=$PWD/python:/home/axis/mengze/sglang/python python -m pytest -o addopts= -q tests/core/test_gsm8k_scoring.py tests/core/test_tensor_trace.py",
+    "log": "experiment/phase292-failure-capture-cpu.log",
+    "log_sha256": "13ca5e543aba54c7eefe58248bb18fee249a012d0515bf96438fb8392e13661c"
+  },
+  "invariants": [
+    "Mini and native validation still pass explicit MoE/KV/KDA precision parameters",
+    "Failure after one successful token preserves that token and request lengths",
+    "Original model/transfer error is re-raised when cleanup also fails",
+    "First failure context is not overwritten by a nested failure handler",
+    "Device tensor metadata is read without Tensor.cpu or Tensor.to; noncontiguous strides retained",
+    "CPU state indices and logical request-table positions retained separately",
+    "Full generated token histories retained; bounded CPU metadata avoids copying large payloads",
+    "CLI refuses output directories containing prior failure evidence"
+  ],
+  "fixture_scope": "CPU fake engines and meta/CPU tensors; no new GPU or released-model acceptance",
+  "gpu_recheck": {
+    "job": 880,
+    "result": "NVML incomplete inventory and Reboot recovery actions; no CUDA initialization attempted",
+    "evidence": "docs/validation/kimi-k3-gpu-interruption.json"
+  }
+}

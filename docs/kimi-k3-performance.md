@@ -342,3 +342,22 @@ static/shared storage and unequal rank state footprints. R3 has no GPU or
 performance acceptance yet. Device recovery and the pending R2 correctness and
 serving measurements come first; native lazy extra-buffer ownership and mature
 communication integration still remain to be completed.
+
+## Failure context for resumed qualification
+
+The GSM8K validation runner now writes `failure-rankN.json` before cleanup when
+evaluation raises an exception. It records the current case IDs and immutable cases hash, completed
+generated-token histories, logical request/state positions, batch phase, graph
+selection, and tensor dtype/shape/stride. Small CPU indices retain their values;
+device tensors retain metadata. Recording does not read a device payload or
+synchronize an already-failed CUDA context. The primary error remains the raised
+failure even if shutdown also reports an error. A timestamp allows correlation
+with driver logs. This changes validation evidence, not inference or scoring.
+
+The 32 focused CPU checks include a failure on the second token transfer, complete
+history preservation, distinct request-table and state-index metadata, noncontiguous tensor views,
+cleanup failing after the original error, and refusal to overwrite failed-run
+evidence. The fresh health recheck in GPUq
+job880 still reports a missing device and `Reboot` recovery actions; its NVML gate
+stops before CUDA initialization. No corrected whole-model or serving acceptance
+is established by these diagnostics.

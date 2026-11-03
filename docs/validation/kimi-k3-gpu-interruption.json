@@ -109,5 +109,14 @@
     "artifact": "experiment/phase285-native-path-audit/rank7.json",
     "artifact_sha256": "b67e3fc7890447737ba25f508e2622bda2e94634dc5055058f99fbe52a0cc230",
     "scope": "Confirms actual model prefill dispatch formats before interruption; does not complete the task or prove all model semantics."
+  },
+  "followup_recheck": {
+    "job": 880,
+    "nvml_inventory_complete": false,
+    "safe_to_attempt_fresh_context": false,
+    "action": "Stopped at read-only NVML gate before CUDA initialization",
+    "artifact": "experiment/phase289-health/nvml-summary.json",
+    "artifact_sha256": "441e399e61b0d6b5bb3dece20482eac0c517fba3db72586e68c3e56a8be2f8fe",
+    "submitted_utc": "2026-11-03T21:11:19Z"
   }
 }

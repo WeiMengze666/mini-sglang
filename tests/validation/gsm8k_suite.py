@@ -143,6 +143,94 @@ def save_progress(args, rows, total, started):
     )
 
 
+def save_failure(args, error, *, stage, group, generated=(), batch=None, logits=None, graph=False):
+    """Retain CPU token history and device metadata without reading a failed GPU."""
+    import dataclasses
+    import traceback
+
+    import torch
+
+    target = args.output / ("failure-rank" + os.environ.get("RANK", "0") + ".json")
+    if target.exists():
+        return target  # nested failure handlers retain the first, closest context
+
+    def describe(value, depth=0):
+        if isinstance(value, torch.Tensor):
+            result = {
+                "dtype": str(value.dtype),
+                "shape": list(value.shape),
+                "stride": list(value.stride()),
+                "device": str(value.device),
+                "storage_offset": value.storage_offset(),
+            }
+            if value.device.type == "cpu" and value.numel() <= 4096:
+                result["values"] = value.tolist()
+            return result
+        if depth > 4:
+            return {"type": type(value).__name__}
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            return {
+                f.name: describe(getattr(value, f.name), depth + 1)
+                for f in dataclasses.fields(value)
+                if hasattr(value, f.name)
+            }
+        if isinstance(value, dict):
+            return {str(k): describe(v, depth + 1) for k, v in list(value.items())[:64]}
+        if isinstance(value, (list, tuple)):
+            return [describe(v, depth + 1) for v in value[:64]]
+        if value is None or isinstance(value, (str, bool, int, float)):
+            return value
+        return str(value) if isinstance(value, Path) else {"type": type(value).__name__}
+
+    requests = [] if batch is None else batch.reqs
+    result = {
+        "complete": False,
+        "observed_unix_ns": time.time_ns(),
+        "stage": stage,
+        "graph_replay": graph,
+        "error": "".join(traceback.format_exception(type(error), error, error.__traceback__)),
+        "configuration": describe(vars(args)),
+        "case_ids": [case["id"] for case in group],
+        "cases_sha256": hashlib.sha256(args.cases.read_bytes()).hexdigest(),
+        "generated_ids": generated,
+        "requests": [
+            {
+                name: describe(getattr(req, name))
+                for name in ("uid", "table_idx", "cached_len", "device_len", "input_ids")
+            }
+            for req in requests
+        ],
+        "batch": None
+        if batch is None
+        else {
+            name: describe(getattr(batch, name))
+            for name in ("phase", "input_ids", "positions", "out_loc", "attn_metadata")
+            if hasattr(batch, name)
+        },
+        "logits": describe(logits),
+        "limitation": "Device tensors retain metadata only. Generated tokens and small CPU inputs/logical indices are saved; large prompts remain in the immutable cases file. Device values and kernel traces must be captured before a fault.",
+    }
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+    temporary.replace(target)
+    return target
+
+
+def shutdown_engine(engine, primary_error=None):
+    try:
+        engine.shutdown()
+    except Exception as cleanup:
+        if primary_error is None:
+            raise
+        import sys
+
+        print(
+            f"Cleanup also failed while handling {type(primary_error).__name__}: {cleanup}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
 def run_mini(args, cases, stop_ids):
     import torch
     from minisgl.core import Batch, Req, SamplingParams
@@ -191,10 +279,14 @@ def run_mini(args, cases, stop_ids):
             json.dumps(execution_identity("minisgl"), indent=2) + "\n"
         )
     rows, started = [], time.monotonic()
+    group, generated, batch, logits = [], [], None, None
+    failure, stage, graph = None, "setup", False
     try:
         with torch.inference_mode():
             for begin in range(0, len(cases), args.batch_size):
                 group = cases[begin : begin + args.batch_size]
+                generated, batch, logits = [], None, None
+                stage = "request_init"
                 reqs = [
                     Req(
                         torch.tensor(case["input_ids"], dtype=torch.int32),
@@ -210,6 +302,7 @@ def run_mini(args, cases, stop_ids):
                 generated = [[] for _ in reqs]
                 active = list(reqs)
                 while active:
+                    stage, graph = "prepare_batch", False
                     batch = Batch(active, "prefill" if active[0].cached_len == 0 else "decode")
                     engine.graph_runner.pad_batch(batch)
                     batch.input_ids = torch.cat(
@@ -225,15 +318,18 @@ def run_mini(args, cases, stop_ids):
                         [table[req.table_idx, req.cached_len : req.device_len] for req in active]
                     )
                     engine.attn_backend.prepare_metadata(batch)
+                    stage = "model_forward"
                     with engine.ctx.forward_batch(batch):
+                        graph = engine.graph_runner.can_use_cuda_graph(batch)
                         logits = (
-                            engine.graph_runner.replay(batch)
-                            if engine.graph_runner.can_use_cuda_graph(batch)
-                            else engine.model.forward()
+                            engine.graph_runner.replay(batch) if graph else engine.model.forward()
                         )
+                    stage = "token_transfer"
                     tokens = logits.argmax(-1).to(torch.int32).cpu()
+                    stage = "finite_check"
                     if not torch.isfinite(logits).all():
                         raise AssertionError("Task evaluation produced non-finite logits")
+                    stage = "token_bookkeeping"
                     remaining = []
                     for index, req in enumerate(active):
                         token = int(tokens[index])
@@ -264,8 +360,26 @@ def run_mini(args, cases, stop_ids):
                             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
                     rows.extend(new)
                     save_progress(args, rows, len(cases), started)
+    except BaseException as exc:
+        failure = exc
+        try:
+            save_failure(
+                args,
+                exc,
+                stage=stage,
+                group=group,
+                generated=generated,
+                batch=batch,
+                logits=logits,
+                graph=graph,
+            )
+        except Exception as recording:
+            import sys
+
+            print(f"Failure recording also failed: {recording}", file=sys.stderr, flush=True)
+        raise
     finally:
-        engine.shutdown()
+        shutdown_engine(engine, failure)
 
 
 def run_sglang(args, cases, stop_ids):
@@ -311,9 +425,11 @@ def run_sglang(args, cases, stop_ids):
         log_level="info",
     )
     rows, started = [], time.monotonic()
+    group, results, failure, stage = [], None, None, "setup"
     try:
         for begin in range(0, len(cases), args.batch_size):
             group = cases[begin : begin + args.batch_size]
+            stage, results = "native_generate", None
             results = engine.generate(
                 input_ids=[case["input_ids"] for case in group],
                 sampling_params={
@@ -322,6 +438,7 @@ def run_sglang(args, cases, stop_ids):
                     "stop_token_ids": list(stop_ids),
                 },
             )
+            stage = "native_result"
             if isinstance(results, dict):
                 results = [results]
             if len(results) != len(group):
@@ -340,8 +457,20 @@ def run_sglang(args, cases, stop_ids):
                     stream.write(json.dumps(row, ensure_ascii=False) + "\n")
             rows.extend(new)
             save_progress(args, rows, len(cases), started)
+    except BaseException as exc:
+        failure = exc
+        try:
+            generated = (
+                [r.get("output_ids", []) for r in results] if isinstance(results, list) else []
+            )
+            save_failure(args, exc, stage=stage, group=group, generated=generated)
+        except Exception as recording:
+            import sys
+
+            print(f"Failure recording also failed: {recording}", file=sys.stderr, flush=True)
+        raise
     finally:
-        engine.shutdown()
+        shutdown_engine(engine, failure)
 
 
 def main():
@@ -391,7 +520,11 @@ def main():
         or args.limit < 0
     ):
         parser.error("Inference requires an output directory and positive capacities")
-    if (args.output / "report.json").exists() or (args.output / "responses.jsonl").exists():
+    if (
+        (args.output / "report.json").exists()
+        or (args.output / "responses.jsonl").exists()
+        or any(args.output.glob("failure-rank*.json"))
+    ):
         raise FileExistsError("Choose a fresh output directory")
     args.output.mkdir(parents=True, exist_ok=True)
     saved = json.loads(args.cases.read_text())
