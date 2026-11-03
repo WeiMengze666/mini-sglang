@@ -1,0 +1,78 @@
+{
+  "scope": "Target-format component gate; full task quality and Mini AIPerf pending",
+  "job": 870,
+  "source_snapshot": "experiment/phase272-source",
+  "source_manifest_sha256": "9870282b82a6f0cfb12bb17b176a5edd8beae2fb99e4ca1fb3aca9fcb32fdd12",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "ranks": 8,
+  "tests_per_rank": 40,
+  "passed": 320,
+  "failed": 0,
+  "expert_adapter": {
+    "hidden": 3584,
+    "intermediate": 384,
+    "topk": 16,
+    "global_experts": 896,
+    "local_experts": 4,
+    "input_dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "tokens": [
+      1,
+      7,
+      48
+    ],
+    "layouts": [
+      "contiguous",
+      "strided"
+    ],
+    "activation": "MXFP8/UE8M0 group32, SiTU",
+    "output": "BF16 explicit native destination; exact native runner output",
+    "graph_replays": 72,
+    "weights": "Serialized UE8M0 bytes preserved; native shuffle indices"
+  },
+  "kda": {
+    "heads": 12,
+    "head_dim": 128,
+    "tokens": [
+      7,
+      64,
+      143
+    ],
+    "decode_batches": [
+      1,
+      7,
+      48
+    ],
+    "persistent_dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "same_native_abi": "Exact outputs,states,graph replays,immutable inputs",
+    "indexed_pool_bf16": "Exact outputs and states",
+    "native_fp32_layout_diagnostic": {
+      "nonzero_records": 24,
+      "output_max_abs": 3.814697265625e-06,
+      "state_max_abs": 3.725290298461914e-08,
+      "scope": "Same official kernel, differently factored batch/head dimensions. Diagnostic only; identical-ABI comparison stays exact."
+    }
+  },
+  "mla": {
+    "dcp": [
+      1,
+      8
+    ],
+    "cache": [
+      "bfloat16",
+      "fp8_e4m3"
+    ],
+    "physical_page": 64,
+    "arena": [
+      false,
+      true
+    ],
+    "scope": "Physical page geometry,empty shards,stream ownership,graph remapping and oracle outputs"
+  },
+  "raw_summary_sha256": "ef5aec7ee492821f612fb9a8d77d3efd75a5f5d63074dc77492a788755640b8a"
+}

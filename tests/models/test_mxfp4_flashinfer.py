@@ -84,7 +84,8 @@ def test_flashinfer_silu_bf16_matches_decoded_reference():
     gate = F.linear(x.float(), decode_mxfp4(raw[0][0], raw[0][1]).float()).to(x.dtype)
     up = F.linear(x.float(), decode_mxfp4(raw[1][0], raw[1][1]).float()).to(x.dtype)
     hidden = (F.silu(gate) * up).float()
-    expected = F.linear(hidden, decode_mxfp4(raw[2][0], raw[2][1]).float()).to(x.dtype).float()
+    expected = F.linear(hidden, decode_mxfp4(raw[2][0], raw[2][1]).float()).to(x.dtype)
+    assert actual.dtype == torch.bfloat16
     torch.testing.assert_close(actual[0], expected[0], rtol=0.02, atol=0.2)
     torch.testing.assert_close(actual[2], expected[2], rtol=0.02, atol=0.2)
     assert actual[1].eq(0).all()

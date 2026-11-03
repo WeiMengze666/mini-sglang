@@ -247,7 +247,7 @@ class LatentMoE(BaseOP):
             routed = linear_fp32(x, down.weight)
         else:
             routed = down.forward(x).to(input_dtype)
-        # Accumulate mixture in FP32. RMSNorm is AFTER expert reduction, per token.
+        # The executor owns mixture precision; normalization follows expert reduction.
         mixed = self._expert_executor.forward(routed, weights, ids)
         strict_bf16 = x.dtype == torch.bfloat16 and use_strict_bf16()
         if strict_bf16:

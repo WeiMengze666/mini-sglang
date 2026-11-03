@@ -152,5 +152,12 @@
     "gpu_only_skipped": 638,
     "focused_checks_passed": 61,
     "scope": "Admission prefix length across own chunks, message/worker/API usage and completed cache-read totals; no GPU acceptance"
+  },
+  "target_components": {
+    "passed": 320,
+    "job": 870,
+    "evidence": "docs/validation/kimi-k3-target-components.json",
+    "full_quality": "running job870; no result yet",
+    "mini_serving": "pending"
   }
 }

@@ -88,3 +88,13 @@ The canonical native S0 AIPerf run is now recorded in
 tokens/s, TTFT P50 590.35 ms and ITL P50 26.76 ms. Mini R0 remains pending.
 Cache reads are exposed through standard prompt-token details and a completed
 cache-read token counter, preserving the original admission hit across chunks.
+
+[Target-format components](validation/kimi-k3-target-components.json) pass 320
+checks across eight GPUs. The FlashInfer expert adapter preserves serialized
+UE8M0 scales, uses the native group-32 MXFP8 quantizer and publishes the native
+BF16 destination without an FP32 cast before TP reduction. Tests cover real
+3584/384 dimensions, changing routes and graph replay; the component uses four
+local experts, so it does not replace whole-checkpoint validation. KDA BF16 state
+updates match both canonical and indexed native pools exactly. FP32-state native
+layout variation is preserved as a diagnostic while identical-ABI comparisons
+remain exact. Full target-format GSM8K and Mini serving measurements are pending.

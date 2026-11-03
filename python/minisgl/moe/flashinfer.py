@@ -106,10 +106,10 @@ class FlashInferMXFP4Experts:
             packed = tuple(t.cuda() for t in packed)
             scales = tuple(t.cuda() for t in scales)
             w13 = torch.cat((packed[1], packed[0]), dim=0)
-            w13_scale = torch.exp2(torch.cat((scales[1], scales[0]), dim=0).float() - 127)
-            w13_scale = w13_scale.to(torch.float8_e8m0fnu)
+            # Serialized scale bytes are already UE8M0; keep them bit-preserving.
+            w13_scale = torch.cat((scales[1], scales[0]), dim=0).view(torch.float8_e8m0fnu)
             w2 = packed[2]
-            w2_scale = torch.exp2(scales[2].float() - 127).to(torch.float8_e8m0fnu)
+            w2_scale = scales[2].view(torch.float8_e8m0fnu)
             w13_perm = _maybe_get_cached_w3_w1_permute_indices(cache, w13, 128)
             w13_scale_perm = _maybe_get_cached_w3_w1_permute_indices(
                 cache, w13_scale.view(torch.uint8), 128, num_elts_per_sf=16
@@ -169,17 +169,19 @@ class FlashInferMXFP4Experts:
             raise ValueError(
                 "FlashInfer route IDs and weights must have the same [tokens, topk] shape"
             )
-        from flashinfer import mxfp8_quantize, trtllm_fp4_block_scale_routed_moe
+        from flashinfer import trtllm_fp4_block_scale_routed_moe
         from flashinfer.fused_moe.core import ActivationType
         from flashinfer.tllm_enums import RoutingMethodType, SfLayout
 
         if self._precision == "mxfp8":
-            x_input, x_scale = mxfp8_quantize(x, False, alignment=self._hidden, backend="cute-dsl")
+            from sglang.kernels.ops.quantization.per_token_group_quant import per_token_group_quant
+
+            x_input, x_scale = per_token_group_quant(x, group_size=32, scale_ue8m0=True)
             x_scale = x_scale.view(torch.float8_e4m3fn).reshape(x.shape[0], -1)
         else:
             x_input, x_scale = x, None
         output = torch.empty((x.shape[0], self._hidden), dtype=torch.bfloat16, device=x.device)
-        result = trtllm_fp4_block_scale_routed_moe(
+        trtllm_fp4_block_scale_routed_moe(
             topk_ids=(ids.to(torch.int32).contiguous(), weights.float().contiguous()),
             routing_bias=None,
             hidden_states=x_input,
@@ -216,4 +218,6 @@ class FlashInferMXFP4Experts:
             do_finalize=True,
             enable_pdl=True,
         )
-        return result[0].float() if isinstance(result, (tuple, list)) else result.float()
+        # The finalized kernel publishes its result through the explicit destination.
+        # Keep BF16 partials through the tensor-parallel reduction.
+        return output
