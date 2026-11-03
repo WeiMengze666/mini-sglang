@@ -91,5 +91,23 @@
     "experiment/phase285-post-job-process-audit.json": "111d349465ca9b0e36089bbbf88a154baa7f69edc4a1d8ff3bad6be10532a650",
     "experiment/phase288-health/nvidia-smi-before.xml": "abbf61d0a906d9274fa183a8540fa27b86eb50e175df0f08831a7e6f4e4f1d76",
     "experiment/phase288-manifest.json": "61aca0866d72c9d7a15856ae84290f74c44fce7d6f81b323683889b65b977dd2"
+  },
+  "partial_model_prefill_audit": {
+    "rank": 7,
+    "complete": false,
+    "observed_dispatches": 16512,
+    "unique_shape_stride_option_contracts": 97,
+    "query_key_value_dtypes": [
+      "torch.float8_e4m3fn",
+      "torch.float8_e4m3fn",
+      "torch.float8_e4m3fn"
+    ],
+    "destination_dtype": "torch.bfloat16",
+    "mini_ffi": {
+      "load_aot:pynccl": 1
+    },
+    "artifact": "experiment/phase285-native-path-audit/rank7.json",
+    "artifact_sha256": "b67e3fc7890447737ba25f508e2622bda2e94634dc5055058f99fbe52a0cc230",
+    "scope": "Confirms actual model prefill dispatch formats before interruption; does not complete the task or prove all model semantics."
   }
 }
