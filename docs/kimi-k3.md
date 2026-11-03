@@ -97,7 +97,7 @@ BF16 destination without an FP32 cast before TP reduction. Tests cover real
 local experts, so it does not replace whole-checkpoint validation. KDA BF16 state
 updates match both canonical and indexed native pools exactly. FP32-state native
 layout variation is preserved as a diagnostic while identical-ABI comparisons
-remain exact. Full target-format GSM8K and Mini serving measurements are pending.
+remain exact. Full target-format GSM8K is complete; Mini serving measurement remains pending.
 
 Weight loading uses aligned, bounded arenas shared across ordinary parameters.
 Declared contiguous projection groups stay intact; separate arenas can be freed
@@ -106,3 +106,10 @@ so MoE backends no longer choose a special tensor-by-tensor load path. A metadat
 plan for the released TP8/EP1 checkpoint coalesces 497,052 tensors into 195 arenas
 while preserving shapes/dtypes. CPU content, aliasing and lifetime checks pass;
 the complete model now loads and runs the target-format task suite.
+
+The frozen target-format R0 at `07d94b5` scores 1281/1319 on GSM8K versus
+1284/1319 for the native reference, with no truncation and one Mini answer-format
+failure. All eight ranks pass real-checkpoint checkpoint/restore/eviction and
+request cancellation/slot-reuse checks. See [the target quality record](validation/kimi-k3-target-quality.json)
+for precision, coverage, hashes and unresolved attribution limits. The exact
+AIPerf R0 measurement is GPUq job 876; serving parity remains unaccepted.

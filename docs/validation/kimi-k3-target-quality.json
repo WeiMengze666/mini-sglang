@@ -1,0 +1,342 @@
+{
+  "scope": "Full target-format GSM8K and real-checkpoint state lifecycle; Mini serving/performance and comprehensive quality equivalence remain unaccepted",
+  "recorded_utc": "2026-11-03T19:33:44.022676+00:00",
+  "mini_commit": "07d94b5de00b883be81a45f6c6cc7c3d92d8de45",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "mini_job": 874,
+  "official_job": 870,
+  "comparison": {
+    "left": "experiment/phase277-gsm8k-mini",
+    "right": "experiment/phase272-gsm8k-official",
+    "examples": 1319,
+    "precision_contract_verified": true,
+    "execution_contract": {
+      "model_dtype": "bfloat16",
+      "moe_activation_precision": "mxfp8",
+      "kv_cache_dtype": "fp8_e4m3",
+      "recurrent_state_dtype": "bfloat16",
+      "conv_state_dtype": "bfloat16",
+      "bf16_precision": "default",
+      "tp_size": 8,
+      "dcp_size": 8,
+      "ep_size": 1,
+      "page_size": 64
+    },
+    "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+    "left_accuracy": 0.9711902956785443,
+    "right_accuracy": 0.9734647460197119,
+    "accuracy_delta_percentage_points": -0.22744503411675512,
+    "both_correct": 1280,
+    "both_wrong": 34,
+    "left_only_correct": [
+      1038
+    ],
+    "right_only_correct": [
+      306,
+      316,
+      423,
+      754
+    ],
+    "same_valid_answer": 1313,
+    "identical_token_ids": 658,
+    "left_invalid": 1,
+    "right_invalid": 0,
+    "left_truncated": 0,
+    "right_truncated": 0
+  },
+  "mini_report": {
+    "complete": true,
+    "completed": 1319,
+    "expected": 1319,
+    "correct": 1281,
+    "accuracy": 0.9711902956785443,
+    "invalid_answers": 1,
+    "truncated": 0,
+    "generated_tokens": 142340,
+    "evaluation_seconds": 1025.899749908829,
+    "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading"
+  },
+  "official_report": {
+    "complete": true,
+    "completed": 1319,
+    "expected": 1319,
+    "correct": 1284,
+    "accuracy": 0.9734647460197119,
+    "invalid_answers": 0,
+    "truncated": 0,
+    "generated_tokens": 141626,
+    "evaluation_seconds": 385.7518693290185,
+    "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading"
+  },
+  "interpretation": [
+    "No output truncation on either side. Mini case754 computes89 but lacks the required #### delimiter; strict scorer unchanged.",
+    "Logits/greedy identity is diagnostic. The six different extracted-answer cases have not all received first-divergence attribution; do not claim all are proven reduction/rounding effects.",
+    "Native small-batch fused routing packs BF16 weights; Mini R0 uses the native unfused FP32-weight ABI with the same MXFP8 expert format.",
+    "Task-suite evaluation_seconds includes CPU transfer/reset and is not a serving throughput benchmark."
+  ],
+  "lifecycle": {
+    "scope": "Real-checkpoint scheduler/cache lifecycle; no performance or token-equality gate.",
+    "execution": {
+      "tp": 8,
+      "dcp": 8,
+      "ep": 1,
+      "moe": "flashinfer/mxfp8",
+      "kv": "fp8_e4m3",
+      "state": "bfloat16",
+      "physical_page": 64,
+      "chunk": 512,
+      "max_context": 4096,
+      "working": 4,
+      "cached": 3,
+      "decode_graphs": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "ranks": [
+      {
+        "rank": 0,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "6fb702587c652d3cf42b555d86875419a8eebab3e4c2642b929eaf9f86362f74"
+      },
+      {
+        "rank": 1,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "b6b6b45590dd9b0d8593c905d2d2f9298eb5c7fc4e757de3cf9da2275c546f3b"
+      },
+      {
+        "rank": 2,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "82f74478876bc53a375339159b4461f0002f9e2e54d080756d309c2af0a5e013"
+      },
+      {
+        "rank": 3,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "4e63b46b8b4687549e0de2393cf704c33b1014af62eab3f9104b3f96e6c8cd1a"
+      },
+      {
+        "rank": 4,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "f2a45ef6dd27e9b3ef8b4a6e60ad135fc6fccd6f2913122ddce90de5d9317ecf"
+      },
+      {
+        "rank": 5,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "96e0ae1455ecee739bbe9618d18b4a1f418631074a168fe06cdab36eef5b3c23"
+      },
+      {
+        "rank": 6,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "87b4512af1a37398ee32e7821b2128a5223329940727adb4c6026817364b3a53"
+      },
+      {
+        "rank": 7,
+        "passed": true,
+        "events": {
+          "forward": 242,
+          "checkpoint": 49,
+          "restore": 4,
+          "drop": 46,
+          "evict": 34
+        },
+        "sha256": "47f194933ffd75c9998ad95cf4f11efd4295ccb4fb022c9934d91e8cffd3dffa"
+      }
+    ],
+    "limitation": "Checkpoint tensor assertions synchronize. Validates content/ownership/resource reuse, not asynchronous timing stress or performance.",
+    "checks": [
+      {
+        "kind": "repeat",
+        "overlap": false,
+        "cold": [
+          8733,
+          395,
+          701,
+          17,
+          1122,
+          8319,
+          53287,
+          21752
+        ],
+        "warm": [
+          8733,
+          395,
+          701,
+          17,
+          1122,
+          8319,
+          53287,
+          21752
+        ],
+        "identical": true
+      },
+      {
+        "kind": "repeat",
+        "overlap": true,
+        "cold": [
+          8733,
+          395,
+          701,
+          17,
+          1122,
+          8319,
+          53287,
+          21752
+        ],
+        "warm": [
+          8733,
+          395,
+          701,
+          17,
+          1122,
+          8319,
+          53287,
+          21752
+        ],
+        "identical": true
+      },
+      {
+        "kind": "abort_and_reuse",
+        "stage": "pending",
+        "uid": 2000
+      },
+      {
+        "kind": "abort_and_reuse",
+        "stage": "chunked",
+        "uid": 2002
+      },
+      {
+        "kind": "abort_and_reuse",
+        "stage": "decoding",
+        "uid": 2004
+      },
+      {
+        "kind": "abort_and_reuse",
+        "stage": "inflight",
+        "uid": 2006
+      }
+    ]
+  },
+  "kernel_audit": {
+    "ranks": [
+      {
+        "rank_file": "rank0.json",
+        "sha256": "967140ffe6486bae46dcc347bbd47440fdd045e65c35af6f3a6fd7d5c8e32d1e"
+      },
+      {
+        "rank_file": "rank1.json",
+        "sha256": "353d3b8da77ad29b3f0f16b70e9c50b6716a1a689da26720c0424a4d13415f0a"
+      },
+      {
+        "rank_file": "rank2.json",
+        "sha256": "582de4814677d23f48305299e29b5fa46173fc0de38cf8a14d582148a6098c31"
+      },
+      {
+        "rank_file": "rank3.json",
+        "sha256": "e84aff143b79623f70140454c3b5e5aab7bde1f05951ba824ffaef8d15939235"
+      },
+      {
+        "rank_file": "rank4.json",
+        "sha256": "61c37dd7e9a9d3bce64d316f7f5fc7269f2862f958282b6ed5b96eb5b9f6299e"
+      },
+      {
+        "rank_file": "rank5.json",
+        "sha256": "109c1652accf42f59c8e000dc4d204497e1ccb5dc5291ec97bf9599646b159b9"
+      },
+      {
+        "rank_file": "rank6.json",
+        "sha256": "303b665aec7be939d807da0516ddf378adef683ece3a8c5787dc081936a9ff39"
+      },
+      {
+        "rank_file": "rank7.json",
+        "sha256": "147eb90f4bcebceb6d808af1077d9572d943b50b6a4e3bc14ef22ba7645c3892"
+      }
+    ],
+    "limitation": "Python dispatch and Triton hook coverage includes eager/capture; graph replay does not increment Python call counts. Only Mini FFI observed is the PyNCCL communication shim.",
+    "triton": [
+      "sglang.kernels.ops.attention.fla.chunk_delta_h.chunk_gated_delta_rule_fwd_kernel_h_blockdim64",
+      "sglang.kernels.ops.attention.fla.chunk_intra.chunk_kda_fwd_kernel_inter_solve_fused",
+      "sglang.kernels.ops.attention.fla.fused_norm_gate.layer_norm_gated_fwd_kernel",
+      "sglang.kernels.ops.attention.fla.fused_recurrent.fused_recurrent_kda_packed_decode_kernel",
+      "sglang.kernels.ops.attention.fla.kda.chunk_gla_fwd_kernel_o",
+      "sglang.kernels.ops.attention.fla.kda.kda_gate_chunk_cumsum_vector_kernel",
+      "sglang.kernels.ops.attention.fla.l2norm.l2norm_fwd_kernel",
+      "sglang.kernels.ops.kvcache.mla_buffer.set_mla_kv_buffer_fp8_quant_kernel",
+      "sglang.kernels.ops.mamba.causal_conv1d_triton._causal_conv1d_fwd_kernel",
+      "sglang.kernels.ops.mamba.causal_conv1d_triton._causal_conv1d_update_kernel"
+    ],
+    "mini_ffi": {
+      "load_aot:pynccl": 1
+    },
+    "sdk_dispatch_counts_per_rank": {
+      "sglang.kernels.ops.quantization.per_token_group_quant.per_token_group_quant": 16652,
+      "flashinfer.fused_moe.core.trtllm_fp4_block_scale_moe_op": 16652,
+      "flashinfer.mla._core.trtllm_batch_decode_with_kv_cache_mla": 384,
+      "flashinfer.prefill.trtllm_ragged_attention_deepseek": 31656
+    }
+  },
+  "http_input_ids": {
+    "requests": 512,
+    "all_identical_to_native_encoder": true,
+    "cuda_initialized": false,
+    "artifact_sha256": "c2598baa0b7f14ad2364aacbd3e99a2a8f04ad55aa35c3485970be17ca6e1026",
+    "usage_note": "sglang/srt/entrypoints/openai/serving_chat.py:_reported_prompt_tokens excludes3 generation-stub tokens for billing; actual model input includes them"
+  },
+  "source_artifacts": {
+    "experiment/phase277-manifest.json": "bfd2fd41878805aa7a23c0f59cf3c6824cdcb36ef57ac217d4ceec3d7c78cfac",
+    "experiment/phase277-inputs/request_lifecycle.py": "eeee45554f8486b418cbfb297419e2b79b20b212f0860ecefd37d7c38816d8b1",
+    "experiment/phase277-post-job-process-audit.json": "cc410822f45cbf533df49706d01f6879aa30a328323d568b67ff8ade5eaaf965",
+    "experiment/phase277-gsm8k-mini/responses.jsonl": "41acf43678bd6090da5375fb9c02f5c21fef14125c94f9663cd9e92b8d7f7ab1",
+    "experiment/phase272-gsm8k-official/responses.jsonl": "dd5b32f432201f3abc2320318a84e9622e29785b2c2416593f5c99734c527c3d"
+  }
+}

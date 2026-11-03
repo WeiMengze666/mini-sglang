@@ -60,20 +60,14 @@ gate. The serving target above requires a separate correctness gate using its
 actual precision choices before performance acceptance. Changes to the
 reference command or environment must be reported explicitly.
 
-Mini exposes `--recurrent-state-dtype float32|bfloat16` for persistent state,
-independent of the model/convolution dtype. The default remains FP32. Built-in
-adapters use FP32 working state and the pool rounds at commit; checkpoints
-retain the selected storage dtype. CPU tests cover allocation, memory budgets,
-mixed-dtype alignment, batch remapping, and checkpoint restore in both pool
-layouts. GPU integration tests also cover BF16/FP32 state commits, actual KDA
-layer graph replay, and request-index remapping after arena compaction
-(48 cases across eight GPUs, compared with the same Mini eager kernels).
-This is an operator/state integration check; full-profile official numerical
-and serving acceptance remain pending.
-
-FP8 KV storage/attention adapters have component coverage. Full-profile precision
-and serving validation remain unfinished; component checks and the state-storage
-option alone do not establish full-profile equivalence.
+Mini exposes `--recurrent-state-dtype float32|bfloat16` independently of the
+model/convolution dtype. The target uses BF16 persistent state. The native KDA
+adapter passes that storage dtype to the mature kernels and preserves native
+state write rounding. CPU reference adapters are separate diagnostic paths.
+[Target components](validation/kimi-k3-target-components.json) pass 320 checks
+across eight GPUs, including MXFP8 expert inputs/BF16 output, FP8 MLA storage,
+DCP8, BF16/FP32 KDA state, ownership and graph replay. These checks qualify their
+listed operator contracts, rather than a full serving workload.
 
 ## Measurement boundary
 
@@ -184,8 +178,48 @@ in frontend metrics. This is token reuse accounting, not device-memory telemetry
 The native API deliberately omits K3's three-token assistant generation stub
 from reported/billed prompt usage, while the model consumes those tokens.
 Mini reports actual input token IDs through its generic usage interface. A CPU
-replay of nine captured AgentX requests confirms complete input-ID equality with
+replay of all 512 completed S0 AgentX requests confirms complete input-ID equality with
 the native OpenAI encoder and reproduces its billing deduction. Preserve raw
 AIPerf exports and normalize input-derived metrics to actual model tokens when
 comparing; output throughput and latency need no such adjustment. No prompt
 framing is removed to make usage counts match.
+
+## Mini R0 correctness and measurement status
+
+The first runnable target-format Mini R0 is frozen at
+`07d94b5de00b883be81a45f6c6cc7c3d92d8de45`. Its bounded weight arenas load the
+complete TP8/EP1 checkpoint without the prior tensor-by-tensor allocation
+failure. [Target quality evidence](validation/kimi-k3-target-quality.json)
+records the full 1319-case GSM8K run and real-checkpoint cache lifecycle gate.
+
+| GSM8K, same cases and target formats | Mini R0 | Native |
+| --- | ---: | ---: |
+| Correct | 1281 / 1319 | 1284 / 1319 |
+| Accuracy | 97.1190% | 97.3465% |
+| Invalid answer format | 1 | 0 |
+| Truncated | 0 | 0 |
+
+There are 1313 identical valid extracted answers and 658 identical generated
+ID sequences. Exact greedy identity is diagnostic. The Mini formatting failure
+(case 754) calculates 89 correctly but omits the required `####` delimiter;
+the scorer remains unchanged. The differing cases have not all received
+first-divergence attribution, so this report does not claim that every
+variation is a proven rounding effect or that comprehensive quality acceptance
+is complete. Evaluation-loop wall time is not a serving-performance result.
+
+All eight ranks pass the real-checkpoint scheduler/cache lifecycle gate:
+checkpoint contents, independent restored storage, prefix branching, eviction,
+serial/overlapped execution, decode graph replay, and cancellation at pending,
+chunked, decoding and in-flight stages followed by slot reuse. Each rank records
+49 checkpoints, four restores and 34 evictions. Tensor assertions synchronize;
+this is content/ownership validation, not asynchronous timing-stress evidence.
+The native-kernel audit observes the official KDA/convolution/MLA-cache kernels
+and FlashInfer expert/MLA calls. Mini's only observed FFI module is the PyNCCL
+communication shim. Python call counts include graph capture, not graph replays.
+
+GPUq job 876 measures this frozen R0 with the exact requested AIPerf command.
+Its profile explicitly retains initial implementation gaps: eight state-cache
+slots instead of native ratio-based capacity, no built-in native MNNVL transport,
+unfused FP32 routing weights, and serial default scheduling. Those are measured
+baseline limitations, not final parity settings. Do not publish a Mini/native
+serving ratio before the run completes and its raw exports are checked.
