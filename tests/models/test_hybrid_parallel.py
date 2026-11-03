@@ -28,7 +28,7 @@ def test_lse_merge_empty_partitions_and_extreme_scores():
 def test_independent_layout_and_checkpoint_slices():
     c = _config(shared=2)
     layout = ParallelLayout(DistributedInfo(3, 4), 2, 2)
-    assert (layout.context.rank, layout.attention.rank, layout.attention.size) == (1, 1, 2)
+    assert (layout.context.rank, layout.mla_decode.rank, layout.mla_decode.size) == (1, 1, 2)
     assert (layout.experts.rank, layout.expert_tensor.rank, layout.expert_tensor.size) == (1, 1, 2)
     assert list(layout.expert_range(4)) == [2, 3]
     assert owns_expert("model.layers.1.mlp.experts.3.w2.weight", c, layout)

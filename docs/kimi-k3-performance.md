@@ -71,8 +71,9 @@ layer graph replay, and request-index remapping after arena compaction
 This is an operator/state integration check; full-profile official numerical
 and serving acceptance remain pending.
 
-Explicit FP8 KV-format support and full-profile precision validation remain
-unfinished. The state-storage option alone does not establish equivalence.
+FP8 KV storage/attention adapters have component coverage. Full-profile precision
+and serving validation remain unfinished; component checks and the state-storage
+option alone do not establish full-profile equivalence.
 
 ## Measurement boundary
 

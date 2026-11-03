@@ -34,3 +34,9 @@ env/
 
 # Checked-in serving benchmark profiles.
 !benchmark/online/profiles/*.json
+
+# Remote development artifacts
+/experiment/
+/.codex-sync/
+/.gpuq-submit.lock
+/runtime-py311

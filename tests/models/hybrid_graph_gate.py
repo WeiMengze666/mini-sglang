@@ -37,6 +37,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--bf16-precision", choices=["auto", "default", "strict"], default="auto")
     parser.add_argument("--create-fixture", action="store_true")
     parser.add_argument("--unified", action="store_true")
     args = parser.parse_args()
@@ -52,6 +53,7 @@ def main():
             dcp_size=2,
             ep_size=world,
             attention_backend="fi",
+            bf16_precision=args.bf16_precision,
             mxfp4_backend="triton",
             cuda_graph_bs=[1, 2, 4],
             max_running_req=8,
@@ -64,6 +66,7 @@ def main():
         )
     )
     pool = engine.kv_cache
+    precision = engine.ctx.bf16_precision
     assert set(engine.graph_runner.graph_map) == {1, 2, 4}
     assert all(owner is None for owner in pool.recurrent._owners)
     if pool.arena is not None:
@@ -163,7 +166,12 @@ def main():
     finally:
         engine.shutdown()
     if rank == 0:
-        report = {"unified": args.unified, "world_size": world, "cases": results}
+        report = {
+            "unified": args.unified,
+            "world_size": world,
+            "bf16_precision": precision,
+            "cases": results,
+        }
         if args.output:
             args.output.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report), flush=True)

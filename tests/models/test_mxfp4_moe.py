@@ -6,13 +6,19 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.layers.activation import situ_and_mul
 from minisgl.layers.linear import Linear
 from minisgl.moe.routing import RoutingPolicy
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate"
 )
+
+
+def _situ_reference(gate, up, beta, linear_beta):
+    """Dense mathematical oracle independent of runtime activation dispatch."""
+    gate_clip = beta * torch.tanh(gate.float() / beta)
+    up_clip = linear_beta * torch.tanh(up.float() / linear_beta)
+    return ((gate_clip * gate.float().sigmoid()) * up_clip).to(gate.dtype)
 
 
 def _projection(inputs, outputs, dtype):
@@ -30,6 +36,7 @@ def _projection(inputs, outputs, dtype):
     return op, dense
 
 
+@pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("activation", ["silu", "situ"])
 @pytest.mark.parametrize("stable_routing", [False, True])
@@ -46,10 +53,11 @@ def _projection(inputs, outputs, dtype):
     ],
 )
 def test_grouped_expert_executor(
-    dtype, activation, stable_routing, tokens, selection, experts, width
+    monkeypatch, strict, dtype, activation, stable_routing, tokens, selection, experts, width
 ):
     from minisgl.moe.mxfp4 import MXFP4Experts
 
+    monkeypatch.setattr("minisgl.moe.mxfp4.use_strict_bf16", lambda: strict)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(103)
     hidden = intermediate = width  # 96 also exercises the last 64-column K tile
@@ -82,10 +90,14 @@ def test_grouped_expert_executor(
         rows, slots = torch.where(ids == index)
         g = F.linear(x[rows].float(), gate.float()).to(dtype)
         u = F.linear(x[rows].float(), up.float()).to(dtype)
-        activated = situ_and_mul(g, u, 4.0, 25.0) if activation == "situ" else F.silu(g) * u
-        values = (
-            F.linear(activated.float(), down.float()).to(dtype).float() * weights[rows, slots, None]
-        )
+        activated = _situ_reference(g, u, 4.0, 25.0) if activation == "situ" else F.silu(g) * u
+        values = F.linear(activated.float(), down.float()).to(dtype)
+        if strict and dtype == torch.bfloat16:
+            # A weight-only BF16 route stores both its scalar and weighted
+            # expert value in BF16 before the FP32 top-k sum.
+            values = (values * weights[rows, slots, None].to(dtype)).float()
+        else:
+            values = values.float() * weights[rows, slots, None]
         expected.index_add_(0, rows, values)
     tolerance = 3e-5 if dtype == torch.float32 else 0.015
     for _ in range(3):
@@ -95,10 +107,12 @@ def test_grouped_expert_executor(
             assert actual.eq(0).all()
 
 
+@pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("tokens", [2, 8])
-def test_large_experts_preserve_duplicate_rows(tokens):
+def test_large_experts_preserve_duplicate_rows(monkeypatch, strict, tokens):
     from minisgl.moe.mxfp4 import MXFP4Experts
 
+    monkeypatch.setattr("minisgl.moe.mxfp4.use_strict_bf16", lambda: strict)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(113)
     dtype = torch.bfloat16
@@ -117,8 +131,13 @@ def test_large_experts_preserve_duplicate_rows(tokens):
     for slot, (gate, up, down) in enumerate(dense, 1):
         g = F.linear(x.float(), gate.float()).to(dtype)
         u = F.linear(x.float(), up.float()).to(dtype)
-        a = situ_and_mul(g, u, 4.0, 25.0)
-        expected += F.linear(a.float(), down.float()).to(dtype).float() * weights[:, slot, None]
+        a = _situ_reference(g, u, 4.0, 25.0)
+        values = F.linear(a.float(), down.float()).to(dtype)
+        if strict:
+            values = (values * weights[:, slot, None].to(dtype)).float()
+        else:
+            values = values.float() * weights[:, slot, None]
+        expected += values
     actual = MXFP4Experts(items, activation="situ", beta=4.0, linear_beta=25.0).forward(
         x, weights, ids
     )

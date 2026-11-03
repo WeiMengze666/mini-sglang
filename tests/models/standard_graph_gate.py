@@ -43,6 +43,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--bf16-precision", choices=["auto", "default", "strict"], default="auto")
     parser.add_argument("--create-fixture", action="store_true")
     parser.add_argument("--moe", action="store_true")
     args = parser.parse_args()
@@ -58,6 +59,7 @@ def main():
             torch.bfloat16,
             ep_size=world if args.moe else 1,
             attention_backend="fi",
+            bf16_precision=args.bf16_precision,
             moe_backend="fused",
             use_dummy_weight=True,
             cuda_graph_bs=[1, 2, 4],
@@ -68,6 +70,7 @@ def main():
             distributed_timeout=180,
         )
     )
+    precision = engine.ctx.bf16_precision
     assert set(engine.graph_runner.graph_map) == {1, 2, 4}
     assert engine.attn_backend.supports_graph_padding
     engine.page_table[:8, :64].copy_(
@@ -145,6 +148,7 @@ def main():
             "comparison": "exact FP32 values; BF16 eager outputs are converted losslessly",
             "moe": args.moe,
             "world_size": world,
+            "bf16_precision": precision,
             "ep_size": world if args.moe else 1,
             "cases": results,
         }

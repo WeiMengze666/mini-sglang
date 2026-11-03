@@ -14,9 +14,12 @@ from minisgl.kvcache.config import HybridCacheConfig
 from minisgl.kvcache.recurrent_pool import RecurrentStatePool
 
 
+@pytest.mark.parametrize("kv_dtype", [torch.bfloat16, torch.float8_e4m3fn])
 @pytest.mark.parametrize("unified", [False, True])
 @pytest.mark.parametrize("state_dtype", [torch.float32, torch.bfloat16])
-def test_precision_follows_working_state_checkpoint_and_reordered_batch(unified, state_dtype):
+def test_precision_follows_working_state_checkpoint_and_reordered_batch(
+    unified, state_dtype, kv_dtype
+):
     layout = HybridCacheConfig(2, (1,), (0,), 5, 2, 2, 3, 4)
     cache = create_kvcache_pool(
         SimpleNamespace(cache_config=layout),
@@ -28,8 +31,10 @@ def test_precision_follows_working_state_checkpoint_and_reordered_batch(unified,
         max_cached_states=1,
         unified_memory=unified,
         state_dtype=state_dtype,
+        kv_dtype=kv_dtype,
     )
     pool = cache.recurrent
+    assert cache.dtype == kv_dtype and cache.mla.dtype == kv_dtype
     expected_bytes = 2 * 3 * 3 * state_dtype.itemsize + 3 * 2 * 3 * 3 * 2
     assert (
         layout.state_bytes_per_request(torch.bfloat16, 1, state_dtype=state_dtype) == expected_bytes
@@ -37,7 +42,7 @@ def test_precision_follows_working_state_checkpoint_and_reordered_batch(unified,
     if unified:
         assert cache.arena.state_bytes >= expected_bytes
     else:
-        assert cache.allocated_bytes == 128 * 7 * 2 + 3 * expected_bytes
+        assert cache.allocated_bytes == 128 * 7 * kv_dtype.itemsize + 3 * expected_bytes
     assert pool.conv_dtype == torch.bfloat16 and pool.state_dtype == state_dtype
 
     cache.begin_request(0, 10, 0)
@@ -144,3 +149,36 @@ def test_flashinfer_adapter_promotes_storage_before_working_state(monkeypatch):
     torch.testing.assert_close(output, v, rtol=0, atol=0)
     torch.testing.assert_close(final, stored.float() + 0.125, rtol=0, atol=0)
     torch.testing.assert_close(stored, original, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [("auto", None), ("bfloat16", torch.bfloat16), ("fp8_e4m3", torch.float8_e4m3fn)],
+)
+def test_server_resolves_independent_token_cache_storage(name, expected):
+    from minisgl.server.args import parse_args
+
+    config, _ = parse_args(
+        [
+            "--model",
+            "unused",
+            "--dtype",
+            "bfloat16",
+            "--kv-cache-dtype",
+            name,
+            "--recurrent-state-dtype",
+            "bfloat16",
+        ]
+    )
+    assert config.dtype == torch.bfloat16
+    assert config.kv_cache_dtype == expected
+    assert config.cache_dtype == (expected or torch.bfloat16)
+    assert config.recurrent_state_dtype == torch.bfloat16
+
+
+def test_unsupported_token_cache_precision_rejected_before_loading():
+    config = EngineConfig(
+        "unused", DistributedInfo(0, 1), torch.bfloat16, kv_cache_dtype=torch.int8
+    )
+    with pytest.raises(ValueError, match="KV cache storage"):
+        _adjust_config(config)

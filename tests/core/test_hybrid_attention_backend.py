@@ -121,7 +121,7 @@ def test_hybrid_cleanup_releases_both_children_after_failure():
     assert events == [("kda", "failed"), ("mla", "finish")]
 
 
-@pytest.mark.parametrize("precision,kernel", [("strict", "triton"), ("default", "flashinfer")])
+@pytest.mark.parametrize("precision,kernel", [("strict", "sgl"), ("default", "flashinfer")])
 def test_flashinfer_factory_owns_its_kda_kernel(monkeypatch, precision, kernel):
     import minisgl.attention.fi as fi
     import minisgl.core as core

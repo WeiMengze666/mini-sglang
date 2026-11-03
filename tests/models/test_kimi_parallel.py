@@ -392,7 +392,7 @@ def test_simulated_collectives_model_and_independent_moe(monkeypatch, odd_vocab)
         # Routed and shared values share one reduction before latent norm/up.
         width = c.routed_expert_hidden_size or c.hidden_size
         assert group.sequence[before:] == [
-            ("sum", (len(x), width + c.hidden_size), torch.float32),
+            ("sum", (len(x) * (width + c.hidden_size),), torch.float32),
         ]
 
 

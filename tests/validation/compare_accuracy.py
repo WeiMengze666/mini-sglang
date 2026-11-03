@@ -23,6 +23,26 @@ def compare(left, right, *, expected_examples=None):
         raise ValueError("Task runs do not contain the same tokenized examples")
     if expected_examples is not None and len(lr) != expected_examples:
         raise ValueError(f"Expected {expected_examples} examples, got {len(lr)}")
+    contracts = [summary.get("execution_contract") for summary in (ls, rs)]
+    required = {
+        "model_dtype",
+        "moe_activation_precision",
+        "kv_cache_dtype",
+        "recurrent_state_dtype",
+        "conv_state_dtype",
+        "bf16_precision",
+        "tp_size",
+        "dcp_size",
+        "ep_size",
+        "page_size",
+    }
+    if any(
+        contract is not None and (not isinstance(contract, dict) or not required <= contract.keys())
+        for contract in contracts
+    ):
+        raise ValueError("Incomplete task precision or parallel layout contract")
+    if contracts[0] != contracts[1]:
+        raise ValueError("Task precision or parallel layout differs or is missing")
     for field in ("batch_size", "max_new_tokens", "max_context"):
         left_value = ls.get("configuration", {}).get(field)
         right_value = rs.get("configuration", {}).get(field)
@@ -36,6 +56,8 @@ def compare(left, right, *, expected_examples=None):
         "left": str(left),
         "right": str(right),
         "examples": len(lr),
+        "precision_contract_verified": contracts[0] is not None,
+        "execution_contract": contracts[0],
         "cases_sha256": ls["cases_sha256"],
         "left_accuracy": ls["accuracy"],
         "right_accuracy": rs["accuracy"],

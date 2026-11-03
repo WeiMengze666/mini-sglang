@@ -76,3 +76,84 @@ def test_changed_generation_protocol_is_rejected(tmp_path, field):
     path.write_text(json.dumps(summary))
     with pytest.raises(ValueError, match="generation protocol"):
         compare(left, right)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "moe_activation_precision",
+        "kv_cache_dtype",
+        "recurrent_state_dtype",
+        "conv_state_dtype",
+        "dcp_size",
+    ],
+)
+def test_different_precision_or_state_layout_cannot_claim_paired_quality(tmp_path, field):
+    left, right = tmp_path / "left", tmp_path / "right"
+    write_run(left, ["1"])
+    write_run(right, ["1"])
+    contract = {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "bf16",
+        "kv_cache_dtype": "bfloat16",
+        "recurrent_state_dtype": "float32",
+        "conv_state_dtype": "bfloat16",
+        "dcp_size": 2,
+        "tp_size": 8,
+        "ep_size": 8,
+        "page_size": 64,
+        "bf16_precision": "strict",
+    }
+    for folder in (left, right):
+        p = folder / "report.json"
+        data = json.loads(p.read_text())
+        data["execution_contract"] = contract
+        p.write_text(json.dumps(data))
+    p = right / "report.json"
+    data = json.loads(p.read_text())
+    data["execution_contract"][field] = "changed"
+    p.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="precision or parallel"):
+        compare(left, right)
+
+
+def test_precision_verified_requires_both_runs_to_declare_the_same_contract(tmp_path):
+    left, right = tmp_path / "left", tmp_path / "right"
+    write_run(left, ["1"])
+    write_run(right, ["1"])
+    assert not compare(left, right)["precision_contract_verified"]
+    contract = {
+        "model_dtype": "bfloat16",
+        "recurrent_state_dtype": "float32",
+        "conv_state_dtype": "bfloat16",
+        "moe_activation_precision": "bf16",
+        "kv_cache_dtype": "bfloat16",
+        "bf16_precision": "strict",
+        "tp_size": 8,
+        "dcp_size": 2,
+        "ep_size": 8,
+        "page_size": 64,
+    }
+    for folder in (left, right):
+        p = folder / "report.json"
+        data = json.loads(p.read_text())
+        data["execution_contract"] = contract
+        p.write_text(json.dumps(data))
+        if folder == left:
+            with pytest.raises(ValueError, match="precision or parallel"):
+                compare(left, right)
+    result = compare(left, right)
+    assert result["precision_contract_verified"]
+    assert result["execution_contract"] == contract
+
+
+def test_incomplete_precision_contract_cannot_claim_verification(tmp_path):
+    left, right = tmp_path / "left", tmp_path / "right"
+    for folder in (left, right):
+        write_run(folder, ["1"])
+        path = folder / "report.json"
+        data = json.loads(path.read_text())
+        data["execution_contract"] = {"model_dtype": "bfloat16"}
+        path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="Incomplete task precision"):
+        compare(left, right)

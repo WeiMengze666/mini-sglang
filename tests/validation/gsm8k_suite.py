@@ -85,6 +85,22 @@ def prepare(args):
     )
 
 
+def execution_contract(args):
+    """Effective precision and layout, independent of backend naming conventions."""
+    return {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": args.activation_precision,
+        "kv_cache_dtype": args.kv_cache_dtype,
+        "recurrent_state_dtype": args.recurrent_state_dtype,
+        "conv_state_dtype": "bfloat16",
+        "bf16_precision": args.bf16_precision,
+        "tp_size": args.tp_size,
+        "dcp_size": args.dcp_size,
+        "ep_size": args.ep_size,
+        "page_size": 64,
+    }
+
+
 def record(case, token_ids, text, truncated):
     predicted = answer_number(text)
     return {
@@ -103,6 +119,7 @@ def save_progress(args, rows, total, started):
         "complete": len(rows) == total,
         "engine": args.engine,
         "cases_sha256": hashlib.sha256(args.cases.read_bytes()).hexdigest(),
+        "execution_contract": execution_contract(args),
         "configuration": {
             key: str(value) if isinstance(value, Path) else value
             for key, value in vars(args).items()
@@ -144,14 +161,22 @@ def run_mini(args, cases, stop_ids):
             DistributedInfo(rank, world),
             torch.bfloat16,
             attention_backend=args.attention_backend,
-            mxfp4_backend="triton",
+            mxfp4_backend=args.mxfp4_backend,
+            moe_backend=args.moe_backend,
+            mxfp4_activation_precision=args.activation_precision,
+            kv_cache_dtype=(
+                torch.bfloat16 if args.kv_cache_dtype == "bfloat16" else torch.float8_e4m3fn
+            ),
+            recurrent_state_dtype=getattr(torch, args.recurrent_state_dtype),
+            bf16_precision=args.bf16_precision,
             dcp_size=args.dcp_size,
             ep_size=args.ep_size,
             max_running_req=args.batch_size,
             max_cached_states=0,
             max_seq_len_override=args.max_context,
             page_size=64,
-            num_page_override=max(2048, args.batch_size * args.max_context // 64),
+            num_page_override=(args.batch_size * args.max_context + 64 * args.dcp_size - 1)
+            // (64 * args.dcp_size),
             cuda_graph_bs=list(range(1, args.batch_size + 1)) if args.cuda_graph else [],
             distributed_timeout=1800,
         )
@@ -254,6 +279,11 @@ def run_sglang(args, cases, stop_ids):
     ):
         raise RuntimeError("Official reference differs from the pinned clean source")
     (args.output / "provenance.json").write_text(json.dumps(identity, indent=2) + "\n")
+    attention_options = {
+        key: getattr(args, "sglang_" + key)
+        for key in ("attention_backend", "prefill_attention_backend", "decode_attention_backend")
+        if getattr(args, "sglang_" + key) is not None
+    }
     engine = Engine(
         model_path=args.model,
         tp_size=args.tp_size,
@@ -265,7 +295,14 @@ def run_sglang(args, cases, stop_ids):
         mem_fraction_static=0.9,
         max_running_requests=args.batch_size,
         disable_radix_cache=True,
-        mamba_ssm_dtype="float32",
+        disable_cuda_graph=not args.cuda_graph,
+        cuda_graph_max_bs_decode=args.batch_size,
+        mamba_ssm_dtype=args.recurrent_state_dtype,
+        kv_cache_dtype=args.kv_cache_dtype,
+        moe_runner_backend=args.moe_backend,
+        flashinfer_mxfp4_moe_precision=args.activation_precision,
+        enable_deterministic_inference=args.bf16_precision == "strict",
+        **attention_options,
         chunked_prefill_size=4096,
         page_size=64,
         flashinfer_autotune_skip_ops=args.flashinfer_autotune_skip_ops,
@@ -320,10 +357,28 @@ def main():
     parser.add_argument("--tp-size", type=int, default=8)
     parser.add_argument("--dcp-size", type=int, default=2)
     parser.add_argument("--ep-size", type=int, default=8)
-    parser.add_argument("--attention-backend", default="fi")
+    parser.add_argument("--attention-backend", default="auto")
+    parser.add_argument("--moe-backend", choices=["auto", "marlin"], default="marlin")
+    parser.add_argument("--mxfp4-backend", choices=["torch", "flashinfer"], default="torch")
+    parser.add_argument("--activation-precision", choices=["bf16", "mxfp8"], default="bf16")
+    parser.add_argument("--kv-cache-dtype", choices=["bfloat16", "fp8_e4m3"], default="bfloat16")
+    parser.add_argument(
+        "--recurrent-state-dtype", choices=["float32", "bfloat16"], default="float32"
+    )
+    parser.add_argument("--bf16-precision", choices=["strict", "default"], default="strict")
+    for stage in ("", "prefill-", "decode-"):
+        parser.add_argument(f"--sglang-{stage}attention-backend")
     parser.add_argument("--cuda-graph", action="store_true")
     parser.add_argument("--flashinfer-autotune-skip-ops", nargs="*", default=[])
     args = parser.parse_args()
+    if args.moe_backend == "marlin" and args.activation_precision != "bf16":
+        parser.error("Marlin requires BF16 expert activations")
+    if (
+        args.engine == "mini"
+        and args.activation_precision == "mxfp8"
+        and args.mxfp4_backend != "flashinfer"
+    ):
+        parser.error("MXFP8 evaluation requires the native FlashInfer expert backend")
     if args.prepare:
         if args.dataset is None:
             parser.error("Preparation requires --dataset")

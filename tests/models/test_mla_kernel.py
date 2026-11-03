@@ -1,10 +1,11 @@
-"""Queued absorbed MLA/LSE checks, including padded TP head counts."""
+"""Queued native expanded MLA prefill and independent mathematical checks."""
 
 import os
 
 import pytest
 import torch
-from minisgl.attention.mla import CausalLayout, MLAPagedMetadata, mla_attention
+import torch.nn.functional as F
+from minisgl.attention.mla import CausalLayout, MLALatentOutput, MLAPagedMetadata
 from minisgl.attention.mla.flashinfer import FlashInferMLAAdapter
 
 pytestmark = pytest.mark.skipif(
@@ -12,64 +13,70 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.mark.parametrize(
-    "heads,length,tokens,start,offset",
-    [
-        (12, 1, 1, 1, 0),
-        (12, 17, 1, 33, 0),
-        (24, 127, 1, 253, 0),
-        (24, 0, 1, 0, 0),
-        (24, 10, 7, 13, 0),
-        (24, 4, 7, 0, 0),
-        (24, 3, 7, 0, 1),
-        (12, 17, 1, 0, 1),
-    ],
-)
-@pytest.mark.parametrize("layout_known", [False, True])
-def test_absorbed_decode_values_and_natural_lse(heads, length, tokens, start, offset, layout_known):
-    torch.manual_seed(107)
-    q = torch.randn(tokens, heads, 256, dtype=torch.bfloat16, device="cuda") * 0.1
+def oracle(q, latent, key, weight, start, nope, value):
+    heads = q.shape[1]
+    expanded = F.linear(latent, weight).reshape(len(latent), heads, nope + value)
+    keys, values = expanded.split((nope, value), -1)
+    keys = torch.cat((keys, key[:, None].expand(-1, heads, -1)), -1)
+    score = torch.einsum("thd,shd->hts", q.double(), keys.double()) / q.shape[-1] ** 0.5
+    mask = (
+        torch.arange(len(latent), device=q.device)[None, :]
+        > (torch.arange(len(q), device=q.device) + start)[:, None]
+    )
+    score.masked_fill_(mask[None], -torch.inf)
+    return torch.einsum("hts,shv->thv", score.softmax(-1), values.double()).to(q.dtype)
+
+
+@pytest.mark.parametrize("head_dim,value_dim", [(128, 128), (192, 128), (256, 256)])
+@pytest.mark.parametrize("heads", [12, 24])
+@pytest.mark.parametrize("length,tokens", [(1, 1), (17, 7), (65, 65), (65, 1), (129, 17)])
+def test_native_expanded_prefill(head_dim, value_dim, heads, length, tokens):
+    torch.manual_seed(401)
+    nope = head_dim - 64
+    start = length - tokens
+    q = torch.randn(tokens, heads, head_dim, dtype=torch.bfloat16, device="cuda") * 0.1
     latent = torch.randn(length, 512, dtype=torch.bfloat16, device="cuda") * 0.1
     key = torch.randn(length, 64, dtype=torch.bfloat16, device="cuda") * 0.1
-    weight = torch.randn(heads * 320, 512, dtype=torch.bfloat16, device="cuda") * 0.05
-    positions = torch.arange(length, device="cuda") * 2 + offset
-    query_pos = torch.arange(start, start + tokens, device="cuda")
-    expected, expected_lse = mla_attention(
-        q, latent, key, weight, query_pos, positions, nope_dim=192, value_dim=128, return_lse=True
+    weight = (
+        torch.randn(heads * (nope + value_dim), 512, dtype=torch.bfloat16, device="cuda") * 0.05
     )
+    expected = oracle(q, latent, key, weight, start, nope, value_dim)
     native = FlashInferMLAAdapter()
-    for _ in range(2):
-        actual, lse = native(
-            q,
-            latent,
-            key,
-            weight,
-            query_pos,
-            positions,
-            nope_dim=192,
-            value_dim=128,
-            return_lse=True,
-            causal_layout=CausalLayout(start, offset, 2) if layout_known else None,
-        )
-        torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.002)
-        torch.testing.assert_close(lse, expected_lse, rtol=0.001, atol=0.001)
-    assert (native._prefill_plan is not None) == bool(
-        (positions[None, :] <= query_pos[:, None]).any()
+    actual = native(
+        q,
+        latent,
+        key,
+        weight,
+        torch.arange(start, length, device=q.device),
+        torch.arange(length, device=q.device),
+        nope_dim=nope,
+        value_dim=value_dim,
+        causal_layout=CausalLayout(start),
     )
+    torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.002)
+    assert native._expanded_workspace is not None
+    again = native(
+        q,
+        latent,
+        key,
+        weight,
+        torch.arange(start, length, device=q.device),
+        torch.arange(length, device=q.device),
+        nope_dim=nope,
+        value_dim=value_dim,
+        causal_layout=CausalLayout(start),
+    )
+    torch.testing.assert_close(again, actual, rtol=0, atol=0)
 
 
-def test_prefill_plan_after_paged_decode_keeps_its_own_query_groups():
-    torch.manual_seed(307)
-    heads = 2
-    q = torch.randn(8, heads, 256, device="cuda", dtype=torch.bfloat16) * 0.1
-    latent = torch.randn(4, 512, device="cuda", dtype=torch.bfloat16) * 0.1
-    key = torch.randn(4, 64, device="cuda", dtype=torch.bfloat16) * 0.1
-    weight = torch.randn(heads * 320, 512, device="cuda", dtype=torch.bfloat16) * 0.05
-    positions = torch.arange(8, device="cuda")
-    history = torch.arange(1, 8, 2, device="cuda")
-    expected, expected_lse = mla_attention(
-        q, latent, key, weight, positions, history, nope_dim=192, value_dim=128, return_lse=True
-    )
+def test_prefill_after_paged_decode_keeps_separate_workspace():
+    torch.manual_seed(409)
+    heads, length, tokens = 12, 17, 8
+    q = torch.randn(tokens, heads, 192, device="cuda", dtype=torch.bfloat16) * 0.1
+    latent = torch.randn(length, 512, device="cuda", dtype=torch.bfloat16) * 0.1
+    key = torch.randn(length, 64, device="cuda", dtype=torch.bfloat16) * 0.1
+    weight = torch.randn(heads * 256, 512, device="cuda", dtype=torch.bfloat16) * 0.05
+    expected = oracle(q, latent, key, weight, 9, 128, 128)
     native = FlashInferMLAAdapter()
     pages = torch.randn(5, 4, 576, device="cuda", dtype=torch.bfloat16)
     metadata = MLAPagedMetadata(
@@ -79,72 +86,59 @@ def test_prefill_plan_after_paged_decode_keeps_its_own_query_groups():
         4,
     )
     for _ in range(3):
-        actual, lse = native(
-            q,
-            latent,
-            key,
-            weight,
-            positions,
-            history,
-            nope_dim=192,
-            value_dim=128,
-            return_lse=True,
-            causal_layout=CausalLayout(0, 1, 2),
-        )
-        torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.002)
-        torch.testing.assert_close(lse, expected_lse, rtol=0.001, atol=0.001)
         decoded = native.decode(
             q[:1],
             (pages[..., :512], pages[..., 512:]),
             weight,
             metadata,
-            nope_dim=192,
+            nope_dim=128,
             value_dim=128,
         )
-        assert torch.isfinite(decoded).all()
-
-
-def test_native_mla_uses_the_producer_stream():
-    import tvm_ffi
-
-    producer = torch.cuda.Stream()
-    ffi_device = tvm_ffi.device("cuda:0")
-    previous_stream = tvm_ffi.get_raw_stream(ffi_device)
-    with torch.cuda.stream(producer):
-        # Inputs and planning metadata are produced after work on this stream.
-        torch.cuda._sleep(1_000_000)
-        heads, tokens = 2, 13
-        q = torch.randn(tokens, heads, 256, device="cuda", dtype=torch.bfloat16) * 0.1
-        latent = torch.randn(6, 512, device="cuda", dtype=torch.bfloat16) * 0.1
-        key = torch.randn(6, 64, device="cuda", dtype=torch.bfloat16) * 0.1
-        weight = torch.randn(heads * 320, 512, device="cuda", dtype=torch.bfloat16) * 0.05
-        positions = torch.arange(tokens, device="cuda")
-        history = torch.arange(1, tokens, 2, device="cuda")
-        expected, expected_lse = mla_attention(
+        assert isinstance(decoded, MLALatentOutput)
+        assert torch.isfinite(decoded.values).all() and torch.isfinite(decoded.lse).all()
+        actual = native(
             q,
             latent,
             key,
             weight,
-            positions,
-            history,
-            nope_dim=192,
+            torch.arange(9, 17, device="cuda"),
+            torch.arange(17, device="cuda"),
+            nope_dim=128,
             value_dim=128,
-            return_lse=True,
+            causal_layout=CausalLayout(9),
         )
+        torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.002)
+    assert native._decode_plan is not None and native._expanded_workspace is not None
+
+
+def test_native_prefill_uses_the_producer_stream():
+    import tvm_ffi
+
+    producer = torch.cuda.Stream()
+    ffi_device = tvm_ffi.device(f"cuda:{torch.cuda.current_device()}")
+    previous = tvm_ffi.get_raw_stream(ffi_device)
+    with torch.cuda.stream(producer):
+        torch.cuda._sleep(1_000_000)
+        heads, tokens, length = 12, 13, 17
+        q = torch.randn(tokens, heads, 192, device="cuda", dtype=torch.bfloat16) * 0.1
+        latent = torch.randn(length, 512, device="cuda", dtype=torch.bfloat16) * 0.1
+        key = torch.randn(length, 64, device="cuda", dtype=torch.bfloat16) * 0.1
+        weight = torch.randn(heads * 256, 512, device="cuda", dtype=torch.bfloat16) * 0.05
+        expected = oracle(q, latent, key, weight, 4, 128, 128)
         native = FlashInferMLAAdapter()
         for _ in range(3):
-            actual, lse = native(
+            actual = native(
                 q,
                 latent,
                 key,
                 weight,
-                positions,
-                history,
-                nope_dim=192,
+                torch.arange(4, 17, device="cuda"),
+                torch.arange(17, device="cuda"),
+                nope_dim=128,
                 value_dim=128,
-                return_lse=True,
-                causal_layout=CausalLayout(0, 1, 2),
+                causal_layout=CausalLayout(4),
             )
             torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.002)
-            torch.testing.assert_close(lse, expected_lse, rtol=0.001, atol=0.001)
-    assert tvm_ffi.get_raw_stream(ffi_device) == previous_stream
+        assert native._expanded_workspace is not None
+    assert tvm_ffi.get_raw_stream(ffi_device) == previous
+    torch.cuda.current_stream().wait_stream(producer)

@@ -64,6 +64,13 @@ def _worker(rank, init_file):
         torch.testing.assert_close(
             output, expected[:, rank * 2 : (rank + 1) * 2], rtol=1e-5, atol=1e-6
         )
+        # Restore ragged cyclic partitions, including empty ranks and strided inputs.
+        for dtype in (torch.float32, torch.bfloat16):
+            for total in (0, 1, 3, 17, 65):
+                full = torch.arange(total * 6).reshape(total, 3, 2).to(dtype)
+                local = full[rank::4, :, 1]
+                restored = cp.gather_interleaved(local, total)
+                torch.testing.assert_close(restored, full[:, :, 1], rtol=0, atol=0)
     finally:
         info._TP_INFO = None
         configure_parallel()
@@ -75,3 +82,12 @@ def _worker(rank, init_file):
 )
 def test_four_rank_dcp_for_ordinary_multi_head_attention(tmp_path):
     mp.spawn(_worker, args=(str(tmp_path / "context-group"),), nprocs=4, join=True)
+
+
+@pytest.mark.parametrize("total,local_rows", [(-1, 0), (7, 1), (0, 1)])
+def test_token_gather_rejects_inconsistent_host_lengths(monkeypatch, total, local_rows):
+
+    cp = object.__new__(ContextParallel)
+    cp.group = type("Group", (), {"rank": 0, "size": 4})()
+    with pytest.raises(ValueError, match="cyclic partition"):
+        cp.gather_interleaved(torch.empty(local_rows, 3), total)

@@ -104,6 +104,8 @@ def test_capacity_preflight_accounts_per_rank_fixed_state(monkeypatch, state_dty
         recurrent_state_dtype=state_dtype,
         tp_info=SimpleNamespace(rank=0, size=2),
         page_size=2,
+        logical_page_size=2,
+        cache_dtype=torch.bfloat16,
         memory_ratio=0.9,
         num_page_override=None,
     )
@@ -177,6 +179,8 @@ def test_kimi_capacity_reduces_paired_rank_budgets(
             ),
             tp_info=SimpleNamespace(size=len(before)),
             page_size=1,
+            logical_page_size=1,
+            cache_dtype=torch.bfloat16,
             max_running_req=1,
             state_slot_budget=1,
             recurrent_state_dtype=state_dtype,
@@ -254,6 +258,8 @@ def test_non_kimi_capacity_path_is_unchanged(monkeypatch):
         model_config=SimpleNamespace(cache_config=None, head_dim=4, num_kv_heads=1, num_layers=1),
         tp_info=SimpleNamespace(size=2),
         page_size=1,
+        logical_page_size=1,
+        cache_dtype=torch.bfloat16,
         num_page_override=None,
         memory_ratio=0.9,
     )

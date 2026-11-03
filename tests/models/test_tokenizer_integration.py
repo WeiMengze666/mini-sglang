@@ -91,7 +91,14 @@ def test_chat_uses_segmented_tokenizer_output_directly():
         [SimpleNamespace(text=[{"role": "user", "content": "x"}]), SimpleNamespace(text="raw text")]
     )
     assert [row.tolist() for row in actual] == [[100, 101], [1, 2]]
-    assert calls == [{"tokenize": True, "add_generation_prompt": True, "return_tensors": "pt"}]
+    assert calls == [
+        {
+            "tokenize": True,
+            "add_generation_prompt": True,
+            "return_tensors": "pt",
+            "return_dict": False,
+        }
+    ]
 
 
 def test_standard_fast_tokenizer_chat_does_not_double_bos():

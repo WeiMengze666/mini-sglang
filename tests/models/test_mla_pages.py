@@ -62,7 +62,7 @@ def make_cache(monkeypatch, cp, unified, device, *, native=False, long=False):
                 data[:, :512],
                 data[:, 512:],
                 table[row, : lengths[row]],
-                implementation="triton" if native else "torch",
+                implementation="sgl" if native else "torch",
             )
             if native:
                 actual = cache.gather_mla(layer, table[row, cp - 1 : lengths[row] : cp])
@@ -136,8 +136,12 @@ def test_paged_decode_matches_independent_sequences(monkeypatch, heads, cp, unif
                 meta,
                 nope_dim=192,
                 value_dim=128,
-                return_lse=True,
             )
+            assert actual.dtype == q.dtype
+            assert lse.dtype == torch.float32
+            actual = torch.einsum(
+                "thl,hvl->thv", actual, weight.view(heads, 320, 512)[:, 192:]
+            ).float()
             values, logs = (torch.cat(parts) for parts in zip(*expected))
             torch.testing.assert_close(actual, values, rtol=0.03, atol=0.002)
             torch.testing.assert_close(lse, logs, rtol=0.001, atol=0.001)
@@ -160,7 +164,7 @@ def test_paged_decode_graph_replans_after_compaction(monkeypatch, cp, unified, l
 
     def run(meta):
         return native.decode(
-            q, cache.paged_layer(3), weight, meta, nope_dim=192, value_dim=128, return_lse=True
+            q, cache.paged_layer(3), weight, meta, nope_dim=192, value_dim=128
         )
 
     stream = torch.cuda.Stream()

@@ -1,0 +1,115 @@
+{
+  "scope": "Native BF16 baseline; target serving profile unaccepted",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "production_source_snapshot": "phase264-source;137 production Python files identical to phase258-source",
+  "source_manifest_sha256": "c67bc54264c948bbe4bf992946d0a258ae5a21ee39d909305eb1cceb2f806e2a",
+  "cpu": {
+    "passed": 806,
+    "skipped": 611,
+    "scope": "core,models,request cache; GPU tests skipped",
+    "trace_observer_cases": 6
+  },
+  "quality": {
+    "left": "experiment/phase264-gsm8k-mini",
+    "right": "experiment/phase264-gsm8k-official",
+    "examples": 1319,
+    "precision_contract_verified": true,
+    "execution_contract": {
+      "model_dtype": "bfloat16",
+      "moe_activation_precision": "bf16",
+      "kv_cache_dtype": "bfloat16",
+      "recurrent_state_dtype": "float32",
+      "conv_state_dtype": "bfloat16",
+      "bf16_precision": "strict",
+      "tp_size": 8,
+      "dcp_size": 2,
+      "ep_size": 8,
+      "page_size": 64
+    },
+    "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+    "left_accuracy": 0.9711902956785443,
+    "right_accuracy": 0.9719484457922669,
+    "accuracy_delta_percentage_points": -0.0758150113722517,
+    "both_correct": 1280,
+    "both_wrong": 36,
+    "left_only_correct": [
+      306
+    ],
+    "right_only_correct": [
+      423,
+      796
+    ],
+    "same_valid_answer": 1315,
+    "identical_token_ids": 750,
+    "left_invalid": 0,
+    "right_invalid": 0,
+    "left_truncated": 0,
+    "right_truncated": 0
+  },
+  "quality_job": 849,
+  "precision": {
+    "model": "bfloat16",
+    "moe_activations": "bfloat16",
+    "moe_backend": "Marlin",
+    "kv": "bfloat16",
+    "kda_state": "float32",
+    "convolution_state": "bfloat16",
+    "tp": 8,
+    "dcp": 2,
+    "ep": 8,
+    "batch": 8,
+    "decode_graph_max_batch": 8,
+    "max_new_tokens": 1024,
+    "context": 4096
+  },
+  "components": {
+    "native_kda": {
+      "cases": 288,
+      "graph_replays": 216,
+      "result": "exact same-input native outputs/states"
+    },
+    "native_moe": {
+      "boundaries_per_rank": 7,
+      "ranks": 8,
+      "graph_replays": 240,
+      "result": "exact canonical inputs; not full model equality"
+    },
+    "native_mla": {
+      "cases": 64,
+      "scope": "BF16/FP8,DCP1/8,graphs"
+    },
+    "native_conv": {
+      "cases": 416
+    },
+    "native_situ": {
+      "cases": 392,
+      "graph_replays": 160
+    },
+    "native_attention_residual": {
+      "cases": 160,
+      "graph_replays": 480
+    },
+    "scoped_dcp": {
+      "cases": 96,
+      "graph_replays": 288
+    }
+  },
+  "numerical_acceptance": "Strict logits/greedy equality is diagnostic. Allow verified floating reduction/rounding differences after semantic, precision, state-update and model quality checks.",
+  "known_float_diagnostic": "Same official KDA gate cumulative kernel, autotuned BS32/BS64; BS32 control isolates layer1 state/readout difference. No production cache injection/reference rewrite.",
+  "active_kernel_audit": {
+    "ranks": 8,
+    "mini_numerical_cuda_or_triton_calls": 0,
+    "mini_ffi": [
+      "PyNCCL communication shim"
+    ],
+    "scope": "Actual BF16 K3 path"
+  },
+  "pending": [
+    "GPU e2e tensor/index/launch trace,job855",
+    "Current real-checkpoint chunk/cache/cancellation/reuse lifecycle",
+    "TP8/DCP8/EP1 MXFP8 MoE,FP8 KV,BF16 KDA target",
+    "Built-in generic MNNVL and optimized EP exchange",
+    "Exact extra_buffer memory policy and 1M capacity",
+    "Fair full SGLang serving performance"
+  ]
+}

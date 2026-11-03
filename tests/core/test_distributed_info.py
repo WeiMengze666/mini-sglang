@@ -26,6 +26,6 @@ def test_attention_and_expert_axes_are_independent():
     layout = ParallelLayout(DistributedInfo(5, 8), dcp_size=2, ep_size=4)
     assert layout.tensor == DistributedInfo(5, 8)
     assert layout.context == DistributedInfo(1, 2)
-    assert layout.attention == DistributedInfo(2, 4)
+    assert layout.mla_decode == DistributedInfo(2, 4)
     assert layout.experts == DistributedInfo(1, 4)
     assert layout.expert_tensor == DistributedInfo(1, 2)
