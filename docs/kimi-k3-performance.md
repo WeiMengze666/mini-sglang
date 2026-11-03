@@ -236,3 +236,19 @@ HTTP/process integration checks pass, including malformed responses and failed
 benchmark cleanup. Job 877 changes only the launcher; model source, server argv,
 precision and the 900-second AIPerf argv remain identical. Job 876 leaves no
 owned processes and contributes no performance number.
+
+## Prepared graph-coverage candidate
+
+R0 startup captures batches `[1, 2, 4, 8, 16, 24, 32, 40, 48]`. Its hybrid
+backend does not support padding, so other decode batch sizes execute eagerly.
+The first candidate makes automatic graph selection use every size through the
+requested maximum when a backend cannot pad. Backends that support padding keep
+sparse buckets; an explicit `--cuda-graph-bs` list still takes precedence as a
+memory/startup-time choice. This policy uses the existing backend capability
+without naming a model or attention algorithm. It does not change numerical
+kernels, precision, scheduling or cache policy.
+
+The candidate passes 23 focused CPU checks, including graph-runner wiring,
+request-capacity limits, explicit bucket selection and launcher cleanup. Its GPU
+and serving effect remain unmeasured. R0 continues from its frozen source and
+provides the comparison baseline before candidate performance acceptance.

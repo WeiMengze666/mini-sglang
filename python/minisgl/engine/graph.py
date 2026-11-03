@@ -50,6 +50,8 @@ def _determine_cuda_graph_bs(
     cuda_graph_bs: List[int] | None,
     cuda_graph_max_bs: int | None,
     free_memory: int,
+    *,
+    supports_padding: bool = True,
 ) -> List[int]:
     if cuda_graph_bs is not None:
         if any(bs < 1 for bs in cuda_graph_bs) or len(set(cuda_graph_bs)) != len(cuda_graph_bs):
@@ -65,6 +67,10 @@ def _determine_cuda_graph_bs(
 
     if cuda_graph_max_bs < 1:
         return []
+    if not supports_padding:
+        # Stateful backends may not execute dummy requests safely. Cover each
+        # batch directly instead of silently falling back between sparse buckets.
+        return list(range(1, cuda_graph_max_bs + 1))
 
     return [
         bs for bs in [1, 2, 4] + list(range(8, cuda_graph_max_bs + 1, 8)) if bs <= cuda_graph_max_bs
@@ -98,6 +104,7 @@ class GraphRunner:
             cuda_graph_bs=cuda_graph_bs,
             cuda_graph_max_bs=cuda_graph_max_bs,
             free_memory=free_memory,
+            supports_padding=attn_backend.supports_graph_padding,
         )
         if max_batch_size is not None:
             cuda_graph_bs = [bs for bs in cuda_graph_bs if bs <= max_batch_size]

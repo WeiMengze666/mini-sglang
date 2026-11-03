@@ -49,3 +49,40 @@ def test_stateful_graph_uses_only_exact_sizes(size, phase, expected):
     assert runner.can_use_cuda_graph(batch) == expected
     runner.pad_batch(batch)
     assert batch.padded_size == size
+
+
+@pytest.mark.parametrize("maximum", [0, 3, 48])
+def test_unpadded_graphs_cover_every_batch(maximum):
+    sizes = _determine_cuda_graph_bs(None, maximum, 90 << 30, supports_padding=False)
+    assert sizes == list(range(1, maximum + 1))
+
+
+def test_explicit_unpadded_graph_sizes_preserve_memory_choice():
+    sizes = [1, 3, 7]
+    assert _determine_cuda_graph_bs(sizes, 48, 90 << 30, supports_padding=False) == sizes
+
+
+def test_graph_runner_covers_unpadded_batches_up_to_request_limit(monkeypatch):
+    def capture(runner, *args):
+        runner.graph_map = dict.fromkeys(runner.graph_bs_list)
+
+    monkeypatch.setattr(GraphRunner, "_capture_graphs", capture)
+    runner = GraphRunner(
+        stream=None,
+        device="cpu",
+        model=None,
+        attn_backend=SimpleNamespace(supports_graph_padding=False),
+        cuda_graph_bs=None,
+        cuda_graph_max_bs=48,
+        free_memory=90 << 30,
+        max_seq_len=16,
+        vocab_size=16,
+        dummy_req=object(),
+        max_batch_size=5,
+    )
+    for size in range(1, 6):
+        batch = Batch([object()] * size, "decode")
+        assert runner.can_use_cuda_graph(batch)
+        runner.pad_batch(batch)
+        assert batch.padded_size == size
+    assert not runner.can_use_cuda_graph(Batch([object()] * 6, "decode"))
