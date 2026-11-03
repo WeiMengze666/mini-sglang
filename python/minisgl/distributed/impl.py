@@ -21,6 +21,12 @@ class DistributedImpl(ABC):
     @abstractmethod
     def all_gather(self, x: torch.Tensor) -> torch.Tensor: ...
 
+    def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError("This communication backend does not support all-to-all")
+
+    def supports_all_to_all(self, x: torch.Tensor) -> bool:
+        return False
+
     def supports(self, x: torch.Tensor) -> bool:
         """Backward-compatible capability alias for all-reduce."""
         return self.supports_all_reduce(x)
@@ -90,6 +96,15 @@ class FallbackDistributedImpl(DistributedImpl):
         backend = self.primary if self._supports(self.primary, "all_gather", x) else self.fallback
         return backend.all_gather(x)
 
+    def supports_all_to_all(self, x: torch.Tensor) -> bool:
+        return self._supports(self.primary, "all_to_all", x) or self._supports(
+            self.fallback, "all_to_all", x
+        )
+
+    def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
+        backend = self.primary if self._supports(self.primary, "all_to_all", x) else self.fallback
+        return backend.all_to_all(x)
+
     def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
         return self.primary.supports_all_reduce_residual(
             x, residual, norm=norm
@@ -123,22 +138,34 @@ class FallbackDistributedImpl(DistributedImpl):
 
 @dataclass
 class TorchDistributedImpl(DistributedImpl):
+    group: dist.ProcessGroup | None = None
+
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
-        tp_size = dist.get_world_size()
+        tp_size = dist.get_world_size(self.group)
         if tp_size == 1:
             return x
-        dist.all_reduce(x, op=dist.ReduceOp.SUM)
+        dist.all_reduce(x, op=dist.ReduceOp.SUM, group=self.group)
         return x
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
-        tp_size = dist.get_world_size()
+        tp_size = dist.get_world_size(self.group)
         if tp_size == 1:
             return x
         shape = list(x.shape)
         shape[0] = shape[0] * tp_size
         out = torch.empty(shape, dtype=x.dtype, device=x.device)
-        dist.all_gather_into_tensor(out, x)
+        dist.all_gather_into_tensor(out, x, group=self.group)
         return out
+
+    def supports_all_to_all(self, x: torch.Tensor) -> bool:
+        return True
+
+    def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
+        if dist.get_world_size(self.group) == 1:
+            return x
+        result = torch.empty_like(x)
+        dist.all_to_all_single(result, x, group=self.group)
+        return result
 
 
 @dataclass
@@ -146,7 +173,10 @@ class PyNCCLDistributedImpl(DistributedImpl):
     comm: PyNCCLCommunicator
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
-        self.comm.all_reduce(x, "sum")
+        from tvm_ffi import use_torch_stream
+
+        with use_torch_stream() if x.is_cuda else nullcontext():
+            self.comm.all_reduce(x, "sum")
         return x
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
@@ -156,28 +186,61 @@ class PyNCCLDistributedImpl(DistributedImpl):
         output_shape = list(x.shape)
         output_shape[0] *= world_size
         result = x.new_empty(output_shape)
-        self.comm.all_gather(result, x)
+        from tvm_ffi import use_torch_stream
+
+        with use_torch_stream() if x.is_cuda else nullcontext():
+            self.comm.all_gather(result, x)
         return result
 
 
 class DistributedCommunicator:
+    """Backend selection for tensor-wide and explicitly scoped process groups."""
+
     plugins: List[DistributedImpl] = [TorchDistributedImpl()]
+    groups: dict[str, DistributedImpl] = {}
+
+    def __init__(self, group: str = "tensor"):
+        self.group = group
 
     @classmethod
-    def enable(cls, backend: DistributedImpl) -> None:
-        cls.plugins.append(backend)
+    def enable(cls, backend: DistributedImpl, *, group: str = "tensor") -> None:
+        if group == "tensor":
+            cls.plugins.append(backend)
+        else:
+            cls.groups[group] = backend
+
+    def _backend(self):
+        if self.group == "tensor":
+            return self.plugins[-1]
+        try:
+            return self.groups[self.group]
+        except KeyError:
+            raise RuntimeError(f"Communication group {self.group!r} is not initialized") from None
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
-        return self.plugins[-1].all_reduce(x)
+        return self._backend().all_reduce(x)
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
-        return self.plugins[-1].all_gather(x)
+        return self._backend().all_gather(x)
+
+    def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
+        return self._backend().all_to_all(x)
 
     def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
-        return self.plugins[-1].all_reduce_residual(x, residual, norm=norm)
+        return self._backend().all_reduce_residual(x, residual, norm=norm)
 
+    @contextmanager
     def capture(self):
-        return self.plugins[-1].capture()
+        backends = [self._backend()]
+        if self.group == "tensor":
+            backends.extend(self.groups.values())
+        with ExitStack() as stack:
+            seen = set()
+            for backend in backends:
+                if id(backend) not in seen:
+                    stack.enter_context(backend.capture())
+                    seen.add(id(backend))
+            yield
 
 
 def enable_pynccl_distributed(
@@ -204,6 +267,14 @@ def destroy_distributed() -> None:
     """
     Destroy all the distributed communication plugins.
     """
-    for plugin in reversed(DistributedCommunicator.plugins):
-        plugin.close()
+    backends = [
+        *DistributedCommunicator.groups.values(),
+        *reversed(DistributedCommunicator.plugins),
+    ]
+    seen = set()
+    for backend in backends:
+        if id(backend) not in seen:
+            backend.close()
+            seen.add(id(backend))
+    DistributedCommunicator.groups = {}
     DistributedCommunicator.plugins = []

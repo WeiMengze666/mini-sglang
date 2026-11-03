@@ -3,23 +3,23 @@
 import torch
 import torch.distributed as dist
 
+from .impl import DistributedCommunicator, TorchDistributedImpl
 from .layout import get_parallel_layout
-
-_DCP_GROUP = None
 
 
 def init_context_parallel(*, backend=None):
     """Every TP rank creates subgroups in the same order, once at startup."""
-    global _DCP_GROUP
     layout = get_parallel_layout()
-    _DCP_GROUP = None
+    previous = DistributedCommunicator.groups.pop("context", None)
+    if previous is not None:
+        previous.close()
     if layout.dcp_size == 1:
         return
     for start in range(0, layout.tensor.size, layout.dcp_size):
         ranks = list(range(start, start + layout.dcp_size))
         group = dist.new_group(ranks, backend=backend)
         if layout.tensor.rank in ranks:
-            _DCP_GROUP = group
+            DistributedCommunicator.enable(TorchDistributedImpl(group), group="context")
 
 
 def merge_attention(output, lse):
@@ -44,6 +44,7 @@ class ContextParallel:
     def __init__(self):
         layout = get_parallel_layout()
         self.group = layout.context
+        self._comm = DistributedCommunicator("context")
 
     @property
     def rank(self):
@@ -56,12 +57,26 @@ class ContextParallel:
     def owns(self, positions):
         return positions.remainder(self.size) == self.rank
 
+    def gather_interleaved(self, local: torch.Tensor, total: int) -> torch.Tensor:
+        """Restore a cyclic token partition using its host-known global length."""
+        if total < 0 or len(local) != max(0, (total + self.size - 1 - self.rank) // self.size):
+            raise ValueError("Local token count does not match the cyclic partition")
+        if self.size == 1 or total == 0:
+            return local
+        rows = (total + self.size - 1) // self.size
+        padded = local.new_zeros((rows, *local.shape[1:]))
+        padded[: len(local)].copy_(local)
+        joined = self._comm.all_gather(padded)
+        return (
+            joined.view(self.size, rows, *local.shape[1:])
+            .transpose(0, 1)
+            .reshape(-1, *local.shape[1:])[:total]
+        )
+
     def exchange(self, output, lse):
         """Send each destination its normal TP head slice, then merge KV shards."""
         if self.size == 1:
             return output
-        if _DCP_GROUP is None:
-            raise RuntimeError("DCP communication must be initialized before attention")
         tokens, heads, values = output.shape
         if heads % self.size or lse.shape != (tokens, heads):
             raise ValueError("DCP partial attention shapes do not match the head layout")
@@ -69,6 +84,5 @@ class ContextParallel:
         packed = torch.cat((output.float(), lse[..., None]), -1)
         send = packed.view(tokens, self.size, heads // self.size, values + 1)
         send = send.transpose(0, 1).contiguous()
-        received = torch.empty_like(send)
-        dist.all_to_all_single(received, send, group=_DCP_GROUP)
+        received = self._comm.all_to_all(send)
         return merge_attention(received[..., :values], received[..., values])

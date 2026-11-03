@@ -6,7 +6,6 @@ from typing import NamedTuple
 
 import torch
 import torch.nn.functional as F
-from minisgl.precision import use_strict_bf16
 
 
 class KDAState(NamedTuple):
@@ -14,7 +13,7 @@ class KDAState(NamedTuple):
     recurrent: torch.Tensor
 
 
-def causal_conv1d(x, weight, state=None):
+def causal_conv1d(x, weight, state=None, *, is_decode=False):
     """Depthwise causal convolution + SiLU, preserving *unactivated* history."""
     weight = weight.reshape(weight.shape[0], -1)
     channels, width = weight.shape
@@ -28,7 +27,7 @@ def causal_conv1d(x, weight, state=None):
     if (
         x.is_cuda
         and x.ndim in (2, 3)
-        and x.shape[-2] == 1
+        and x.shape[-2] > 0
         and width == 4
         and x.dtype in (torch.bfloat16, torch.float32)
         and state.dtype == x.dtype
@@ -39,7 +38,7 @@ def causal_conv1d(x, weight, state=None):
     ):
         from .causal_conv import causal_conv1d_update
 
-        return causal_conv1d_update(x, weight, state)
+        return causal_conv1d_update(x, weight, state, is_decode=is_decode)
     history = torch.cat((state.to(x), x.transpose(-2, -1)), dim=-1)
     if x.shape[-2] == 0:
         return x.clone(), state.clone()
@@ -97,7 +96,6 @@ def gated_rms_norm(x, gate, weight, eps=1e-6):
     if (
         x.is_cuda
         and x.device == gate.device == weight.device
-        and use_strict_bf16()
         and x.dtype == gate.dtype == weight.dtype == torch.bfloat16
         and weight.is_contiguous()
         and x.shape == gate.shape

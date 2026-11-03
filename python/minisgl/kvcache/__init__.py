@@ -36,6 +36,7 @@ def create_kvcache_pool(
     enable_cache_overlap: bool = False,
     *,
     state_dtype: torch.dtype = torch.float32,
+    kv_dtype: torch.dtype | None = None,
 ) -> BaseKVCachePool:
     if model_config.cache_config is not None:
         from .hybrid_pool import HybridCache
@@ -53,6 +54,7 @@ def create_kvcache_pool(
             unified_memory=unified_memory,
             enable_cache_overlap=enable_cache_overlap,
             state_dtype=state_dtype,
+            kv_dtype=kv_dtype,
         )
 
     from .mha_pool import MHAKVCache
@@ -64,7 +66,7 @@ def create_kvcache_pool(
         num_layers=model_config.num_layers,
         head_dim=model_config.head_dim,
         device=device,
-        dtype=dtype,
+        dtype=dtype if kv_dtype is None else kv_dtype,
     )
 
 

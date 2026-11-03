@@ -47,7 +47,6 @@ class TorchRMSNorm(BaseOP):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if (
             x.is_cuda
-            and use_strict_bf16()
             and x.dtype == self.weight.dtype == torch.bfloat16
             and self.weight.device == x.device
             and self.weight.is_contiguous()
@@ -55,8 +54,11 @@ class TorchRMSNorm(BaseOP):
         ):
             from .norm_kernel import rms_norm
 
-            return rms_norm(x, self.weight, self.eps, round_before_weight=True)
+            # Native BF16 normalization retains FP32 through the scale multiply
+            # and rounds once at the output.
+            return rms_norm(x, self.weight, self.eps, round_before_weight=False)
         xf = x.float()
-        return (xf * torch.rsqrt(xf.square().mean(-1, keepdim=True) + self.eps)).to(
-            x.dtype
-        ) * self.weight
+        normalized = xf * torch.rsqrt(xf.square().mean(-1, keepdim=True) + self.eps)
+        if use_strict_bf16() and x.dtype == self.weight.dtype == torch.bfloat16:
+            return (normalized * self.weight.float()).to(x.dtype)
+        return normalized.to(x.dtype) * self.weight

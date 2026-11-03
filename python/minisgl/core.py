@@ -136,6 +136,11 @@ def set_global_ctx(ctx: Context):
     _GLOBAL_CTX = ctx
 
 
+def get_global_ctx_or_none() -> Context | None:
+    """Allow standalone mechanism layers without an engine context."""
+    return _GLOBAL_CTX
+
+
 def get_global_ctx() -> Context:
     assert _GLOBAL_CTX is not None, "Global context is not set"
     return _GLOBAL_CTX

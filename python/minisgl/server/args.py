@@ -84,6 +84,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--kv-cache-dtype",
+        choices=["auto", "float16", "bfloat16", "float32", "fp8_e4m3"],
+        default="auto",
+        help="Token KV storage precision; auto follows model dtype. Recurrent state is separate.",
+    )
+
+    parser.add_argument(
         "--tensor-parallel-size",
         "--tp-size",
         type=int,
@@ -95,7 +102,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         "--dcp-size",
         type=int,
         default=ServerArgs.dcp_size,
-        help="Interleaved MLA context shards within each TP group (divides TP and page size).",
+        help="Interleaved MLA context shards within each TP group (divides TP).",
     )
     parser.add_argument(
         "--ep-size",
@@ -347,6 +354,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         "float32": torch.float32,
     }
     kwargs["dtype"] = DTYPE_MAP[dtype_str] if isinstance(dtype_str, str) else dtype_str
+    kwargs["kv_cache_dtype"] = (
+        None
+        if kwargs["kv_cache_dtype"] == "auto"
+        else torch.float8_e4m3fn
+        if kwargs["kv_cache_dtype"] == "fp8_e4m3"
+        else DTYPE_MAP[kwargs["kv_cache_dtype"]]
+    )
     kwargs["recurrent_state_dtype"] = DTYPE_MAP[kwargs["recurrent_state_dtype"]]
     kwargs["tp_info"] = DistributedInfo(0, kwargs["tensor_parallel_size"])
     del kwargs["tensor_parallel_size"]

@@ -2,18 +2,20 @@
 
 from .reference import (
     CausalLayout,
+    MLALatentOutput,
+    MLAOutput,
     MLAPagedMetadata,
     MLAState,
     apply_rotary,
-    causal_query_groups,
     mla_attention,
 )
 
 __all__ = [
     "CausalLayout",
+    "MLALatentOutput",
+    "MLAOutput",
     "MLAPagedMetadata",
     "MLAState",
     "apply_rotary",
-    "causal_query_groups",
     "mla_attention",
 ]

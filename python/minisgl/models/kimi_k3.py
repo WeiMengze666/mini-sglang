@@ -52,17 +52,22 @@ class KimiDecoderLayer(BaseOP):
             return head + self.mlp.forward(self.post_attention_layernorm.forward(head))
 
         x = attention_residual(
-            head, bank, self.self_attention_res_norm, self.self_attention_res_proj
+            head,
+            bank,
+            self.self_attention_res_norm,
+            self.self_attention_res_proj,
+            self.input_layernorm,
         )
-        x = self.input_layernorm.forward(x)
         # A boundary freezes the RAW sum, not the attention-weighted mixture.
         writes_block = self._layer_id % self._block_size == 0
         if writes_block:
             bank.append(head)
         out = self._attention(x, batch, cache, page_table, backend)
         head = out if writes_block else head + out
-        x = attention_residual(head, bank, self.mlp_res_norm, self.mlp_res_proj)
-        return head + self.mlp.forward(self.post_attention_layernorm.forward(x))
+        x = attention_residual(
+            head, bank, self.mlp_res_norm, self.mlp_res_proj, self.post_attention_layernorm
+        )
+        return head + self.mlp.forward(x)
 
 
 class KimiModel(BaseOP):
@@ -81,8 +86,9 @@ class KimiModel(BaseOP):
             head = layer.forward(head, bank, batch, cache, page_table, backend)
         if self._attn_res:
             head = attention_residual(
-                head, bank, self.output_attn_res_norm, self.output_attn_res_proj
+                head, bank, self.output_attn_res_norm, self.output_attn_res_proj, self.norm
             )
+            return head
         return self.norm.forward(head)
 
 

@@ -5,6 +5,40 @@ from minisgl.distributed.info import DistributedInfo
 
 
 class BaseMoeBackend(ABC):
+    activation_precisions = ("bf16", "mxfp8")
+
+    def validate_precision(self, precision: str) -> None:
+        if precision not in self.activation_precisions:
+            raise ValueError(
+                f"{type(self).__name__} supports activation precision {self.activation_precisions}"
+            )
+
+    def uses_weight_views(self, linear_backend: str) -> bool:
+        """Repacking kernels release individual raw allocations after preparation."""
+        return linear_backend != "flashinfer"
+
+    def route(self, logits, **options):
+        """Return optimized (weights, IDs), or defer to portable routing."""
+        return None
+
+    def prepare_experts(self, experts, **options):
+        from . import create_expert_executor
+
+        return create_expert_executor(experts, **options)
+
+    def reduce_outputs(self, parallel, *outputs):
+        """Pack expert/shared partials for the selected communication implementation."""
+        if not outputs:
+            raise ValueError("MoE reduction needs at least one output")
+        if len(outputs) == 1:
+            return (parallel.all_reduce(outputs[0]),)
+        sizes = [part.numel() for part in outputs]
+        packed = torch.cat([part.to(outputs[0].dtype).flatten() for part in outputs])
+        reduced = parallel.all_reduce(packed)
+        return tuple(
+            part.view(original.shape) for part, original in zip(reduced.split(sizes), outputs)
+        )
+
     @abstractmethod
     def forward(
         self,
@@ -25,6 +59,7 @@ class TorchExpertExecutor:
     """Portable local expert mixture for arbitrary IDs and projection formats."""
 
     supports_cuda_graph = False
+    input_dtype = None
 
     def __init__(self, experts):
         self.experts = dict(experts)

@@ -1,7 +1,7 @@
-"""Pluggable KDA recurrence and decode kernels.
+"""Pluggable KDA projection, recurrence and decode kernels.
 
 The model supplies projections and owns recurrent state.  A kernel backend may
-replace only the numerical core, or may provide a complete one-token decode
+adapt projection dispatch, replace the numerical core, or provide a one-token decode
 path when it can consume the layer's state layout.  This keeps hardware
 specific fusion out of model definitions while preserving a portable fallback.
 """
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .reference import KDAState
 
 RecurrenceKernel = Callable[..., tuple["torch.Tensor", "torch.Tensor"]]
+ProjectionKernel = Callable[["KDALayer", "torch.Tensor"], tuple["torch.Tensor", ...]]
 DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
 
 
@@ -43,17 +44,22 @@ class KDAKernelSpec:
     name: str
     recurrence: RecurrenceKernel
     decode: DecodeKernel | None = None
+    project: ProjectionKernel | None = None
 
 
 KDA_KERNELS = Registry[KDAKernelSpec]("KDA kernel backend")
 
 
 def register_kda_kernel(
-    name: str, recurrence: RecurrenceKernel, decode: DecodeKernel | None = None
+    name: str,
+    recurrence: RecurrenceKernel,
+    decode: DecodeKernel | None = None,
+    *,
+    project: ProjectionKernel | None = None,
 ):
     """Register a recurrence backend without coupling it to a model class."""
 
-    KDA_KERNELS.register(name)(KDAKernelSpec(name, recurrence, decode))
+    KDA_KERNELS.register(name)(KDAKernelSpec(name, recurrence, decode, project))
 
 
 def register_kda_decode_kernel(name: str, decode: DecodeKernel):
@@ -90,14 +96,6 @@ def _supports_cuda_recurrence(q):
     return q.is_cuda and q.dtype == torch.bfloat16 and q.shape[-1] == 128
 
 
-def _triton_recurrence(*args):
-    if not _supports_cuda_recurrence(args[0]):
-        return _torch_recurrence(*args)
-    from .triton import recurrent_kda
-
-    return recurrent_kda(*args)
-
-
 def _flashinfer_recurrence(*args):
     if not _supports_cuda_recurrence(args[0]):
         return _torch_recurrence(*args)
@@ -106,9 +104,29 @@ def _flashinfer_recurrence(*args):
     return recurrent_kda(*args)
 
 
+def _sgl_recurrence(*args):
+    if not _supports_cuda_recurrence(args[0]):
+        return _torch_recurrence(*args)
+    from .sgl import recurrent_kda
+
+    return recurrent_kda(*args)
+
+
+def _sgl_project(layer, x):
+    from .sgl import project
+
+    return project(layer, x)
+
+
+def _sgl_decode(layer, x, state):
+    from .sgl import decode
+
+    return decode(layer, x, state)
+
+
 register_kda_kernel("torch", _torch_recurrence)
-register_kda_kernel("triton", _triton_recurrence)
 register_kda_kernel("flashinfer", _flashinfer_recurrence)
+register_kda_kernel("sgl", _sgl_recurrence, _sgl_decode, project=_sgl_project)
 
 
 __all__ = [

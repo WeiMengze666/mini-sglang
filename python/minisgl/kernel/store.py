@@ -43,7 +43,7 @@ def store_cache(
 
 
 def store_mla(latent, key, locations, pages, cache, *, page_size, cp_size, cp_rank):
-    from .triton.mla import store_mla as store
+    from .mla import store_mla as store
 
     store(
         latent,

@@ -6,6 +6,8 @@ from minisgl.distributed.info import DistributedInfo
 from minisgl.moe import BaseMoeBackend
 from minisgl.utils import div_ceil
 
+from .sgl import grouped_topk
+
 
 def fused_topk(
     hidden_states: torch.Tensor,
@@ -208,6 +210,8 @@ def fused_experts_impl(
 
 
 class FusedMoe(BaseMoeBackend):
+    route = staticmethod(grouped_topk)
+
     def forward(
         self,
         hidden_states: torch.Tensor,

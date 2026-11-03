@@ -78,6 +78,9 @@ public:
     ncclComm_t comm;
     NCCL_CHECK(::ncclCommInitRank(&comm, m_world_size, id, m_rank));
     m_comm = {comm, template_fn<::ncclCommDestroy>};
+    if (max_bytes == 0) {
+      return;
+    }
 
     void *buf;
     NCCL_CHECK(::ncclMemAlloc(&buf, max_bytes));
@@ -103,7 +106,10 @@ public:
     const auto reduce_op = kNCCLReduceOPMap.at(op);
     const auto stream = LaunchKernel::resolve_device(t.device());
 
-    if (size_bytes <= m_max_bytes) { // use internal buffer
+    if (size_dim == 0) {
+      return;
+    }
+    if (m_sym_mem && size_bytes <= m_max_bytes) { // use internal buffer
       const auto buf_ptr = m_sym_mem.get();
       const auto need_memcpy = (buf_ptr != data_ptr);
       if (need_memcpy) {

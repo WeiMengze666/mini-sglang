@@ -12,6 +12,7 @@ from minisgl.layers.activation import resolve_gated_activation
 from minisgl.layers.weight_kernel import decode_mxfp4 as _decode
 from minisgl.moe.fused import moe_align_block_size
 from minisgl.moe.routing import RoutingPolicy
+from minisgl.precision import use_strict_bf16
 
 
 def bounded_grid_size(blocks: int, columns: int, programs: int) -> int:
@@ -42,6 +43,7 @@ def _gate_up(
     ACTIVATION: tl.constexpr,
     BETA: tl.constexpr,
     LINEAR_BETA: tl.constexpr,
+    STRICT: tl.constexpr,
     BM: tl.constexpr,
     BN: tl.constexpr,
     BK: tl.constexpr,
@@ -75,9 +77,15 @@ def _gate_up(
             gate = gate.to(X.dtype.element_ty).to(tl.float32)
             up = up.to(X.dtype.element_ty).to(tl.float32)
             if ACTIVATION == "situ":
-                gate = BETA * tl.extra.cuda.libdevice.tanh(gate / BETA) * tl.sigmoid(gate)
-                if LINEAR_BETA > 0:
-                    up = LINEAR_BETA * tl.extra.cuda.libdevice.tanh(up / LINEAR_BETA)
+                if STRICT:
+                    # Match weight-only SiTU kernels that express tanh via sigmoid.
+                    gate = BETA * (2.0 * tl.sigmoid(2.0 * (gate / BETA)) - 1.0) * tl.sigmoid(gate)
+                    if LINEAR_BETA > 0:
+                        up = LINEAR_BETA * (2.0 * tl.sigmoid(2.0 * (up / LINEAR_BETA)) - 1.0)
+                else:
+                    gate = BETA * tl.extra.cuda.libdevice.tanh(gate / BETA) * tl.sigmoid(gate)
+                    if LINEAR_BETA > 0:
+                        up = LINEAR_BETA * tl.extra.cuda.libdevice.tanh(up / LINEAR_BETA)
             else:
                 gate = (gate * tl.sigmoid(gate)).to(X.dtype.element_ty).to(tl.float32)
             tl.store(
@@ -100,6 +108,7 @@ def _down(
     E: tl.constexpr,
     H: tl.constexpr,
     I: tl.constexpr,
+    STRICT: tl.constexpr,
     BM: tl.constexpr,
     BN: tl.constexpr,
     BK: tl.constexpr,
@@ -125,6 +134,8 @@ def _down(
                 acc = tl.dot(a, tl.trans(weight), acc, input_precision="tf32x3")
             acc = acc.to(A.dtype.element_ty).to(tl.float32)
             mixing = tl.load(Weights + routes, valid, 0)
+            if STRICT:
+                mixing = mixing.to(A.dtype.element_ty).to(tl.float32)
             tl.store(
                 Y + routes[:, None] * H + rows[None, :],
                 acc * mixing[:, None],
@@ -133,7 +144,11 @@ def _down(
 
 
 class MXFP4Experts:
-    """Homogeneous, bias-free w1/w3/w2 experts with contiguous global IDs."""
+    """Homogeneous, bias-free w1/w3/w2 experts with contiguous global IDs.
+
+    Strict BF16 rounds routing weights and weighted routes to the activation
+    dtype before summing routes in FP32. The caller owns collective precision.
+    """
 
     supports_cuda_graph = True
 
@@ -196,7 +211,10 @@ class MXFP4Experts:
         blocks = tr.cdiv(routes + min(experts + 1, routes) * (bm - 1), bm)
         activated = x.new_empty((routes, intermediate))
         # The alignment primitive assigns remote routes to expert -1, which both kernels skip.
-        partial = torch.zeros((count, topk, hidden), device=x.device, dtype=torch.float32)
+        strict = x.dtype == torch.bfloat16 and use_strict_bf16()
+        partial = torch.zeros(
+            (count, topk, hidden), device=x.device, dtype=x.dtype if strict else torch.float32
+        )
         _gate_up[(bounded_grid_size(blocks, tr.cdiv(intermediate, bn), self._programs),)](
             x.contiguous(),
             self._pointers,
@@ -212,6 +230,7 @@ class MXFP4Experts:
             self._activation,
             self._beta,
             self._linear_beta,
+            strict,
             bm,
             bn,
             bk,
@@ -229,9 +248,10 @@ class MXFP4Experts:
             experts,
             hidden,
             intermediate,
+            strict,
             bm,
             bn,
             bk,
             num_warps=4,
         )
-        return partial.sum(1)
+        return partial.float().sum(1)

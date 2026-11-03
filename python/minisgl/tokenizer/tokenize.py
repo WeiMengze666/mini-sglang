@@ -22,6 +22,7 @@ class TokenizeManager:
                     tokenize=True,
                     add_generation_prompt=True,
                     return_tensors="pt",
+                    return_dict=False,
                 )
             else:
                 input_ids = self.tokenizer.encode(msg.text, return_tensors="pt")

@@ -12,7 +12,7 @@ from minisgl.layers.base import BaseOP, OPList
 def allocate_weight_views(
     expected: dict[str, torch.Tensor], device: torch.device, alignment: int = 256
 ) -> dict[str, torch.Tensor]:
-    """Allocate one arena per dtype; return aligned, contiguous parameter views.
+    """Allocate aligned arenas while preserving declared contiguous storage groups.
 
     Tensor-by-tensor device loading can exhaust allocation/mapping resources
     before VRAM fills on models with hundreds of thousands of small expert
@@ -20,15 +20,28 @@ def allocate_weight_views(
     """
     if alignment < 1:
         raise ValueError("Weight alignment must be positive")
+    # Meta views describe projection groups before any device allocation.
+    # Independent parameters remain aligned; grouped views retain their offsets.
+    groups = {}
+    for name, tensor in expected.items():
+        key = (
+            tensor.dtype,
+            tensor.untyped_storage()._cdata if tensor.is_contiguous() else name,
+        )
+        groups.setdefault(key, []).append((name, tensor))
     sizes: dict[torch.dtype, int] = {}
     offsets = {}
-    for name, tensor in expected.items():
-        elements = alignment // tensor.element_size()
-        if alignment % tensor.element_size():
+    for items in groups.values():
+        dtype = items[0][1].dtype
+        elements = alignment // dtype.itemsize
+        if alignment % dtype.itemsize:
             raise ValueError("Weight alignment must be divisible by the element size")
-        offset = (sizes.get(tensor.dtype, 0) + elements - 1) // elements * elements
-        offsets[name] = offset
-        sizes[tensor.dtype] = offset + tensor.numel()
+        offset = (sizes.get(dtype, 0) + elements - 1) // elements * elements
+        origin = min(tensor.storage_offset() for _, tensor in items)
+        end = max(tensor.storage_offset() + tensor.numel() for _, tensor in items)
+        for name, tensor in items:
+            offsets[name] = offset + tensor.storage_offset() - origin
+        sizes[dtype] = offset + end - origin
     arenas = {}
     for dtype, size in sizes.items():
         arena = torch.empty(size + alignment // dtype.itemsize, dtype=dtype, device=device)

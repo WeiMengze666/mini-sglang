@@ -65,12 +65,12 @@ class Scheduler(SchedulerIOMixin):
         self.table_manager = TableManager(config.max_running_req, self.engine.page_table)
         self.cache_manager = CacheManager(
             self.engine.num_pages,
-            config.page_size,
+            config.logical_page_size,
             self.engine.page_table,
             config.cache_type,
             pool=self.engine.kv_cache,
         )
-        self.decode_manager = DecodeManager(config.page_size)
+        self.decode_manager = DecodeManager(config.logical_page_size)
         self.prefill_manager = PrefillManager(
             self.cache_manager, self.table_manager, self.decode_manager
         )

@@ -20,7 +20,8 @@ class ParallelLayout:
         return DistributedInfo(self.tensor.rank % self.dcp_size, self.dcp_size)
 
     @property
-    def attention(self):
+    def mla_decode(self):
+        """Expanded query-head partition for MLA decode; KDA keeps full TP."""
         return DistributedInfo(self.tensor.rank // self.dcp_size, self.tensor.size // self.dcp_size)
 
     @property

@@ -23,8 +23,8 @@ from minisgl.distributed.layout import ParallelLayout, configure_parallel
 from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight
-from minisgl.moe import create_moe_backend
-from minisgl.precision import resolve_bf16_precision
+from minisgl.moe import create_moe_backend, select_moe_backend
+from minisgl.precision import native_precision_scope, resolve_bf16_precision
 from minisgl.utils import div_even, init_logger, is_sm90_supported, is_sm100_supported, torch_dtype
 
 from .config import EngineConfig
@@ -55,12 +55,15 @@ class Engine:
         self.stream = torch.cuda.Stream()
         torch.cuda.set_stream(self.stream)
         self.dtype = config.dtype
-        self.ctx = Context(config.page_size)
+        self.ctx = Context(config.logical_page_size)
         self.ctx.bf16_precision = resolve_bf16_precision(config.bf16_precision)
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
         init_context_parallel(backend="nccl")
+        if config.model_config.is_moe:
+            self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
+            self.moe_backend.validate_precision(config.mxfp4_activation_precision)
         # Hybrid rank capacities must agree with the least-free TP device.
         init_free_memory = self._sync_get_memory()[
             0 if (config.model_config.cache_config is not None) else 1
@@ -86,10 +89,10 @@ class Engine:
         )
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
-            # FlashInfer packed experts release raw layer weights after their
-            # transformed storage is prepared; a global arena would keep the
-            # whole raw checkpoint alive and defeat that lifecycle.
-            weight_device = None if config.mxfp4_backend == "flashinfer" else self.device
+            # Compute backend owns its weight preparation and lifetime contract.
+            backend = getattr(self.ctx, "moe_backend", None)
+            use_views = backend is None or backend.uses_weight_views(config.mxfp4_backend)
+            weight_device = self.device if use_views else None
             weights = self._iter_weights(config)
             if weight_device is None:
                 weights = ((name, item.to(device=self.device)) for name, item in weights)
@@ -99,13 +102,14 @@ class Engine:
 
         # ======================= KV cache initialization ========================
         self.num_pages = self._determine_num_pages(init_free_memory, config)
-        num_tokens = self.num_pages * config.page_size
+        num_tokens = self.num_pages * config.logical_page_size
         self.ctx.kv_cache = self.kv_cache = create_kvcache_pool(
             model_config=config.model_config,
             num_pages=self.num_pages + 1,  # +1 for dummy page
-            page_size=config.page_size,
+            page_size=config.logical_page_size,
             device=self.device,
             dtype=self.dtype,
+            kv_dtype=config.cache_dtype,
             max_running_req=config.max_running_req,
             max_cached_states=(
                 getattr(config, "max_cached_states", 0)
@@ -131,8 +135,6 @@ class Engine:
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
             config.attention_backend, config.model_config
         )
-        if config.model_config.is_moe and not (config.model_config.cache_config is not None):
-            self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
 
         # ======================= Sampler initialization ========================
         self.sampler = Sampler(self.device, config.model_config.vocab_size)
@@ -151,19 +153,26 @@ class Engine:
             cache_handle=None,  # type: ignore
         )
         self.page_table[self.dummy_req.table_idx].fill_(num_tokens)  # point to dummy page
-        self.graph_runner = GraphRunner(
-            stream=self.stream,
-            device=self.device,
-            model=self.model,
-            attn_backend=self.attn_backend,
-            cuda_graph_bs=config.cuda_graph_bs,
-            cuda_graph_max_bs=config.cuda_graph_max_bs,
-            free_memory=init_free_memory,
-            max_seq_len=aligned_max_seq_len,
-            vocab_size=config.model_config.vocab_size,
-            dummy_req=self.dummy_req,
-            max_batch_size=min(config.max_running_req, num_tokens),
+        self._precision_scope = native_precision_scope(
+            self.ctx.bf16_precision, device=self.device, dtype=self.dtype
         )
+        try:
+            self.graph_runner = GraphRunner(
+                stream=self.stream,
+                device=self.device,
+                model=self.model,
+                attn_backend=self.attn_backend,
+                cuda_graph_bs=config.cuda_graph_bs,
+                cuda_graph_max_bs=config.cuda_graph_max_bs,
+                free_memory=init_free_memory,
+                max_seq_len=aligned_max_seq_len,
+                vocab_size=config.model_config.vocab_size,
+                dummy_req=self.dummy_req,
+                max_batch_size=min(config.max_running_req, num_tokens),
+            )
+        except BaseException:
+            self._precision_scope.close()
+            raise
 
     def _init_communication(self, config: EngineConfig) -> torch.distributed.ProcessGroup:
         backend = config.distributed_backend
@@ -179,8 +188,12 @@ class Engine:
             )
             tp_cpu_group = torch.distributed.group.WORLD
             assert tp_cpu_group is not None
+            # Registered staging buffers can change NCCL's BF16 reduction order.
+            # Strict precision uses caller buffers, matching direct NCCL collectives.
             max_bytes = (
-                config.max_forward_len * config.model_config.hidden_size * self.dtype.itemsize
+                0
+                if self.ctx.bf16_precision == "strict"
+                else config.max_forward_len * config.model_config.hidden_size * self.dtype.itemsize
             )
             enable_pynccl_distributed(config.tp_info, tp_cpu_group, max_bytes)
             return tp_cpu_group
@@ -235,7 +248,7 @@ class Engine:
         )
         # Two usable pages plus the dummy page are the minimum engine allocation.
         pages = (config.num_page_override or 2) + 1
-        cache = pages * layout.cache_bytes_per_page(self.dtype, config.page_size)
+        cache = pages * layout.cache_bytes_per_page(config.cache_dtype, config.logical_page_size)
         minimum = weights + fixed + cache
         budget = int(config.memory_ratio * free_memory)
         if minimum >= budget:
@@ -288,14 +301,16 @@ class Engine:
             2  # key + value
             * config.model_config.head_dim
             * div_even(config.model_config.num_kv_heads, config.tp_info.size, allow_replicate=True)
-            * config.page_size
-            * self.dtype.itemsize
+            * config.logical_page_size
+            * config.cache_dtype.itemsize
             * config.model_config.num_layers
         )
         fixed_state = 0
         if config.model_config.cache_config is not None:
             layout = config.model_config.cache_config
-            cache_per_page = layout.cache_bytes_per_page(self.dtype, config.page_size)
+            cache_per_page = layout.cache_bytes_per_page(
+                config.cache_dtype, config.logical_page_size
+            )
             state_slots = config.state_slot_budget
             fixed_state = state_slots * layout.state_bytes_per_request(
                 self.dtype, tp_size=config.tp_info.size, state_dtype=config.recurrent_state_dtype
@@ -333,7 +348,7 @@ class Engine:
             num_pages = available_memory // cache_per_page
 
         assert num_pages > 1, "Not enough memory for KV cache, try reducing --num-pages"
-        num_tokens = num_pages * config.page_size
+        num_tokens = num_pages * config.logical_page_size
         real_kv_size = num_pages * cache_per_page
         logger.info(f"Allocating {num_tokens} tokens for KV cache, K + V = {mem_GB(real_kv_size)}")
         return num_pages
@@ -378,10 +393,13 @@ class Engine:
         return ForwardOutput(next_tokens_gpu, next_tokens_cpu, copy_done_event)
 
     def shutdown(self) -> None:
-        torch.cuda.synchronize(self.device)
-        self.graph_runner.destroy_cuda_graphs()
-        destroy_distributed()
-        torch.distributed.destroy_process_group()
+        try:
+            torch.cuda.synchronize(self.device)
+            self.graph_runner.destroy_cuda_graphs()
+            destroy_distributed()
+            torch.distributed.destroy_process_group()
+        finally:
+            self._precision_scope.close()
 
 
 def _align_up_32(num: int) -> int:
@@ -392,6 +410,13 @@ def _adjust_config(config: EngineConfig):
     def override(attr: str, value: Any):  # this is dangerous, use with caution
         object.__setattr__(config, attr, value)
 
+    if config.cache_dtype not in (
+        torch.float16,
+        torch.bfloat16,
+        torch.float32,
+        torch.float8_e4m3fn,
+    ):
+        raise ValueError("KV cache storage supports float16, bfloat16, float32 or FP8 E4M3")
     if config.recurrent_state_dtype not in (torch.float32, torch.bfloat16):
         raise ValueError("Recurrent state storage supports float32 or bfloat16")
     if config.max_cached_states < 0:
@@ -415,10 +440,22 @@ def _adjust_config(config: EngineConfig):
             raise ValueError("EP requires a model with routed experts")
         if config.model_config.num_experts % config.ep_size:
             raise ValueError("num_experts must be divisible by ep_size")
-    if config.page_size % config.dcp_size:
-        raise ValueError("page_size must be divisible by dcp_size")
+    if config.page_size <= 0:
+        raise ValueError("page_size must be positive")
     if config.enable_unified_memory and not config.model_config.has_recurrent_state:
         raise ValueError("Unified memory requires a hybrid recurrent/token cache")
+
+    if config.model_config.is_moe and config.moe_backend == "auto":
+        quantization = getattr(config.model_config.hf_config, "quantization_config", None)
+        override(
+            "moe_backend",
+            select_moe_backend(
+                quantization,
+                dtype=config.dtype,
+                activation_precision=config.mxfp4_activation_precision,
+            ),
+        )
+        logger.info_rank0(f"Auto-selected MoE backend: {config.moe_backend}")
 
     if config.model_config.cache_config is not None:
         config.model_config.cache_config.state_bytes_per_request(
@@ -427,7 +464,7 @@ def _adjust_config(config: EngineConfig):
         if config.model_config.num_qo_heads % config.tp_info.size:
             raise ValueError("MLA heads must be divisible by TP size")
         if config.attention_backend == "auto":
-            override("attention_backend", "torch")
+            override("attention_backend", "sgl")
         backends = [
             SUPPORTED_ATTENTION_BACKENDS[name] for name in config.attention_backend.split(",")
         ]
@@ -460,7 +497,3 @@ def _adjust_config(config: EngineConfig):
     if "trtllm" in config.attention_backend and config.page_size not in [16, 32, 64]:
         override("page_size", 64)
         logger.warning_rank0("Page size is overridden to 64 for TRTLLM backend")
-
-    if config.model_config.is_moe and config.moe_backend == "auto":
-        override("moe_backend", "fused")
-        logger.info_rank0(f"Auto-selected MoE backend: {config.moe_backend}")

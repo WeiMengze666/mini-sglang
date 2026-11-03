@@ -64,5 +64,5 @@ class MoELayer(BaseOP):
             num_global_experts=self.num_experts,
         )
         if self.tp_size > 1:
-            final_hidden_states = self._comm.all_reduce(final_hidden_states)
+            (final_hidden_states,) = ctx.moe_backend.reduce_outputs(self._comm, final_hidden_states)
         return final_hidden_states

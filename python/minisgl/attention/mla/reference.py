@@ -15,6 +15,20 @@ class MLAState(NamedTuple):
     positions: torch.Tensor
 
 
+class MLAOutput(NamedTuple):
+    """TP-local readout when LSE is absent; otherwise a partial over cyclic KV.
+
+    A complete prefill readout needs no context exchange even when DCP is enabled.
+    """
+
+    values: torch.Tensor
+    lse: torch.Tensor | None = None
+
+
+class MLALatentOutput(MLAOutput):
+    """Compressed readout; merge KV shards before the layer's value projection."""
+
+
 class CausalLayout(NamedTuple):
     """Host-known geometry of contiguous queries and regularly strided keys."""
 
@@ -25,7 +39,11 @@ class CausalLayout(NamedTuple):
 
 @dataclass
 class MLAPagedMetadata:
-    """CSR physical KV pages shared by query plans, prepared once per batch."""
+    """Physical-page views shared by library plans, prepared once per batch.
+
+    CSR serves FlashAttention plans; dense views serve native DCP decode.
+    Lengths retained on CPU are used only by host-planned library fallbacks.
+    """
 
     indptr: torch.Tensor  # CPU page counts
     indices: torch.Tensor  # device physical page IDs
@@ -33,27 +51,12 @@ class MLAPagedMetadata:
     page_size: int
     nonempty: torch.Tensor | None = None
     capture_size: int | None = None
-
-
-def causal_query_groups(query_start, query_count, key_start, key_count, stride):
-    """Express an interleaved causal mask as ordinary causal subsequences.
-
-    Queries with the same position modulo the key stride advance one local key
-    per row. Their final visible prefix gives the usual bottom-right causal mask.
-    Queries preceding the first local key have empty attention and are omitted.
-    """
-    if stride < 1 or min(query_count, key_count) < 0:
-        raise ValueError("Invalid interleaved sequence dimensions")
-    groups = []
-    if key_count == 0:
-        return groups
-    for offset in range(min(stride, query_count)):
-        first = offset + max(0, (key_start - query_start - offset + stride - 1) // stride) * stride
-        rows = list(range(first, query_count, stride))
-        if rows:
-            visible = min(key_count, (query_start + rows[-1] - key_start) // stride + 1)
-            groups.append((rows, visible))
-    return groups
+    block_table: torch.Tensor | None = None
+    local_lengths: torch.Tensor | None = None
+    global_lengths: torch.Tensor | None = None
+    max_seq_len: int = 0
+    cp_size: int = 1
+    cp_rank: int = 0
 
 
 def apply_rotary(x, positions, theta=10000.0, *, interleaved=True):

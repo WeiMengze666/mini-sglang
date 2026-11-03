@@ -22,10 +22,9 @@ class _ConvWeight(BaseOP):
 
 
 class KDALayer(BaseOP):
-    state_kind = "recurrent"
-
     def __init__(self, config: KDAConfig) -> None:
         self._config = config
+        self._kernel_plans = {}
         self._tp = TensorParallel()
         self._heads = local_size(config.num_heads, self._tp.size, "KDA heads")
         self._dim = config.head_dim
@@ -52,6 +51,15 @@ class KDALayer(BaseOP):
         self.o_norm = TorchRMSNorm(self._dim, config.rms_norm_eps)
         self.o_proj = Linear(width, hidden)
 
+    def after_load(self):
+        self._kernel_plans.clear()
+
+    def prepare_kernel(self, name, create):
+        """Cache weight-dependent backend metadata until the next weight load."""
+        if name not in self._kernel_plans:
+            self._kernel_plans[name] = create()
+        return self._kernel_plans[name]
+
     def project(self, x):
         """Project all real batch rows before touching request-owned state."""
         return (
@@ -62,20 +70,36 @@ class KDALayer(BaseOP):
             self.b_proj.forward(x),
         )
 
-    def update(self, q, k, v, forget, beta, state=None, *, kernel: KDAKernelSpec | None = None):
+    def update(
+        self,
+        q,
+        k,
+        v,
+        forget,
+        beta,
+        state=None,
+        *,
+        kernel: KDAKernelSpec | None = None,
+        is_decode: bool = False,
+    ):
         """Update one sequence [T,C] or independent equal-length sequences [B,T,C]."""
         if q.ndim not in (2, 3):
             raise ValueError("KDA projections must have shape [T,C] or [B,T,C]")
         batched = q.ndim == 3
         batch = q.shape[0] if batched else 1
         tokens = q.shape[-2]
+        if is_decode and tokens != 1:
+            raise ValueError("KDA decode requires one token per request")
         conv_state = None if state is None else state.conv
         values, histories = [], []
         for i, (projected, conv) in enumerate(
             zip((q, k, v), (self.q_conv1d, self.k_conv1d, self.v_conv1d))
         ):
             y, history = causal_conv1d(
-                projected, conv.weight, None if conv_state is None else conv_state[..., i, :, :]
+                projected,
+                conv.weight,
+                None if conv_state is None else conv_state[..., i, :, :],
+                is_decode=is_decode,
             )
             values.append(y.reshape(*q.shape[:-1], self._heads, self._dim))
             histories.append(history)
@@ -144,5 +168,7 @@ class KDALayer(BaseOP):
         *,
         kernel: KDAKernelSpec | None = None,
     ):
-        output, state = self.update(*self.project(x), state, kernel=kernel)
+        kernel = get_kda_kernel("torch") if kernel is None else kernel
+        projected = self.project(x) if kernel.project is None else kernel.project(self, x)
+        output, state = self.update(*projected, state, kernel=kernel)
         return self.finish(x, output), state

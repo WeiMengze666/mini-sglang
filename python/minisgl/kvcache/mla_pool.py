@@ -60,8 +60,8 @@ class MLACache:
         )
         return storage
 
-    def paged_layer(self, layer_id):
-        """A strided view over physical pages; never gather the token history."""
+    def paged_storage(self, layer_id):
+        """Combined payload view; page gaps and layer offsets retain their strides."""
         layer = self._full_layers[layer_id]
         if self.arena is not None:
             data = self._page_storage()[:, layer]
@@ -71,6 +71,11 @@ class MLACache:
                 self._local_page_size,
                 self.latent_dim + self.rope_dim,
             )
+        return data
+
+    def paged_layer(self, layer_id):
+        """Library views over latent/key payloads, without gathering history."""
+        data = self.paged_storage(layer_id)
         return data[..., : self.latent_dim], data[..., self.latent_dim :]
 
     def decode_metadata(self, table_indices, sequence_lengths, page_table):
@@ -82,24 +87,37 @@ class MLACache:
         counts = [
             (length + self._local_page_size - 1) // self._local_page_size for length in lengths
         ]
-        pages = (
-            torch.cat(
-                [
-                    page_table[row, : count * self.page_size : self.page_size]
-                    for row, count in zip(table_indices, counts)
-                ]
-            ).long()
-            // self.page_size
+        # Resolve the dense physical table once; both library layouts share it.
+        # Dense decode kernels require a valid table width even on ranks with
+        # no local tokens. Length zero prevents reads from this dummy entry.
+        max_pages = max(1, max(counts, default=0))
+        blocks = page_table[table_indices, : max_pages * self.page_size : self.page_size]
+        blocks = blocks.long() // self.page_size
+        valid = (
+            torch.arange(max_pages, device=self.device)[None, :]
+            < torch.tensor(counts, device=self.device)[:, None]
         )
         if self.arena is not None:
-            pages = self.arena.page_map[pages]
-            _check((pages >= 0).all(), "MLA decode must reference allocated pages", RuntimeError)
+            blocks = self.arena.page_map[blocks]
+            _check(
+                ((blocks >= 0) | ~valid).all(),
+                "MLA decode must reference allocated pages",
+                RuntimeError,
+            )
+        blocks = blocks.masked_fill(~valid, 0).to(torch.int32)
+        local_lengths = torch.tensor(lengths, device=self.device, dtype=torch.int32)
         return MLAPagedMetadata(
             torch.tensor([0] + counts, dtype=torch.int32).cumsum(0, dtype=torch.int32),
-            pages.to(torch.int32),
+            torch.cat([blocks[row, :count] for row, count in enumerate(counts)]),
             torch.tensor(lengths, dtype=torch.int32),
             self._local_page_size,
-            torch.tensor(lengths, device=self.device) > 0 if 0 in lengths else None,
+            local_lengths > 0 if 0 in lengths else None,
+            block_table=blocks,
+            local_lengths=local_lengths,
+            global_lengths=torch.tensor(sequence_lengths, device=self.device, dtype=torch.int32),
+            max_seq_len=max(sequence_lengths, default=0),
+            cp_size=self._cp.size,
+            cp_rank=self._cp.rank,
         )
 
     def _locations(self, locations: torch.Tensor) -> torch.Tensor:
@@ -127,7 +145,7 @@ class MLACache:
             self.rope_dim,
         ):
             raise ValueError("MLA token/cache shapes differ; do not write padded tokens")
-        if implementation == "triton" and latent.is_cuda:
+        if implementation == "sgl" and latent.is_cuda:
             from minisgl.kernel import store_mla
 
             if self.arena is not None:
@@ -141,7 +159,7 @@ class MLACache:
                 key_suffix,
                 locations,
                 self.arena.page_map if self.arena is not None else None,
-                self.paged_layer(layer_id)[0],
+                self.paged_storage(layer_id),
                 page_size=self.page_size,
                 cp_size=self._cp.size,
                 cp_rank=self._cp.rank,

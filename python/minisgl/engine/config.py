@@ -17,6 +17,7 @@ class EngineConfig:
     model_path: str
     tp_info: DistributedInfo
     dtype: torch.dtype
+    kv_cache_dtype: torch.dtype | None = None
     dcp_size: int = 1
     ep_size: int = 1
     mxfp4_backend: str = "torch"
@@ -61,6 +62,16 @@ class EngineConfig:
     @property
     def max_forward_len(self) -> int:
         return self.max_seq_len
+
+    @property
+    def cache_dtype(self) -> torch.dtype:
+        """Token KV storage; recurrent and convolution state have separate lifetimes."""
+        return self.dtype if self.kv_cache_dtype is None else self.kv_cache_dtype
+
+    @property
+    def logical_page_size(self) -> int:
+        """Allocator span; CLI page_size remains the physical page on each rank."""
+        return self.page_size * self.dcp_size
 
     @property
     def state_slot_budget(self) -> int:

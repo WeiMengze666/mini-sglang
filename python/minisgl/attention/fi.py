@@ -275,7 +275,7 @@ class FlashInferBackend(BaseAttnBackend):
 class FlashInferMLABackend(MLAAttentionBackend):
     """MLA execution using FlashInfer's paged attention kernel and plans."""
 
-    cache_implementation = "triton"
+    cache_implementation = "sgl"
 
     def __init__(self, config):
         from .mla.flashinfer import FlashInferMLAAdapter

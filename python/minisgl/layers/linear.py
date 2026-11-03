@@ -5,7 +5,6 @@ from typing import List
 import torch
 import torch.nn.functional as F
 from minisgl.distributed import DistributedCommunicator, get_tp_info
-from minisgl.precision import use_strict_bf16
 from minisgl.utils import div_even
 
 from .base import BaseOP
@@ -13,23 +12,7 @@ from .weight import decode_mxfp4
 
 
 def _linear(x, weight, bias):
-    if (
-        x.is_cuda
-        and weight.device == x.device
-        and x.ndim > 0
-        and weight.ndim == 2
-        and use_strict_bf16()
-        and x.dtype == weight.dtype == torch.bfloat16
-        and x.shape[-1] == weight.shape[1]
-        and weight.is_contiguous()
-        and (
-            bias is None
-            or (bias.device == x.device and bias.dtype == x.dtype and bias.is_contiguous())
-        )
-    ):
-        from .linear_kernel import linear
-
-        return linear(x, weight, bias)
+    # The official CUDA default uses PyTorch/cuBLAS for these dense projections.
     return F.linear(x, weight, bias)
 
 
@@ -39,38 +22,96 @@ def linear_bf16(x: torch.Tensor, weight: torch.Tensor, bias=None) -> torch.Tenso
 
 
 def linear_fp32(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-    """Accumulate BF16 projections in FP32 while retaining the BF16 weight layout."""
-    if (
-        x.is_cuda
-        and weight.device == x.device
-        and x.ndim > 0
-        and weight.ndim == 2
-        and use_strict_bf16()
-        and x.dtype == weight.dtype == torch.bfloat16
-        and x.shape[-1] == weight.shape[1]
-        and weight.is_contiguous()
-    ):
-        from .linear_kernel import linear
-
-        return linear(x, weight, dtype=torch.float32)
+    """Retain projection accumulators using the official PyTorch GEMM API."""
+    if x.is_cuda and x.dtype == weight.dtype and x.dtype in (torch.bfloat16, torch.float16):
+        flat = x.reshape(-1, x.shape[-1])
+        result = torch.mm(flat, weight.t(), out_dtype=torch.float32)
+        return result.view(*x.shape[:-1], weight.shape[0])
     return F.linear(x.float(), weight.float())
 
 
 def headwise_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-    """Project [tokens, heads, input] with separate weights for each head."""
-    if (
-        x.is_cuda
-        and weight.device == x.device
-        and x.ndim == weight.ndim == 3
-        and use_strict_bf16()
-        and x.dtype == weight.dtype == torch.bfloat16
-        and x.shape[1] == weight.shape[0]
-        and x.shape[2] == weight.shape[2]
-    ):
-        from .linear_kernel import headwise_linear as project
+    """Project [tokens, heads, input] using the mature batched GEMM."""
+    return torch.bmm(x.transpose(0, 1), weight.transpose(1, 2)).transpose(0, 1)
 
-        return project(x, weight)
-    return torch.einsum("thk,hnk->thn", x, weight)
+
+class MergedLinear:
+    """Post-load storage plan for dense projections sharing an input.
+
+    Parameter names stay on the original operators. Predeclared meta views let
+    the weight loader place the group in one allocation, which this plan reuses.
+    ``forward`` retains FP32 accumulators; kernel backends may consume the
+    aligned weight directly for their own supported output formats.
+    """
+
+    def __init__(self, weight, widths, names):
+        self.weight, self.widths, self.names = weight, widths, names
+
+    @classmethod
+    def try_create(cls, projections, *, pad_rows_to=1):
+        if pad_rows_to <= 0:
+            raise ValueError("Merged projection row alignment must be positive")
+        ops = list(projections.values())
+        weights = [getattr(op, "weight", None) for op in ops]
+        if len(ops) < 2 or any(
+            not isinstance(weight, torch.Tensor)
+            or weight.ndim != 2
+            or not weight.is_contiguous()
+            or not weight.dtype.is_floating_point
+            or weight.requires_grad
+            or min(weight.shape) <= 0
+            or getattr(op, "bias", None) is not None
+            or getattr(op, "weight_format", "dense") != "dense"
+            for op, weight in zip(ops, weights)
+        ):
+            return None
+        first = weights[0]
+        if any(
+            (weight.shape[1], weight.dtype, weight.device)
+            != (first.shape[1], first.dtype, first.device)
+            for weight in weights
+        ):
+            return None
+        widths = tuple(weight.shape[0] for weight in weights)
+        offset, shared = first.storage_offset(), True
+        for weight in weights:
+            shared &= (
+                weight.untyped_storage()._cdata == first.untyped_storage()._cdata
+                and weight.storage_offset() == offset
+            )
+            offset += weight.numel()
+        weight = (
+            first.as_strided(
+                (sum(widths), first.shape[1]),
+                (first.shape[1], 1),
+                storage_offset=first.storage_offset(),
+            )
+            if shared
+            else torch.cat(weights, dim=0)
+        )
+        padding = (-sum(widths)) % pad_rows_to
+        if padding:
+            weight = torch.cat((weight, weight.new_zeros((padding, first.shape[1]))))
+        for op, view in zip(ops, weight[: sum(widths)].split(widths, 0)):
+            op.weight = view
+        return cls(weight, widths, tuple(projections))
+
+    def forward(self, x):
+        flat = x.reshape(-1, x.shape[-1])
+        if (
+            x.is_cuda
+            and x.dtype == self.weight.dtype
+            and x.dtype in (torch.bfloat16, torch.float16)
+        ):
+            # Native merged fronts use caller-owned FP32 accumulation storage.
+            output = torch.empty(
+                (flat.shape[0], self.weight.shape[0]), device=x.device, dtype=torch.float32
+            )
+            torch.mm(flat, self.weight.t(), out=output, out_dtype=torch.float32)
+        else:
+            output = F.linear(flat.float(), self.weight.float())
+        output = output.view(*x.shape[:-1], self.weight.shape[0])
+        return dict(zip(self.names, output[..., : sum(self.widths)].split(self.widths, -1)))
 
 
 class _LinearTPImpl(BaseOP):

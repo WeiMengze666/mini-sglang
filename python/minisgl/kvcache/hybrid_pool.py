@@ -34,6 +34,7 @@ class HybridCache(BaseKVCachePool):
         enable_cache_overlap: bool = False,
         *,
         state_dtype: torch.dtype = torch.float32,
+        kv_dtype: torch.dtype | None = None,
     ):
         if min(num_pages, page_size, max_running_req) <= 0:
             raise ValueError("Hybrid cache capacities must be positive")
@@ -47,6 +48,7 @@ class HybridCache(BaseKVCachePool):
         self.rope_dim = config.key_dim
         heads = local_size(config.num_heads, tp_info()[1], "KDA heads") if self._kda_layers else 0
         dim = config.head_dim
+        kv_dtype = dtype if kv_dtype is None else kv_dtype
         self.arena = None
         self.supports_overlap = enable_cache_overlap
         if unified_memory:
@@ -54,7 +56,7 @@ class HybridCache(BaseKVCachePool):
 
             self.arena = UnifiedMemory(
                 num_pages,
-                config.cache_bytes_per_page(dtype, page_size),
+                config.cache_bytes_per_page(kv_dtype, page_size),
                 config.state_bytes_per_request(dtype, state_dtype=state_dtype),
                 device,
             )
@@ -63,7 +65,7 @@ class HybridCache(BaseKVCachePool):
             self.num_tokens,
             self.latent_dim,
             self.rope_dim,
-            dtype,
+            kv_dtype,
             device,
             arena=self.arena,
             page_size=page_size,

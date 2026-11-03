@@ -4,24 +4,22 @@ from __future__ import annotations
 
 import torch
 from minisgl.attention.config import MLAConfig
-from minisgl.attention.mla import MLAState, apply_rotary, mla_attention
+from minisgl.attention.mla import MLALatentOutput, MLAOutput, MLAState, apply_rotary, mla_attention
 from minisgl.distributed.context import ContextParallel
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
-from minisgl.layers.linear import Linear
+from minisgl.layers.linear import Linear, headwise_linear
 from minisgl.layers.norm import TorchRMSNorm
 
 
 class MLALayer(BaseOP):
-    state_kind = "mla"
-
     def __init__(self, config: MLAConfig) -> None:
         self._config = config
         self._tp = TensorParallel()
         self._cp = ContextParallel()
         self._heads = local_size(
-            config.num_heads, get_parallel_layout().attention.size, "MLA heads"
+            config.num_heads, get_parallel_layout().mla_decode.size, "MLA heads"
         )
         self._output_heads = local_size(config.num_heads, self._tp.size, "MLA output heads")
         self._nope = config.nope_dim
@@ -77,19 +75,35 @@ class MLALayer(BaseOP):
         *,
         attention=mla_attention,
         causal_layout=None,
+        context_sharded=True,
     ):
-        return attention(
+        """Attend cached history; full histories use only this rank's TP heads.
+
+        KV-sharded fallbacks retain replicated query heads and return LSE for
+        context exchange. Native paged decode instead returns compressed values,
+        whose value projection is deferred until after that exchange.
+        """
+        weight = self.kv_b_proj.weight
+        if not context_sharded and self._cp.size > 1:
+            q = q.chunk(self._cp.size, dim=1)[self._cp.rank]
+            weight = weight.view(self._heads, self._nope + self._value, self._latent)
+            weight = weight.chunk(self._cp.size, dim=0)[self._cp.rank].flatten(0, 1)
+        sharded = context_sharded and self._cp.size > 1
+        output = attention(
             q,
             latent_history,
             key_history,
-            self.kv_b_proj.weight,
+            weight,
             positions,
             history_positions,
             nope_dim=self._nope,
             value_dim=self._value,
-            return_lse=self._cp.size > 1,
+            return_lse=sharded,
             causal_layout=causal_layout,
         )
+        if isinstance(output, MLAOutput):
+            return output
+        return MLAOutput(*output) if sharded else MLAOutput(output)
 
     def attend_paged_partial(self, q, pages, metadata, *, attention):
         return attention.decode(
@@ -99,12 +113,21 @@ class MLALayer(BaseOP):
             metadata,
             nope_dim=self._nope,
             value_dim=self._value,
-            return_lse=self._cp.size > 1,
         )
 
-    def finish(self, x, partial):
-        output = self._cp.exchange(*partial).to(x.dtype) if self._cp.size > 1 else partial
-        output = output.flatten(-2)
+    def finish(self, x, partial: MLAOutput):
+        output = (
+            self._cp.exchange(partial.values, partial.lse)
+            if partial.lse is not None and self._cp.size > 1
+            else partial.values
+        )
+        if isinstance(partial, MLALatentOutput):
+            weight = self.kv_b_proj.weight.view(self._heads, self._nope + self._value, self._latent)
+            weight = weight[:, self._nope :]
+            if self._cp.size > 1:
+                weight = weight.chunk(self._cp.size, dim=0)[self._cp.rank]
+            output = headwise_linear(output.to(x.dtype), weight)
+        output = output.to(x.dtype).flatten(-2)
         if self._output_gate:
             output = output * self.g_proj.forward(x).sigmoid()
         return self._tp.all_reduce(self.o_proj.forward(output))

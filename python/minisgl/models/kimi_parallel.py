@@ -94,7 +94,7 @@ def shard_spec(
                 return split(1, heads, "KDA heads", dim)
         else:
             heads = c.num_attention_heads
-            attention = {"partition": layout.attention}
+            attention = {"partition": layout.mla_decode}
             if parameter in ("q_proj.weight", "q_b_proj.weight"):
                 return split(
                     0, heads, "MLA heads", c.qk_nope_head_dim + c.qk_rope_head_dim, **attention

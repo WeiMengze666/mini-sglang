@@ -152,11 +152,19 @@ class FlashInferMXFP4Experts:
     def _tune_tokens(tokens: int) -> int:
         return max(1, 1 << (tokens - 1).bit_length())
 
+    @property
+    def input_dtype(self) -> torch.dtype:
+        # Preserve projection accumulators until MXFP8 quantization.
+        return torch.float32 if self._precision == "mxfp8" else torch.bfloat16
+
     def forward(self, x: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
         if x.ndim != 2 or x.shape[-1] != self._hidden:
             raise ValueError("FlashInfer FP4 expects [tokens, hidden] input")
-        if x.dtype != torch.bfloat16 or not x.is_cuda:
-            raise ValueError("FlashInfer FP4 currently requires CUDA BF16 inputs")
+        allowed = (
+            (torch.bfloat16, torch.float32) if self._precision == "mxfp8" else (torch.bfloat16,)
+        )
+        if x.dtype not in allowed or not x.is_cuda:
+            raise ValueError(f"FlashInfer FP4 requires CUDA inputs with dtype in {allowed}")
         if ids.ndim != 2 or weights.shape != ids.shape:
             raise ValueError(
                 "FlashInfer route IDs and weights must have the same [tokens, topk] shape"

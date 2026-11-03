@@ -16,6 +16,11 @@ class MLAMetadata(SequenceAttnMetadata):
 
 
 class MLAAttentionBackend(BaseAttnBackend):
+    """Prefill gathers cyclic KV; decode exchanges partial latent readouts.
+
+    Both phases retain the same compressed persistent cache and TP weight layout.
+    """
+
     supports_graph_padding = False
     cache_implementation = "torch"
 
@@ -29,7 +34,9 @@ class MLAAttentionBackend(BaseAttnBackend):
 
     def prepare_metadata(self, batch):
         metadata = MLAMetadata.from_batch(batch, self.kvcache.device)
-        if hasattr(self.attention, "decode") and all(req.extend_len == 1 for req in batch.reqs):
+        if hasattr(self.attention, "decode") and batch.is_decode:
+            if any(req.extend_len != 1 for req in batch.reqs):
+                raise ValueError("MLA decode requires one new token per request")
             metadata.decode = self.kvcache.mla.decode_metadata(
                 [req.table_idx for req in batch.reqs],
                 [req.device_len for req in batch.reqs],
@@ -38,19 +45,20 @@ class MLAAttentionBackend(BaseAttnBackend):
         batch.attn_metadata = metadata
 
     def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+        is_decode = getattr(batch, "is_decode", False)
         positions = batch.positions[: len(x)]
-        queries, latent, key = layer.project(x, positions)
+        queries, new_latent, new_key = layer.project(x, positions)
         cache.store_mla(
             layer_id,
-            latent,
-            key,
+            new_latent,
+            new_key,
             batch.out_loc[: len(x)],
             implementation=self.cache_implementation,
         )
         paged = batch.attn_metadata.decode
         if paged is not None:
             partial = layer.attend_paged_partial(
-                queries, cache.mla.paged_layer(layer_id), paged, attention=self.attention
+                queries, cache.mla.paged_storage(layer_id), paged, attention=self.attention
             )
             if partial is not None:
                 return layer.finish(x, partial)
@@ -58,9 +66,32 @@ class MLAAttentionBackend(BaseAttnBackend):
         outputs, offset = [], 0
         for req in batch.reqs:
             rows = slice(offset, offset + req.extend_len)
-            history = torch.arange(cp.rank, max(cp.rank, req.device_len), cp.size, device=x.device)
-            locations = page_table[req.table_idx, cp.rank : req.device_len : cp.size]
-            latent, key = cache.gather_mla(layer_id, locations)
+            sharded = cp.size > 1 and is_decode
+            if not is_decode:
+                # Current projections remain in producer precision. Persistent
+                # storage is the source only for a previously cached prefix.
+                prefix = req.cached_len
+                locations = page_table[req.table_idx, cp.rank : prefix : cp.size]
+                if prefix:
+                    latent, key = cache.gather_mla(layer_id, locations)
+                    latent_dim = latent.shape[-1]
+                    gathered = cp.gather_interleaved(
+                        torch.cat((latent, key), -1).to(queries.dtype), prefix
+                    )
+                    latent, key = gathered.split((latent_dim, key.shape[-1]), -1)
+                    latent = torch.cat((latent, new_latent[rows]), 0)
+                    key = torch.cat((key, new_key[rows]), 0)
+                else:
+                    latent, key = new_latent[rows], new_key[rows]
+                history = torch.arange(req.device_len, device=x.device)
+            else:
+                history = torch.arange(
+                    cp.rank, max(cp.rank, req.device_len), cp.size, device=x.device
+                )
+                locations = page_table[req.table_idx, cp.rank : req.device_len : cp.size]
+                latent, key = (
+                    part.to(queries.dtype) for part in cache.gather_mla(layer_id, locations)
+                )
             outputs.append(
                 layer.attend_partial(
                     queries[rows],
@@ -68,15 +99,17 @@ class MLAAttentionBackend(BaseAttnBackend):
                     key,
                     positions[rows],
                     history,
-                    causal_layout=CausalLayout(req.cached_len, cp.rank, cp.size),
+                    causal_layout=CausalLayout(
+                        req.cached_len, cp.rank if sharded else 0, cp.size if sharded else 1
+                    ),
                     attention=self.attention,
+                    context_sharded=sharded,
                 )
             )
             offset += req.extend_len
-        partial = (
-            torch.cat(outputs)
-            if cp.size == 1
-            else tuple(torch.cat(parts) for parts in zip(*outputs))
+        partial = type(outputs[0])(
+            torch.cat([part.values for part in outputs]),
+            torch.cat([part.lse for part in outputs]) if outputs[0].lse is not None else None,
         )
         return layer.finish(x, partial)
 
@@ -89,8 +122,12 @@ class MLAAttentionBackend(BaseAttnBackend):
         if not hasattr(self.attention, "init_graphs"):
             raise ValueError("MLA CUDA graphs require a native paged attention backend")
         layout = self.config.cache_config
-        if self.kvcache.dtype != torch.bfloat16 or layout.latent_dim != 512 or layout.key_dim != 64:
-            raise ValueError("Native MLA graph decode supports BF16 and MLA512/64")
+        if (
+            self.kvcache.dtype not in (torch.bfloat16, torch.float8_e4m3fn)
+            or layout.latent_dim != 512
+            or layout.key_dim != 64
+        ):
+            raise ValueError("Native MLA graph decode supports BF16/FP8 E4M3 and MLA512/64")
         page_size = self.kvcache.mla.page_size
         self.attention.init_graphs(
             bs_list, (max_seq_len + page_size - 1) // page_size, self.kvcache.device

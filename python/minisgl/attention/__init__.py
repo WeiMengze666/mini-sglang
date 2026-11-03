@@ -85,9 +85,25 @@ def create_fi_backend(config: ModelConfig):
 
     if config.cache_config is None:
         return FlashInferBackend(config)
-    kernel = get_kda_kernel("triton" if use_strict_bf16() else "flashinfer")
+    kernel = get_kda_kernel("sgl" if use_strict_bf16() else "flashinfer")
     return HybridAttnBackend(
         KDAAttentionBackend(config, kernel),
+        FlashInferMLABackend(config),
+        config.is_kda_layer,
+    )
+
+
+@register_attention_backend("sgl", stateful_layers=True)
+def create_sgl_backend(config: ModelConfig):
+    """Compose the optional SGLang KDA kernels with FlashInfer's MLA portfolio."""
+    from .fi import FlashInferBackend, FlashInferMLABackend
+    from .kda.backend import KDAAttentionBackend
+    from .kda.registry import get_kda_kernel
+
+    if config.cache_config is None:
+        return FlashInferBackend(config)
+    return HybridAttnBackend(
+        KDAAttentionBackend(config, get_kda_kernel("sgl")),
         FlashInferMLABackend(config),
         config.is_kda_layer,
     )
