@@ -41,7 +41,9 @@ state and BF16 convolution state. Mini scores 1281/1319; SGLang 1282/1319.
 Both have zero invalid/truncated answers; 1315 final answers agree. This is
 quality evidence for this configuration, not target serving performance.
 The frozen native baseline passes 806 CPU checks with 611 GPU-only skips.
-The current protocol/workload suite passes 815 checks with the same GPU skips.
+The current protocol/workload suite passes 841 checks with the same GPU skips,
+including 20 opt-in checks against the pinned official parsers and released
+checkpoint tokenizer on CPU.
 GPU component checks cover native outputs/states, graph replay, scoped DCP,
 BF16/FP8 MLA pages, convolution, SiTU and attention residuals.
 
@@ -74,5 +76,9 @@ run inside one GPUq job and cleans only its own process groups. Frontend usage
 now counts real template/input and generated token IDs, including empty decoded
 fragments and EOS; streaming usage follows `stream_options.include_usage`.
 `/metrics` exposes frontend request counters and completed token totals, not GPU
-or cache telemetry. Target-profile parser/cache/precision qualification and Mini
-AIPerf measurements remain pending.
+or cache telemetry. Chat formatting and output parsing reuse the trusted checkpoint tokenizer and
+optional native reasoning/tool parsers behind generic interfaces. Per-request
+streaming state, tool messages, template options and the served model alias are
+covered on CPU; generation stop IDs come from the checkpoint generation config
+without changing its corpus EOS. Target-profile GPU serving/cache/precision
+qualification and Mini AIPerf measurements remain pending.

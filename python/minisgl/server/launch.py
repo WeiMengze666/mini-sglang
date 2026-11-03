@@ -110,6 +110,7 @@ def launch_server(run_shell: bool = False) -> None:
                 target=tokenize_worker,
                 kwargs={
                     "tokenizer_path": server_args.model_path,
+                    "trust_remote_code": server_args.trust_remote_code,
                     "addr": server_args.zmq_detokenizer_addr,
                     "backend_addr": server_args.zmq_backend_addr,
                     "frontend_addr": server_args.zmq_frontend_addr,
@@ -125,6 +126,7 @@ def launch_server(run_shell: bool = False) -> None:
                     target=tokenize_worker,
                     kwargs={
                         "tokenizer_path": server_args.model_path,
+                        "trust_remote_code": server_args.trust_remote_code,
                         "addr": server_args.zmq_tokenizer_addr,
                         "backend_addr": server_args.zmq_backend_addr,
                         "frontend_addr": server_args.zmq_frontend_addr,

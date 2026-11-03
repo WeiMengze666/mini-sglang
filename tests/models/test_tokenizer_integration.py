@@ -88,7 +88,10 @@ def test_chat_uses_segmented_tokenizer_output_directly():
 
     manager = TokenizeManager(SimpleNamespace(apply_chat_template=chat, encode=encode))
     actual = manager.tokenize(
-        [SimpleNamespace(text=[{"role": "user", "content": "x"}]), SimpleNamespace(text="raw text")]
+        [
+            SimpleNamespace(text=[{"role": "user", "content": "x"}], chat_template_kwargs=None),
+            SimpleNamespace(text="raw text"),
+        ]
     )
     assert [row.tolist() for row in actual] == [[100, 101], [1, 2]]
     assert calls == [
@@ -113,7 +116,7 @@ def test_standard_fast_tokenizer_chat_does_not_double_bos():
     tok = PreTrainedTokenizerFast(tokenizer_object=backend, bos_token="[BOS]", unk_token="[UNK]")
     tok.chat_template = "{{ bos_token }} hello"
     output = TokenizeManager(tok).tokenize(
-        [SimpleNamespace(text=[{"role": "user", "content": "hello"}])]
+        [SimpleNamespace(text=[{"role": "user", "content": "hello"}], chat_template_kwargs=None)]
     )
     assert output[0].tolist() == [1, 2]
 

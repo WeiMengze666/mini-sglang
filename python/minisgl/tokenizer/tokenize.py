@@ -17,13 +17,14 @@ class TokenizeManager:
         for msg in msgs:
             if isinstance(msg.text, list):
                 # Keep tokenizer-owned segment boundaries and special-token escaping.
-                input_ids = self.tokenizer.apply_chat_template(
-                    msg.text,
+                options = dict(msg.chat_template_kwargs or {})
+                options.update(
                     tokenize=True,
                     add_generation_prompt=True,
                     return_tensors="pt",
                     return_dict=False,
                 )
+                input_ids = self.tokenizer.apply_chat_template(msg.text, **options)
             else:
                 input_ids = self.tokenizer.encode(msg.text, return_tensors="pt")
             input_ids = torch.as_tensor(input_ids)

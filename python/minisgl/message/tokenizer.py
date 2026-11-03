@@ -37,6 +37,7 @@ class TokenizeMsg(BaseTokenizerMsg):
     uid: int
     text: str | List[Dict[str, str]]
     sampling_params: SamplingParams
+    chat_template_kwargs: dict | None = None
 
 
 @dataclass

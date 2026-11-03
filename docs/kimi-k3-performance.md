@@ -113,3 +113,18 @@ explicitly. Do not substitute another workload, shorten the duration, truncate
 inputs or change precision to obtain a performance number. Freeze a runnable
 baseline first; then evaluate each generic backend/cache/scheduling change with
 quality/state regression checks and the same AIPerf workload.
+
+The native reference startup in job 858 exceeded the launcher readiness limit
+while initializing/autotuning; AIPerf never started and this is not a performance
+result. Job 863 retries the identical server and benchmark argument vectors,
+allowing 7200 seconds for readiness and 10800 seconds for benchmark orchestration.
+The actual AIPerf measurement remains 900 seconds. Both attempts retain their
+commands/logs; the first attempt left no owned server processes. The selected
+393-entry public dataset is cached at revision
+`23f152f6f0f9399a85901b89a6458def0ef16729`.
+
+Mini now reuses the checkpoint tokenizer and native reasoning/tool parsers through
+generic adapters. CPU checks cover actual K3 thinking modes, tool conversations,
+streaming/non-streaming composition and another supported model format. This
+qualifies the protocol adapter on CPU; it does not establish GPU serving or
+target precision acceptance.

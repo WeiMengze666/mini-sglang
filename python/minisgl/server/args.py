@@ -17,6 +17,9 @@ class ServerArgs(SchedulerConfig):
     server_port: int = 1919
     num_tokenizer: int = 0
     silent_output: bool = False
+    served_model_name: str | None = None
+    reasoning_parser: str | None = None
+    tool_call_parser: str | None = None
 
     @property
     def share_tokenizer(self) -> bool:
@@ -74,6 +77,15 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         required=True,
         help="The path of the model weights. This can be a local folder or a Hugging Face repo ID.",
     )
+
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Trust tokenizer code supplied by the checkpoint.",
+    )
+    parser.add_argument("--served-model-name", help="Model identifier exposed by the API.")
+    parser.add_argument("--reasoning-parser", help="Optional native reasoning-format parser.")
+    parser.add_argument("--tool-call-parser", help="Optional native tool-call parser.")
 
     parser.add_argument(
         "--dtype",
@@ -365,6 +377,9 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     kwargs["tp_info"] = DistributedInfo(0, kwargs["tensor_parallel_size"])
     del kwargs["tensor_parallel_size"]
 
+    from .parsers import validate_parser_names
+
+    validate_parser_names(kwargs["reasoning_parser"], kwargs["tool_call_parser"])
     result = ServerArgs(**kwargs)
     logger = init_logger(__name__)
     logger.info(f"Parsed arguments:\n{result}")

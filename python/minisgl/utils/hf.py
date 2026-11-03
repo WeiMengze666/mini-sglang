@@ -16,11 +16,12 @@ class DisabledTqdm(tqdm):
         super().__init__(*args, **kwargs)
 
 
-def load_tokenizer(model_path: str) -> PreTrainedTokenizerBase:
+def load_tokenizer(model_path: str, *, trust_remote_code: bool = False) -> PreTrainedTokenizerBase:
     metadata = get_tokenizer_config(model_path)
     markers = {token.get("content") for token in metadata.get("added_tokens_decoder", {}).values()}
     if (
-        metadata.get("tokenizer_class") == "TikTokenTokenizer"
+        not trust_remote_code
+        and metadata.get("tokenizer_class") == "TikTokenTokenizer"
         and {"<|end_of_msg|>", "<|open|>", "<|close|>", "<|sep|>"} <= markers
     ):
         from minisgl.tokenizer.xtml import XTMLTokenizer
@@ -46,7 +47,25 @@ def load_tokenizer(model_path: str) -> PreTrainedTokenizerBase:
                 generation = json.load(file)
         return XTMLTokenizer(os.path.join(folder, "tiktoken.model"), metadata, generation)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    options = (
+        {"trust_remote_code": True, "revision": metadata.get("_commit_hash")}
+        if trust_remote_code
+        else {}
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_path, **options)
+    if trust_remote_code:
+        from transformers import GenerationConfig
+
+        try:
+            generation = GenerationConfig.from_pretrained(
+                model_path, revision=metadata.get("_commit_hash")
+            )
+        except OSError:
+            generation = None
+        if generation is not None and generation.eos_token_id is not None:
+            ids = generation.eos_token_id
+            tokenizer.stop_token_ids = frozenset([ids] if isinstance(ids, int) else ids)
+
     # Some Mistral models store chat_template in a separate JSON file
     if not getattr(tokenizer, "chat_template", None):
         try:

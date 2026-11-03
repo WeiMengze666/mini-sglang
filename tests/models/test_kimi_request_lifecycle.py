@@ -351,7 +351,9 @@ def frontend():
     async def put(msg):
         sent.append(msg)
 
-    state = FrontendManager(None, SimpleNamespace(put=put), None, initialized=True)
+    state = FrontendManager(
+        SimpleNamespace(model_path="fixture"), SimpleNamespace(put=put), None, initialized=True
+    )
     state.sent = sent
     return state
 
@@ -510,7 +512,7 @@ def test_tokenizer_worker_rejects_only_bad_request_and_cleans_abort(monkeypatch)
         return torch.tensor([[1]])
 
     tok.encode = encode
-    monkeypatch.setattr(server, "load_tokenizer", lambda path: tok)
+    monkeypatch.setattr(server, "load_tokenizer", lambda path, **options: tok)
     monkeypatch.setattr(
         server, "ZmqPushQueue", lambda addr, **kwargs: SimpleNamespace(put=sent[addr].append)
     )

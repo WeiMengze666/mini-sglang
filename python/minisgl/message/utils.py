@@ -8,6 +8,8 @@ import torch
 
 def _serialize_any(value: Any) -> Any:
     if isinstance(value, dict):
+        if "__type__" in value:
+            return {"__type__": "Dict", "items": [[k, _serialize_any(v)] for k, v in value.items()]}
         return {k: _serialize_any(v) for k, v in value.items()}
     elif isinstance(value, (list, tuple)):
         return type(value)(_serialize_any(v) for v in value)
@@ -52,6 +54,9 @@ def _deserialize_any(cls_map: Dict[str, Type], data: Any) -> Any:
 def deserialize_type(cls_map: Dict[str, Type], data: Dict) -> Any:
     type_name = data["__type__"]
     # we can only serialize 1D tensor for now
+    if type_name == "Dict":
+        return {k: _deserialize_any(cls_map, v) for k, v in data["items"]}
+
     if type_name == "Tensor":
         buffer = data["buffer"]
         dtype_str = data["dtype"].replace("torch.", "")

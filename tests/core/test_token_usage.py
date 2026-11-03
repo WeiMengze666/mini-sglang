@@ -69,7 +69,7 @@ def test_tokenizer_counts_actual_ids_and_cleans_cancelled_usage(monkeypatch):
         def empty(self):
             return True
 
-    monkeypatch.setattr(server, "load_tokenizer", lambda _: Tokenizer())
+    monkeypatch.setattr(server, "load_tokenizer", lambda _, **options: Tokenizer())
     monkeypatch.setattr(server, "ZmqPullQueue", lambda *a, **k: Receive())
     monkeypatch.setattr(
         server, "ZmqPushQueue", lambda addr, **k: SimpleNamespace(put=sent[addr].append)

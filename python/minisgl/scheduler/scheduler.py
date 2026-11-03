@@ -79,7 +79,9 @@ class Scheduler(SchedulerIOMixin):
         self.finished_reqs: Set[Req] = set()
         self.aborted_reqs: Set[Req] = set()
         self.inflight_reqs: dict[int, Req] = {}
-        self.tokenizer = load_tokenizer(config.model_path)
+        self.tokenizer = load_tokenizer(
+            config.model_path, trust_remote_code=config.trust_remote_code
+        )
         self.eos_token_id = self.tokenizer.eos_token_id
         self.stop_token_ids = get_stop_token_ids(self.tokenizer)
         self.token_pool = self.table_manager.token_pool

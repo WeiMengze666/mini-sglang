@@ -16,6 +16,7 @@ class SchedulerConfig(EngineConfig):
     max_extend_tokens: int = 8192
     cache_type: str = "radix"
     offline_mode: bool = False
+    trust_remote_code: bool = False
 
     # networking config
     _unique_suffix: str = field(default_factory=_get_pid_suffix)

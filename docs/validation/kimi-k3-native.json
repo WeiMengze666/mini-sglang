@@ -113,11 +113,13 @@
     "Fair full SGLang serving performance"
   ],
   "protocol_cpu": {
-    "passed": 815,
+    "passed": 841,
     "skipped": 611,
     "new_usage_and_launcher_checks": 9,
     "numerical_model_path_changed": false,
-    "gpu_serving_validation": "pending"
+    "gpu_serving_validation": "pending",
+    "native_parser_tokenizer_cases": 20,
+    "scope": "Actual native parser/tokenizer, chat/tool transport, streaming/non-stream API, usage and launcher; CPU only"
   },
   "trace_diagnostic": {
     "job": 855,
@@ -125,5 +127,14 @@
     "reason": "16GiB/rank payload budget exceeded in official prefill",
     "mini_stage_started": false,
     "model_correctness_conclusion": null
+  },
+  "serving_baseline": {
+    "canonical_profile": "benchmark/online/profiles/kimi-k3-sglang.json",
+    "dataset_revision": "23f152f6f0f9399a85901b89a6458def0ef16729",
+    "dataset_entries": 393,
+    "reference_job_858": "No measurement; readiness timed out after1800s during native startup/autotune",
+    "reference_retry_job": 863,
+    "retry_changes": "Only launcher readiness7200s and orchestration10800s; original serve and900s AIPerf argv unchanged",
+    "mini_measurement": "pending"
   }
 }

@@ -38,13 +38,14 @@ def tokenize_worker(
     local_bs: int,
     tokenizer_id: int = -1,
     model_source: str = "huggingface",
+    trust_remote_code: bool = False,
     ack_queue: mp.Queue[str] | None = None,
 ) -> None:
     send_backend = ZmqPushQueue(backend_addr, create=False, encoder=BaseBackendMsg.encoder)
     send_frontend = ZmqPushQueue(frontend_addr, create=False, encoder=BaseFrontendMsg.encoder)
     recv_listener = ZmqPullQueue(addr, create=create, decoder=BatchTokenizerMsg.decoder)
     assert local_bs > 0
-    tokenizer = load_tokenizer(tokenizer_path)
+    tokenizer = load_tokenizer(tokenizer_path, trust_remote_code=trust_remote_code)
     logger = init_logger(__name__, f"tokenizer_{tokenizer_id}")
 
     from .detokenize import DetokenizeManager

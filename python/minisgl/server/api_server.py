@@ -5,6 +5,7 @@ import json
 import time
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Callable, Dict, List, Literal, Tuple
 
 import uvicorn
@@ -27,6 +28,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from .args import ServerArgs
+from .parsers import CompletionParser
 
 logger = init_logger(__name__, "FrontendAPI")
 
@@ -50,6 +52,19 @@ def _unwrap_msg(msg: BaseFrontendMsg) -> List[UserReply]:
     return [msg]
 
 
+def _chat_event(uid, model, *, delta=None, finish_reason=None, usage=None):
+    data = {
+        "id": f"chatcmpl-{uid}",
+        "object": "chat.completion.chunk",
+        "model": model,
+        "created": int(time.time()),
+        "choices": [{"delta": delta, "index": 0, "finish_reason": finish_reason}],
+    }
+    if usage is not None:
+        data.update(choices=[], usage=usage)
+    return f"data: {json.dumps(data)}\n\n".encode()
+
+
 class GenerateRequest(BaseModel):
     prompt: str
     max_tokens: int
@@ -57,8 +72,12 @@ class GenerateRequest(BaseModel):
 
 
 class Message(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: str
+    role: Literal["system", "user", "assistant", "tool", "developer"]
+    content: str | None = None
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: List[dict] | None = None
+    reasoning_content: str | None = None
 
 
 class StreamOptions(BaseModel):
@@ -72,6 +91,11 @@ class OpenAICompletionRequest(BaseModel):
 
     prompt: str | None = None
     messages: List[Message] | None = None
+    tools: List[dict] | None = None
+    tool_choice: Literal["auto", "none"] | None = None
+    chat_template_kwargs: dict = Field(default_factory=dict)
+    separate_reasoning: bool = True
+    stream_reasoning: bool = True
 
     max_tokens: int = 16
     temperature: float = 1.0
@@ -115,6 +139,28 @@ class FrontendManager:
     completed_output_tokens: int = 0
     ack_map: Dict[int, List[UserReply]] = field(default_factory=dict)
     event_map: Dict[int, asyncio.Event] = field(default_factory=dict)
+
+    @property
+    def model_name(self):
+        return getattr(self.config, "served_model_name", None) or self.config.model_path
+
+    @cached_property
+    def tokenizer(self):
+        from minisgl.utils import load_tokenizer
+
+        return load_tokenizer(
+            self.config.model_path, trust_remote_code=self.config.trust_remote_code
+        )
+
+    def completion_parser(self, request):
+        reasoning = getattr(self.config, "reasoning_parser", None)
+        tools = getattr(self.config, "tool_call_parser", None)
+        return CompletionParser(
+            reasoning=reasoning,
+            tool_calls=tools,
+            request=request.model_dump(exclude_none=True),
+            tokenizer=self.tokenizer if reasoning or tools else None,
+        )
 
     def new_user(self) -> int:
         uid = self.uid_counter
@@ -181,7 +227,8 @@ class FrontendManager:
         yield "data: [DONE]\n".encode()
         logger.debug("Finished streaming response for user %s", uid)
 
-    async def stream_chat_completions(self, uid: int, *, include_usage: bool = False):
+    async def stream_chat_completions(self, uid: int, *, include_usage: bool = False, parser=None):
+        parser = parser or CompletionParser()
         first_chunk = True
         usage = UserReply(uid, "", False).usage
         async with aclosing(self.wait_for_ack(uid)) as replies:
@@ -192,35 +239,17 @@ class FrontendManager:
                     yield f"data: {json.dumps(error)}\n\n".encode()
                     yield b"data: [DONE]\n\n"
                     return
-                delta = {}
+                delta = parser.parse_chunk(ack.incremental_output)
                 if first_chunk:
                     delta["role"] = "assistant"
                     first_chunk = False
-                if ack.incremental_output:
-                    delta["content"] = ack.incremental_output
-
-                chunk = {
-                    "id": f"cmpl-{uid}",
-                    "object": "chat.completion.chunk",
-                    "choices": [{"delta": delta, "index": 0, "finish_reason": None}],
-                }
-                yield f"data: {json.dumps(chunk)}\n\n".encode()
-
-        # send final finish_reason
-        end_chunk = {
-            "id": f"cmpl-{uid}",
-            "object": "chat.completion.chunk",
-            "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
-        }
-        yield f"data: {json.dumps(end_chunk)}\n\n".encode()
+                yield _chat_event(uid, self.model_name, delta=delta)
+        tail = parser.finish()
+        if tail:
+            yield _chat_event(uid, self.model_name, delta=tail)
+        yield _chat_event(uid, self.model_name, delta={}, finish_reason=parser.finish_reason)
         if include_usage:
-            usage_chunk = {
-                "id": f"cmpl-{uid}",
-                "object": "chat.completion.chunk",
-                "choices": [],
-                "usage": usage,
-            }
-            yield f"data: {json.dumps(usage_chunk)}\n\n".encode()
+            yield _chat_event(uid, self.model_name, usage=usage)
         yield b"data: [DONE]\n\n"
         logger.debug("Finished streaming response for user %s", uid)
 
@@ -288,18 +317,26 @@ async def v1_root():
 async def v1_completions(req: OpenAICompletionRequest, request: Request):
     state = get_global_state()
     if req.messages:
-        prompt = [msg.model_dump() for msg in req.messages]
+        prompt = [msg.model_dump(exclude_none=True) for msg in req.messages]
     else:
         if req.prompt is None:
             raise HTTPException(400, "Either 'messages' or 'prompt' must be provided")
         prompt = req.prompt
 
     # TODO: support more sampling parameters
+    try:
+        completion_parser = state.completion_parser(req)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    template_options = dict(req.chat_template_kwargs)
+    if req.tools and req.tool_choice != "none":
+        template_options["tools"] = req.tools
     uid = state.new_user()
     await state.send_one(
         TokenizeMsg(
             uid=uid,
             text=prompt,
+            chat_template_kwargs=template_options or None,
             sampling_params=SamplingParams(
                 ignore_eos=req.ignore_eos,
                 max_tokens=req.max_tokens,
@@ -314,7 +351,9 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
         return StreamingResponse(
             state.stream_with_cancellation(
                 state.stream_chat_completions(
-                    uid, include_usage=bool(req.stream_options and req.stream_options.include_usage)
+                    uid,
+                    include_usage=bool(req.stream_options and req.stream_options.include_usage),
+                    parser=completion_parser,
                 ),
                 request,
                 uid,
@@ -340,8 +379,11 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": full_content},
-                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    **completion_parser.parse_non_stream(full_content),
+                },
+                "finish_reason": completion_parser.finish_reason,
             }
         ],
         "usage": usage,
@@ -373,13 +415,13 @@ async def metrics():
 @app.get("/v1/models")
 async def available_models():
     state = get_global_state()
-    return ModelList(data=[ModelCard(id=state.config.model_path, root=state.config.model_path)])
+    return ModelList(data=[ModelCard(id=state.model_name, root=state.config.model_path)])
 
 
 async def shell_completion(req: OpenAICompletionRequest):
     state = get_global_state()
     assert req.messages is not None, "Shell completion only supports chat-completions"
-    prompt = [msg.model_dump() for msg in req.messages]
+    prompt = [msg.model_dump(exclude_none=True) for msg in req.messages]
 
     # TODO: support more sampling parameters
     uid = state.new_user()
