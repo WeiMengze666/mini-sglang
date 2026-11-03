@@ -92,3 +92,24 @@ Report output-token throughput, TTFT, ITL/TPOT, request latency, peak memory,
 and cache metrics. An isolated kernel, an eager model loop, or a different
 precision/layout is useful diagnostic evidence but does not establish the
 requested serving performance ratio.
+
+## Frozen baseline and canonical workload
+
+The BF16 quality baseline is commit `eb3bd7b`: paired full GSM8K scores are
+1281/1319 for Mini and 1282/1319 for SGLang, with no invalid/truncated answers.
+Its TP8/DCP2/EP8, BF16 KV and FP32 KDA profile is explicitly separate from the
+requested serving profile. Target-profile baseline measurements remain pending.
+
+The profile JSON now preserves the exact requested AIPerf command:
+`inferencex-agentx-mvp`, `semianalysis-cc-traces-weka-062126`, 393 dataset entries,
+concurrency 48, 900 seconds, seed 42, streaming server token counts, first-turn
+prefix cache busting and all requested timing/export/metrics options. Entries
+are replay trajectories, not a promised count of completed inference requests.
+Keep the original command and resolved scenario/dataset metadata in each run.
+
+Before comparing performance, verify precision/state and the HTTP chat, streaming
+usage and metrics interfaces. A missing capability or failed run is reported
+explicitly. Do not substitute another workload, shorten the duration, truncate
+inputs or change precision to obtain a performance number. Freeze a runnable
+baseline first; then evaluate each generic backend/cache/scheduling change with
+quality/state regression checks and the same AIPerf workload.

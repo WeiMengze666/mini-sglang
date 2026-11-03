@@ -515,6 +515,7 @@ def test_tokenizer_worker_rejects_only_bad_request_and_cleans_abort(monkeypatch)
         server, "ZmqPushQueue", lambda addr, **kwargs: SimpleNamespace(put=sent[addr].append)
     )
     batches = [
+        TokenizeMsg(7, "valid", SamplingParams()),
         DetokenizeMsg(7, 1, False),
         AbortMsg(7),
         TokenizeMsg(8, "invalid", SamplingParams()),
@@ -547,6 +548,7 @@ def test_tokenizer_worker_rejects_only_bad_request_and_cleans_abort(monkeypatch)
     )
     assert instances[0].decode_map == {}
     assert sent["frontend"][1] == UserReply(8, "", True, error="invalid prompt")
-    assert sent["backend"][0] == AbortBackendMsg(7)
-    assert isinstance(sent["backend"][1], UserMsg)
-    assert sent["backend"][1].uid == 9
+    assert isinstance(sent["backend"][0], UserMsg) and sent["backend"][0].uid == 7
+    assert sent["backend"][1] == AbortBackendMsg(7)
+    assert isinstance(sent["backend"][2], UserMsg)
+    assert sent["backend"][2].uid == 9

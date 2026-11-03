@@ -28,3 +28,13 @@ class UserReply(BaseFrontendMsg):
     incremental_output: str
     finished: bool
     error: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+    @property
+    def usage(self) -> dict[str, int]:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.prompt_tokens + self.completion_tokens,
+        }

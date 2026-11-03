@@ -9,7 +9,7 @@ from typing import Callable, Dict, List, Literal, Tuple
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from minisgl.core import SamplingParams
 from minisgl.env import ENV
 from minisgl.message import (
@@ -61,6 +61,10 @@ class Message(BaseModel):
     content: str
 
 
+class StreamOptions(BaseModel):
+    include_usage: bool = False
+
+
 class OpenAICompletionRequest(BaseModel):
     """Unified request model for OpenAI-style completions and chat-completions."""
 
@@ -76,6 +80,7 @@ class OpenAICompletionRequest(BaseModel):
     top_p: float = 1.0
     n: int = 1
     stream: bool = False
+    stream_options: StreamOptions | None = None
     stop: List[str] = []
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
@@ -103,6 +108,11 @@ class FrontendManager:
     recv_tokenizer: ZmqAsyncPullQueue[BaseFrontendMsg]
     uid_counter: int = 0
     initialized: bool = False
+    completed_requests: int = 0
+    failed_requests: int = 0
+    cancelled_requests: int = 0
+    completed_prompt_tokens: int = 0
+    completed_output_tokens: int = 0
     ack_map: Dict[int, List[UserReply]] = field(default_factory=dict)
     event_map: Dict[int, asyncio.Event] = field(default_factory=dict)
 
@@ -143,6 +153,12 @@ class FrontendManager:
                 self.ack_map[uid] = []
                 for ack in pending:
                     if ack.finished:
+                        if ack.error is None:
+                            self.completed_requests += 1
+                            self.completed_prompt_tokens += ack.prompt_tokens
+                            self.completed_output_tokens += ack.completion_tokens
+                        else:
+                            self.failed_requests += 1
                         finished = True
                         # Consumers may stop immediately after the terminal reply.
                         self.ack_map.pop(uid, None)
@@ -165,10 +181,12 @@ class FrontendManager:
         yield "data: [DONE]\n".encode()
         logger.debug("Finished streaming response for user %s", uid)
 
-    async def stream_chat_completions(self, uid: int):
+    async def stream_chat_completions(self, uid: int, *, include_usage: bool = False):
         first_chunk = True
+        usage = UserReply(uid, "", False).usage
         async with aclosing(self.wait_for_ack(uid)) as replies:
             async for ack in replies:
+                usage = ack.usage
                 if ack.error is not None:
                     error = {"error": {"message": ack.error, "type": "invalid_request_error"}}
                     yield f"data: {json.dumps(error)}\n\n".encode()
@@ -183,7 +201,7 @@ class FrontendManager:
 
                 chunk = {
                     "id": f"cmpl-{uid}",
-                    "object": "text_completion.chunk",
+                    "object": "chat.completion.chunk",
                     "choices": [{"delta": delta, "index": 0, "finish_reason": None}],
                 }
                 yield f"data: {json.dumps(chunk)}\n\n".encode()
@@ -191,10 +209,18 @@ class FrontendManager:
         # send final finish_reason
         end_chunk = {
             "id": f"cmpl-{uid}",
-            "object": "text_completion.chunk",
+            "object": "chat.completion.chunk",
             "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
         }
         yield f"data: {json.dumps(end_chunk)}\n\n".encode()
+        if include_usage:
+            usage_chunk = {
+                "id": f"cmpl-{uid}",
+                "object": "chat.completion.chunk",
+                "choices": [],
+                "usage": usage,
+            }
+            yield f"data: {json.dumps(usage_chunk)}\n\n".encode()
         yield b"data: [DONE]\n\n"
         logger.debug("Finished streaming response for user %s", uid)
 
@@ -209,7 +235,8 @@ class FrontendManager:
 
     async def abort_user(self, uid: int):
         self.ack_map.pop(uid, None)
-        self.event_map.pop(uid, None)
+        if self.event_map.pop(uid, None) is not None:
+            self.cancelled_requests += 1
         logger.warning("Aborting request for user %s", uid)
         await self.send_one(AbortMsg(uid=uid))
 
@@ -285,17 +312,25 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            state.stream_with_cancellation(state.stream_chat_completions(uid), request, uid),
+            state.stream_with_cancellation(
+                state.stream_chat_completions(
+                    uid, include_usage=bool(req.stream_options and req.stream_options.include_usage)
+                ),
+                request,
+                uid,
+            ),
             media_type="text/event-stream",
         )
 
     # Non-streaming: collect all chunks and return a single JSON response
     full_content = ""
+    usage = UserReply(uid, "", False).usage
     async with aclosing(state.wait_for_ack(uid)) as replies:
         async for ack in replies:
             if ack.error is not None:
                 raise HTTPException(400, ack.error)
             full_content += ack.incremental_output
+            usage = ack.usage
 
     return {
         "id": f"chatcmpl-{uid}",
@@ -309,12 +344,30 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
                 "finish_reason": "stop",
             }
         ],
-        "usage": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        },
+        "usage": usage,
     }
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    """Frontend counters; completed-token totals exclude failed/cancelled requests."""
+    state = get_global_state()
+    counters = {
+        "requests_total": state.uid_counter,
+        "completed_requests_total": state.completed_requests,
+        "failed_requests_total": state.failed_requests,
+        "cancelled_requests_total": state.cancelled_requests,
+        "completed_prompt_tokens_total": state.completed_prompt_tokens,
+        "completed_output_tokens_total": state.completed_output_tokens,
+    }
+    text = "".join(
+        f"# TYPE minisgl:{name} counter\nminisgl:{name} {value}\n"
+        for name, value in counters.items()
+    )
+    text += (
+        f"# TYPE minisgl:active_requests gauge\nminisgl:active_requests {len(state.event_map)}\n"
+    )
+    return PlainTextResponse(text, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/v1/models")

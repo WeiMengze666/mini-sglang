@@ -40,7 +40,8 @@ TP8/DCP2/EP8, batch 8, graphs through 8, BF16 model/MoE activations/KV, FP32 KDA
 state and BF16 convolution state. Mini scores 1281/1319; SGLang 1282/1319.
 Both have zero invalid/truncated answers; 1315 final answers agree. This is
 quality evidence for this configuration, not target serving performance.
-Core/model/cache CPU validation passes 806 checks with 611 GPU-only skips.
+The frozen native baseline passes 806 CPU checks with 611 GPU-only skips.
+The current protocol/workload suite passes 815 checks with the same GPU skips.
 GPU component checks cover native outputs/states, graph replay, scoped DCP,
 BF16/FP8 MLA pages, convolution, SiTU and attention residuals.
 
@@ -65,3 +66,13 @@ adaptation, exact state-buffer budgeting, built-in generic MNNVL and optimized
 EP exchange remain priorities. The BF16 task benchmark establishes no claim of
 near-SGLang serving performance. Earlier refactor evidence remains in
 `docs/validation/` and Git history.
+
+The exact AIPerf AgentX command is saved in the serving profile. A generic
+`benchmark/online/run_profile.py` launches a saved server/benchmark pair and
+preserves commands, startup logs, server info, metrics and raw exports. It must
+run inside one GPUq job and cleans only its own process groups. Frontend usage
+now counts real template/input and generated token IDs, including empty decoded
+fragments and EOS; streaming usage follows `stream_options.include_usage`.
+`/metrics` exposes frontend request counters and completed token totals, not GPU
+or cache telemetry. Target-profile parser/cache/precision qualification and Mini
+AIPerf measurements remain pending.

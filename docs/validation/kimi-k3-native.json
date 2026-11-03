@@ -111,5 +111,19 @@
     "Built-in generic MNNVL and optimized EP exchange",
     "Exact extra_buffer memory policy and 1M capacity",
     "Fair full SGLang serving performance"
-  ]
+  ],
+  "protocol_cpu": {
+    "passed": 815,
+    "skipped": 611,
+    "new_usage_and_launcher_checks": 9,
+    "numerical_model_path_changed": false,
+    "gpu_serving_validation": "pending"
+  },
+  "trace_diagnostic": {
+    "job": 855,
+    "complete": false,
+    "reason": "16GiB/rank payload budget exceeded in official prefill",
+    "mini_stage_started": false,
+    "model_correctness_conclusion": null
+  }
 }

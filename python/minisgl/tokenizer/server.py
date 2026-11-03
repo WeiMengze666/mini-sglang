@@ -52,6 +52,7 @@ def tokenize_worker(
 
     tokenize_manager = TokenizeManager(tokenizer)
     detokenize_manager = DetokenizeManager(tokenizer)
+    usage: dict[int, list[int]] = {}  # prompt and generated token counts per request
 
     if ack_queue is not None:
         ack_queue.put(f"Tokenize server {tokenizer_id} is ready")
@@ -68,22 +69,18 @@ def tokenize_worker(
             tokenize_msg = [m for m in pending_msg if isinstance(m, TokenizeMsg)]
             abort_msg = [m for m in pending_msg if isinstance(m, AbortMsg)]
             assert len(detokenize_msg) + len(tokenize_msg) + len(abort_msg) == len(pending_msg)
-            if len(detokenize_msg) > 0:
+            # A late token after cancellation must not recreate decode/usage state.
+            detokenize_msg = [msg for msg in detokenize_msg if msg.uid in usage]
+            if detokenize_msg:
                 replies = detokenize_manager.detokenize(detokenize_msg)
-                batch_output = BatchFrontendMsg(
-                    data=[
-                        UserReply(
-                            uid=msg.uid,
-                            incremental_output=reply,
-                            finished=msg.finished,
-                            error=msg.error,
-                        )
-                        for msg, reply in zip(detokenize_msg, replies, strict=True)
-                    ]
-                )
-                if len(batch_output.data) == 1:
-                    batch_output = batch_output.data[0]
-                send_frontend.put(batch_output)
+                output = []
+                for msg, reply in zip(detokenize_msg, replies, strict=True):
+                    counts = usage[msg.uid]
+                    counts[1] += msg.next_token is not None
+                    output.append(UserReply(msg.uid, reply, msg.finished, msg.error, *counts))
+                    if msg.finished:
+                        del usage[msg.uid]
+                send_frontend.put(output[0] if len(output) == 1 else BatchFrontendMsg(output))
 
             if len(tokenize_msg) > 0:
                 requests: List[BaseBackendMsg] = []
@@ -94,6 +91,7 @@ def tokenize_worker(
                         logger.warning("Rejecting request %d: %s", msg.uid, exc)
                         send_frontend.put(UserReply(msg.uid, "", True, error=str(exc)))
                         continue
+                    usage[msg.uid] = [input_ids.numel(), 0]
                     requests.append(UserMsg(msg.uid, input_ids, msg.sampling_params))
                 if requests:
                     send_backend.put(
@@ -102,6 +100,7 @@ def tokenize_worker(
             if len(abort_msg) > 0:
                 for msg in abort_msg:
                     detokenize_manager.abort(msg.uid)
+                    usage.pop(msg.uid, None)
                 batch_output = BatchBackendMsg(
                     data=[AbortBackendMsg(uid=msg.uid) for msg in abort_msg]
                 )
