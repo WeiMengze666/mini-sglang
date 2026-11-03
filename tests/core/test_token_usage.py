@@ -15,7 +15,8 @@ from minisgl.message import (
 )
 
 
-def test_tokenizer_counts_actual_ids_and_cleans_cancelled_usage(monkeypatch):
+@pytest.mark.parametrize("cached", [None, 0, 4])
+def test_tokenizer_counts_actual_ids_and_cleans_cancelled_usage(monkeypatch, cached):
     import minisgl.tokenizer.server as server
 
     class Tokenizer:
@@ -42,12 +43,12 @@ def test_tokenizer_counts_actual_ids_and_cleans_cancelled_usage(monkeypatch):
             TokenizeMsg(8, "xy", params),
             BatchTokenizerMsg(
                 [
-                    DetokenizeMsg(7, 1, False),
+                    DetokenizeMsg(7, 1, False, cached_tokens=cached),
                     DetokenizeMsg(8, None, True),
-                    DetokenizeMsg(7, 2, False),
+                    DetokenizeMsg(7, 2, False, cached_tokens=cached),
                 ]
             ),
-            DetokenizeMsg(7, 9, True),
+            DetokenizeMsg(7, 9, True, cached_tokens=cached),
             TokenizeMsg(9, "zzzz", params),
             AbortMsg(9),
             DetokenizeMsg(9, 3, False),
@@ -98,6 +99,8 @@ def test_tokenizer_counts_actual_ids_and_cleans_cancelled_usage(monkeypatch):
     assert replies[0].incremental_output == ""  # A real token can decode to no text.
     assert replies[3].incremental_output == ""  # EOS still counts as a generated token.
     assert replies[-1].error == "bad prompt"
+    assert replies[0].cached_tokens == replies[3].cached_tokens == cached
+    assert replies[4].cached_tokens is None  # A reused UID starts fresh.
     assert not torch.cuda.is_initialized()
 
 
@@ -117,7 +120,10 @@ def test_usage_survives_message_serialization():
         (True, True, 0),
     ],
 )
-def test_chat_usage_counts_tokens_independently_of_text(monkeypatch, stream, include_usage, tokens):
+@pytest.mark.parametrize("cached", [None, 4])
+def test_chat_usage_counts_tokens_independently_of_text(
+    monkeypatch, stream, include_usage, tokens, cached
+):
     import json
 
     import minisgl.server.api_server as api
@@ -130,11 +136,18 @@ def test_chat_usage_counts_tokens_independently_of_text(monkeypatch, stream, inc
     async def feed(msg):
         state.ack_map[msg.uid] = (
             [
-                UserReply(msg.uid, text, step == tokens, prompt_tokens=7, completion_tokens=step)
+                UserReply(
+                    msg.uid,
+                    text,
+                    step == tokens,
+                    prompt_tokens=7,
+                    completion_tokens=step,
+                    cached_tokens=cached,
+                )
                 for step, text in enumerate(["", "a", " b"][:tokens], 1)
             ]
             if tokens
-            else [UserReply(msg.uid, "", True, prompt_tokens=7)]
+            else [UserReply(msg.uid, "", True, prompt_tokens=7, cached_tokens=cached)]
         )
         state.event_map[msg.uid].set()
 
@@ -152,6 +165,7 @@ def test_chat_usage_counts_tokens_independently_of_text(monkeypatch, stream, inc
         assert "minisgl:completed_prompt_tokens_total 7\n" in scrape.text
         assert f"minisgl:completed_output_tokens_total {tokens}\n" in scrape.text
         assert "minisgl:active_requests 0\n" in scrape.text
+        assert f"minisgl:completed_cached_prompt_tokens_total {cached or 0}\n" in scrape.text
         if stream:
             lines = [line[6:] for line in response.text.splitlines() if line.startswith("data: ")]
             assert lines[-1] == "[DONE]"
@@ -167,9 +181,8 @@ def test_chat_usage_counts_tokens_independently_of_text(monkeypatch, stream, inc
                 return
         else:
             result = response.json()
-        assert result["usage"] == {
-            "prompt_tokens": 7,
-            "completion_tokens": tokens,
-            "total_tokens": 7 + tokens,
-        }
+        expected = {"prompt_tokens": 7, "completion_tokens": tokens, "total_tokens": 7 + tokens}
+        if cached is not None:
+            expected["prompt_tokens_details"] = {"cached_tokens": cached}
+        assert result["usage"] == expected
         assert not state.ack_map and not state.event_map

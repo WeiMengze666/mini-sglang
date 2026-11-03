@@ -48,7 +48,7 @@ The reference command leaves EP and MoE precision/backend selection implicit.
 In the inspected SGLang commit
 `baa9befa381511cd4d56f83980951e5a45fffc6d`, EP defaults to 1, while the
 packed K3 override selects `flashinfer_mxfp4` on SM100/SM103/SM107.
-These source-derived expectations still require runtime confirmation.
+The runtime server-info export from job 863 confirms these selections.
 The selected runner's default branch prepares MXFP8 activations; see
 `sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py:1088-1098`.
 The runner's `default` precision must be resolved to actual activation and
@@ -98,7 +98,8 @@ requested serving performance ratio.
 The BF16 quality baseline is commit `eb3bd7b`: paired full GSM8K scores are
 1281/1319 for Mini and 1282/1319 for SGLang, with no invalid/truncated answers.
 Its TP8/DCP2/EP8, BF16 KV and FP32 KDA profile is explicitly separate from the
-requested serving profile. Target-profile baseline measurements remain pending.
+requested serving profile. The native S0 measurement is complete; Mini R0
+measurement and final target-profile acceptance remain pending.
 
 The profile JSON now preserves the exact requested AIPerf command:
 `inferencex-agentx-mvp`, `semianalysis-cc-traces-weka-062126`, 393 dataset entries,
@@ -134,3 +135,48 @@ budget spellings and forwards the requested limit to scheduling. CPU validation
 checked 386 actual captured AgentX payloads and their native-parser construction;
 all preserved their requested output budgets. These are interface checks,
 separate from model and serving-performance acceptance.
+
+## Native S0 result
+
+[Versioned result](validation/kimi-k3-aiperf-reference.json) freezes job 863,
+SGLang `baa9befa381511cd4d56f83980951e5a45fffc6d`, AIPerf 0.13.0, the canonical
+argument vectors, model/tokenizer metadata hashes and raw export location.
+This is one reference run; Mini has no corresponding serving result yet.
+
+| AIPerf metric | Native S0 |
+| --- | ---: |
+| Output throughput | 378.53 tokens/s |
+| Request throughput | 0.5447 requests/s |
+| TTFT P50 / P95 | 590.35 / 4482.19 ms |
+| ITL P50 / P95 | 26.76 / 51.08 ms |
+| Request latency P50 / P95 | 9.51 / 79.14 s |
+| Completed / HTTP errors / deadline cancellations | 512 / 0 / 3 |
+| Prompt cache reads / total prompt tokens | 52,267,520 / 56,177,301 |
+| Prompt cache-read fraction | 93.04% |
+| Effective concurrency, mean | 11.86 requests |
+
+The scenario completed 51 warmup requests without errors before its nominal
+900-second measurement. It stopped three in-flight credits at the configured
+grace deadline, giving a 940-second phase boundary. Values above are AIPerf's
+unmodified exports; do not replace their denominator with 900 seconds. The
+393 trajectories and concurrency cap 48 do not imply 393 completed requests or
+48 continuously active requests. The original logs and cancellation counts are
+retained. The owned server process audit found no remaining processes.
+
+Runtime resolution confirms TP8/DCP8/EP1, `flashinfer_mxfp4` with precision
+`default`, FP8 E4M3 KV, BF16 SSM, TRTLLM MLA prefill and CuTe MLA decode. Unified
+memory is disabled in this requested command. The static state/KV budgeting
+ratio 0.31 allocates `0.31 / (1 + 0.31)` of the remaining budget to state, with
+padding/workspace terms included by the native allocator; it is not 31% of total
+GPU memory. Mini's initial fixed checkpoint budget remains an explicit R0 gap.
+
+The native small-batch route/quant fusion also packs routing weights to BF16;
+its unfused runner accepts FP32 weights. Mini R0 currently uses that unfused
+runner contract. This rounding boundary is recorded separately from MXFP8 expert
+activations. A later generic prepared-input backend must adapt the native fused
+route/quant operator before claiming full precision-path/performance parity.
+
+Mini's cache-read usage is reported as `usage.prompt_tokens_details.cached_tokens`.
+It counts the prefix skipped at admission and remains constant across this
+request's own prefill chunks. Completed cache-read token totals are also exposed
+in frontend metrics. This is token reuse accounting, not device-memory telemetry.

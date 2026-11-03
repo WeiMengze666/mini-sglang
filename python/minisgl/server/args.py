@@ -211,6 +211,12 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         help="Tensor-parallel communication backend. mnnvl loads an external provider factory.",
     )
     parser.add_argument(
+        "--distributed-timeout",
+        type=float,
+        default=ServerArgs.distributed_timeout,
+        help="Bootstrap and process-group collective timeout in seconds.",
+    )
+    parser.add_argument(
         "--distributed-provider",
         type=str,
         default=ServerArgs.distributed_provider,

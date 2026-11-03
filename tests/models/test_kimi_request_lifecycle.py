@@ -554,3 +554,30 @@ def test_tokenizer_worker_rejects_only_bad_request_and_cleans_abort(monkeypatch)
     assert sent["backend"][1] == AbortBackendMsg(7)
     assert isinstance(sent["backend"][2], UserMsg)
     assert sent["backend"][2].uid == 9
+
+
+@pytest.mark.parametrize("chunk_size", [2, 8])
+def test_reported_prefix_hit_excludes_chunks_computed_by_this_request(
+    scheduler, chunk_size, monkeypatch
+):
+    import minisgl.core as core
+
+    monkeypatch.setattr(core, "_GLOBAL_CTX", core.Context(1))
+    scheduler.prefill_budget = chunk_size
+    cache = CacheManager(
+        32, 1, scheduler.engine.page_table, "radix", pool=scheduler.engine.kv_cache
+    )
+    scheduler.cache_manager = scheduler.prefill_manager.cache_manager = cache
+    scheduler._process_one_msg(request(uid=30, tokens=(1, 2, 1, 2), max_tokens=1))
+    for _ in range(8):
+        scheduler.normal_loop()
+        if not (scheduler.prefill_manager.runnable or scheduler.decode_manager.runnable):
+            break
+    assert [m.cached_tokens for m in scheduler.replies if m.uid == 30] == [0]
+    scheduler._process_one_msg(request(uid=31, tokens=(1, 2, 1, 2, 3, 4, 5), max_tokens=1))
+    for _ in range(8):
+        scheduler.normal_loop()
+        if not (scheduler.prefill_manager.runnable or scheduler.decode_manager.runnable):
+            break
+    assert [m.cached_tokens for m in scheduler.replies if m.uid == 31] == [4]
+    assert_idle(scheduler)

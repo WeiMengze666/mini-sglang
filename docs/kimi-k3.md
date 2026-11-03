@@ -82,3 +82,9 @@ streaming state, tool messages, template options and the served model alias are
 covered on CPU; generation stop IDs come from the checkpoint generation config
 without changing its corpus EOS. Target-profile GPU serving/cache/precision
 qualification and Mini AIPerf measurements remain pending.
+
+The canonical native S0 AIPerf run is now recorded in
+[the serving report](kimi-k3-performance.md#native-s0-result): 378.53 output
+tokens/s, TTFT P50 590.35 ms and ITL P50 26.76 ms. Mini R0 remains pending.
+Cache reads are exposed through standard prompt-token details and a completed
+cache-read token counter, preserving the original admission hit across chunks.

@@ -1,0 +1,204 @@
+{
+  "scope": "S0: original user SGLang+AIPerf profile on8 B300; Mini measurement pending",
+  "job": 863,
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "official_tracked_changes": "",
+  "profile": "benchmark/online/profiles/kimi-k3-sglang.json",
+  "profile_sha256": "648230b6236f8742376d396aecf04bdc0feec2991528428ef39270b9c845d685",
+  "canonical_argv_verified": true,
+  "packages": {
+    "aiperf": "0.13.0",
+    "torch": "2.14.1+cu130",
+    "triton": "3.8.0",
+    "flashinfer-python": "0.7.1",
+    "transformers": "5.19.0"
+  },
+  "resolved": {
+    "tp_size": 8,
+    "dcp_size": 8,
+    "ep_size": 1,
+    "moe_runner_backend": "flashinfer_mxfp4",
+    "flashinfer_mxfp4_moe_precision": "default",
+    "kv_cache_dtype": "fp8_e4m3",
+    "mamba_ssm_dtype": "bfloat16",
+    "attention_backend": "flashinfer",
+    "prefill_attention_backend": "trtllm_mla",
+    "decode_attention_backend": "cutedsl_mla",
+    "max_total_num_tokens": 20254720,
+    "mamba_full_memory_ratio": 0.31,
+    "mamba_radix_cache_strategy": "extra_buffer",
+    "mamba_track_interval": 256,
+    "enable_unified_memory": false,
+    "enable_deterministic_inference": false
+  },
+  "aiperf_version": "0.13.0",
+  "benchmark_id": "cdcc978f8f0f",
+  "is_complete": true,
+  "submission_valid": true,
+  "measurement_start": "2026-11-03T17:34:18.320973",
+  "measurement_end": "2026-11-03T17:49:58.323311",
+  "nominal_duration_seconds": 900,
+  "phase_elapsed_with_grace_seconds": 940,
+  "completed_requests": 512,
+  "deadline_cancelled_requests": 3,
+  "http_errors": 0,
+  "warmup_completed_requests": 51,
+  "warmup_errors": 0,
+  "metrics": {
+    "request_throughput": {
+      "unit": "requests/sec",
+      "avg": 0.5446794962703503
+    },
+    "output_token_throughput": {
+      "unit": "tokens/sec",
+      "avg": 378.5267180565058
+    },
+    "request_latency": {
+      "unit": "ms",
+      "avg": 21779.80054390625,
+      "p1": 720.60748091,
+      "p5": 2558.2173420999998,
+      "p10": 3043.6979992,
+      "p25": 4941.2507675,
+      "p50": 9506.340909499999,
+      "p75": 20140.582984,
+      "p90": 48147.6369551,
+      "p95": 79143.59219439999,
+      "p99": 170978.50222650994,
+      "min": 361.75856,
+      "max": 480428.056232,
+      "std": 40976.19998133175,
+      "count": 512,
+      "sum": 11151257.87848
+    },
+    "time_to_first_token": {
+      "unit": "ms",
+      "avg": 1558.3744817148436,
+      "p1": 213.73012753,
+      "p5": 310.885833,
+      "p10": 382.40214389999994,
+      "p25": 451.308365,
+      "p50": 590.352266,
+      "p75": 960.7539782499999,
+      "p90": 2007.545329600001,
+      "p95": 4482.193136599998,
+      "p99": 27088.901560829847,
+      "min": 162.336356,
+      "max": 43229.359497,
+      "std": 4627.754875629653,
+      "count": 512,
+      "sum": 797887.7346379999
+    },
+    "inter_token_latency": {
+      "unit": "ms",
+      "avg": 29.770121054052762,
+      "p1": 13.174941131343282,
+      "p5": 16.784070174686565,
+      "p10": 18.624902838857363,
+      "p25": 21.838855891940078,
+      "p50": 26.75742234834773,
+      "p75": 31.884110268879887,
+      "p90": 39.15451188843139,
+      "p95": 51.0779616249972,
+      "p99": 93.68263342726343,
+      "min": 0.0,
+      "max": 233.3672188181818,
+      "std": 18.330135677921458,
+      "count": 512,
+      "sum": 15242.301979675014
+    },
+    "input_sequence_length": {
+      "unit": "tokens",
+      "avg": 109721.291015625,
+      "p1": 1139.7000000000003,
+      "p5": 34432.0,
+      "p10": 37880.3,
+      "p25": 54483.0,
+      "p50": 86905.0,
+      "p75": 114881.25,
+      "p90": 189279.9,
+      "p95": 312830.6499999999,
+      "p99": 591216.44,
+      "min": 351.0,
+      "max": 601731.0,
+      "std": 97547.32579981168,
+      "count": 512,
+      "sum": 56177301.0
+    },
+    "output_sequence_length": {
+      "unit": "tokens",
+      "avg": 694.953125,
+      "p1": 14.0,
+      "p5": 81.0,
+      "p10": 109.1,
+      "p25": 147.5,
+      "p50": 279.5,
+      "p75": 655.75,
+      "p90": 1526.6000000000001,
+      "p95": 2637.4499999999985,
+      "p99": 6533.399999999994,
+      "min": 2.0,
+      "max": 15568.0,
+      "std": 1365.1977040854686,
+      "count": 512,
+      "sum": 355816.0
+    },
+    "completed_request_count": {
+      "unit": "requests",
+      "avg": 512.0
+    },
+    "request_error_rate": {
+      "unit": "%",
+      "avg": 0.0
+    },
+    "effective_concurrency": {
+      "unit": "requests",
+      "avg": 11.863185848789417,
+      "p50": 11.0,
+      "p90": 18.0,
+      "p95": 20.0,
+      "p99": 23.0,
+      "min": 0.0,
+      "max": 23.0,
+      "std": 4.99139172729381
+    },
+    "overall_usage_prompt_cache_read_pct": {
+      "unit": "%",
+      "avg": 93.0402832987651
+    },
+    "total_usage_prompt_cache_read_tokens": {
+      "unit": "tokens",
+      "avg": 52267520.0
+    },
+    "total_usage_prompt_tokens": {
+      "unit": "tokens",
+      "avg": 56177301.0
+    },
+    "total_usage_completion_tokens": {
+      "unit": "tokens",
+      "avg": 355816.0
+    },
+    "benchmark_duration": {
+      "unit": "sec",
+      "avg": 917.922285824
+    }
+  },
+  "artifact_root": "experiment/phase268-reference-aiperf",
+  "summary_sha256": "2c5919ba9e619e78f44d8248daa025f168481e75ceb8ac4c6b0496c1c168fe4f",
+  "owned_processes_remaining": [],
+  "notes": [
+    "All AIPerf values are copied unchanged; its exported duration and throughput use its own boundaries.",
+    "393 entries are trajectories; concurrency48 is a cap, not48 continuously busy requests.",
+    "Cancelled3 in-flight requests at the canonical scenario grace deadline; no HTTP errors.",
+    "No Nsight, routing patch, strict-inference override or forced NCCL algorithm.",
+    "S0 is one run, not a repeatability confidence interval or Mini parity claim."
+  ],
+  "model_metadata_sha256": {
+    "config.json": "f611e7e692aed1489a2024c9c81351e10b69cc3c60e84734d6b09f388ef09ccd",
+    "generation_config.json": "c6648c25e9705af7fba8847e243840d21b5cc63ddeb6297f750a7ddbb6a02836",
+    "tokenization_kimi.py": "f28ea66e2d862a2a5814970b2ce40c2f7d8296ff09aed90a7e7def689b906944",
+    "tokenizer_config.json": "5d0803c94db9cd78763499e0956c95fd5a225c14a727e5a6cf5db3f96f010a6e",
+    "model.safetensors.index.json": "a1c5210650ce71d2d3ae9ec5a101ac4afd3cf4b10091be589853437eb967febd",
+    "tiktoken.model": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103"
+  }
+}

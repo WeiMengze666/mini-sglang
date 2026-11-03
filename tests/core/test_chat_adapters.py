@@ -98,8 +98,11 @@ def test_server_cli_retains_trust_and_served_name():
             "--trust-remote-code",
             "--served-model-name",
             "org/model",
+            "--distributed-timeout",
+            "1800",
         ]
     )
     assert config.trust_remote_code and config.served_model_name == "org/model"
+    assert config.distributed_timeout == 1800
     assert config.reasoning_parser is None and config.tool_call_parser is None
     assert not shell

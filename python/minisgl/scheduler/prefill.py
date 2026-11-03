@@ -97,6 +97,11 @@ class PrefillAdder:
             input_ids=pending_req.input_ids[: cached_len + chunk_size],
             table_idx=table_idx,
             cached_len=cached_len,
+            cached_prompt_tokens=(
+                pending_req.chunked_req.cached_prompt_tokens
+                if pending_req.chunked_req is not None
+                else cached_len
+            ),
             output_len=pending_req.output_len,
             uid=pending_req.uid,
             cache_handle=cache_handle,

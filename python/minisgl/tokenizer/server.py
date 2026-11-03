@@ -78,7 +78,16 @@ def tokenize_worker(
                 for msg, reply in zip(detokenize_msg, replies, strict=True):
                     counts = usage[msg.uid]
                     counts[1] += msg.next_token is not None
-                    output.append(UserReply(msg.uid, reply, msg.finished, msg.error, *counts))
+                    output.append(
+                        UserReply(
+                            msg.uid,
+                            reply,
+                            msg.finished,
+                            msg.error,
+                            *counts,
+                            cached_tokens=msg.cached_tokens,
+                        )
+                    )
                     if msg.finished:
                         del usage[msg.uid]
                 send_frontend.put(output[0] if len(output) == 1 else BatchFrontendMsg(output))

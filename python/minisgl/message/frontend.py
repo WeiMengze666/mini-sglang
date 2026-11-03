@@ -30,11 +30,15 @@ class UserReply(BaseFrontendMsg):
     error: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int | None = None
 
     @property
-    def usage(self) -> dict[str, int]:
-        return {
+    def usage(self) -> dict:
+        result = {
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.prompt_tokens + self.completion_tokens,
         }
+        if self.cached_tokens is not None:
+            result["prompt_tokens_details"] = {"cached_tokens": self.cached_tokens}
+        return result

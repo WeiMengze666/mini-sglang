@@ -135,7 +135,10 @@
     "reference_job_858": "No measurement; readiness timed out after1800s during native startup/autotune",
     "reference_retry_job": 863,
     "retry_changes": "Only launcher readiness7200s and orchestration10800s; original serve and900s AIPerf argv unchanged",
-    "mini_measurement": "pending"
+    "mini_measurement": "pending",
+    "reference_status": "completed; canonical argv verified",
+    "reference_result": "docs/validation/kimi-k3-aiperf-reference.json",
+    "target_quality_retry_job": 868
   },
   "completion_budget_cpu": {
     "checks": 49,
@@ -143,5 +146,11 @@
     "wire_payloads_checked": 386,
     "aiperf_token_limit_field": "max_completion_tokens",
     "scope": "CPU request/protocol and validation-runner precision options; no GPU acceptance"
+  },
+  "cache_usage_cpu": {
+    "full_candidate_suite_passed": 854,
+    "gpu_only_skipped": 638,
+    "focused_checks_passed": 61,
+    "scope": "Admission prefix length across own chunks, message/worker/API usage and completed cache-read totals; no GPU acceptance"
   }
 }

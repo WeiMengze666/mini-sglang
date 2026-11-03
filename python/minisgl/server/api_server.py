@@ -139,6 +139,7 @@ class FrontendManager:
     cancelled_requests: int = 0
     completed_prompt_tokens: int = 0
     completed_output_tokens: int = 0
+    completed_cached_prompt_tokens: int = 0
     ack_map: Dict[int, List[UserReply]] = field(default_factory=dict)
     event_map: Dict[int, asyncio.Event] = field(default_factory=dict)
 
@@ -205,6 +206,7 @@ class FrontendManager:
                             self.completed_requests += 1
                             self.completed_prompt_tokens += ack.prompt_tokens
                             self.completed_output_tokens += ack.completion_tokens
+                            self.completed_cached_prompt_tokens += ack.cached_tokens or 0
                         else:
                             self.failed_requests += 1
                         finished = True
@@ -403,6 +405,7 @@ async def metrics():
         "cancelled_requests_total": state.cancelled_requests,
         "completed_prompt_tokens_total": state.completed_prompt_tokens,
         "completed_output_tokens_total": state.completed_output_tokens,
+        "completed_cached_prompt_tokens_total": state.completed_cached_prompt_tokens,
     }
     text = "".join(
         f"# TYPE minisgl:{name} counter\nminisgl:{name} {value}\n"
