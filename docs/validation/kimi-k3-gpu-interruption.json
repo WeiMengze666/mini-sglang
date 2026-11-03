@@ -1,0 +1,95 @@
+{
+  "scope": "GPU interruption; full R2 quality and performance remain unaccepted",
+  "recorded_utc": "2026-11-03T20:57:59.893508+00:00",
+  "mini_commit": "743a4f53e79d9c6cf844bed7b02aecf68e965e6c",
+  "quality_job": 878,
+  "quality_failure": {
+    "utc": "2026-11-03T20:44:21.897729+00:00",
+    "job": 878,
+    "complete": false,
+    "last_progress": {
+      "completed": 680,
+      "correct": 662,
+      "invalid_answers": 1,
+      "truncated": 1
+    },
+    "error": "Rank7 CUDA_ERROR_UNKNOWN during cuMemcpyDtoHAsync_v2; sticky cuCtxSynchronize_v2 on shutdown",
+    "cause": "Unconfirmed: no hardware/driver or kernel attribution established",
+    "component_status": "304passed0failed0skipped remains valid; whole-model acceptance incomplete",
+    "report_sha256": "a5d80b563f3ea0c23487f91eeffe3ffd40e93914fb98a95ba03572ee9534eeb4",
+    "partial_responses_sha256": "6f72f5cab3e55c2200546471ceac415c8930127a9ec83743d10e95b8d1328621",
+    "log_path": "/tmp/ts-out.rGTFeR"
+  },
+  "fresh_context_job": 879,
+  "fresh_context_result": "All new ranks fail CUDA initialization before any model/kernel test; no rank health report produced",
+  "nvml": {
+    "driver": "580.126.16",
+    "attached_gpus": "8",
+    "reported_gpu_nodes": 7,
+    "reported_devices": [
+      {
+        "pci": "00000000:43:00.0",
+        "recovery_action": "Reboot",
+        "fabric_state": "Completed",
+        "fabric_status": "Success"
+      },
+      {
+        "pci": "00000000:46:00.0",
+        "recovery_action": "Reboot",
+        "fabric_state": "Completed",
+        "fabric_status": "Success"
+      },
+      {
+        "pci": "00000000:49:00.0",
+        "recovery_action": "Reboot",
+        "fabric_state": "Completed",
+        "fabric_status": "Success"
+      },
+      {
+        "pci": "00000000:4C:00.0",
+        "recovery_action": "Reboot",
+        "fabric_state": "Completed",
+        "fabric_status": "Success"
+      },
+      {
+        "pci": "00000000:63:00.0",
+        "recovery_action": "Reboot",
+        "fabric_state": "Completed",
+        "fabric_status": "Success"
+      },
+      {
+        "pci": "00000000:66:00.0",
+        "recovery_action": "Reboot",
+        "fabric_state": "Completed",
+        "fabric_status": "Success"
+      },
+      {
+        "pci": "00000000:69:00.0",
+        "recovery_action": "Reboot",
+        "fabric_state": "Completed",
+        "fabric_status": "Success"
+      }
+    ],
+    "missing_device_message": "Unable to determine the device handle for GPU7: 0000:6C:00.0: Unknown Error"
+  },
+  "attribution": "Current device/driver state prevents new CUDA contexts; the cause of the original failure is unconfirmed. Do not infer a model numerical error or a correctness pass.",
+  "owned_process_cleanup": "Failed owned job878 stopped with gpuq -k; zero phase285 snapshot processes remain. Fresh health job879 exited. No reset/reboot performed.",
+  "completed_evidence": [
+    "Initial R0 exact-workload AIPerf completed before interruption",
+    "304 prefill component checks including48 exact native-API controls passed before interruption"
+  ],
+  "next": [
+    "Administrator/device recovery",
+    "Queued fresh-context health check after restoration",
+    "Bounded reproduction and full1319 corrected-path quality plus real1..48 graph replay",
+    "Only after quality review: corrected-candidate AIPerf"
+  ],
+  "artifact_sha256": {
+    "experiment/phase285-gpu-failure.log": "ef43e6e3898f3d93d6455c4f4bd4e4cd48a257b5b4775fb14dd30faf863b6ca4",
+    "experiment/phase285-gsm8k-mini/report.json": "a5d80b563f3ea0c23487f91eeffe3ffd40e93914fb98a95ba03572ee9534eeb4",
+    "experiment/phase285-gsm8k-mini/responses.jsonl": "6f72f5cab3e55c2200546471ceac415c8930127a9ec83743d10e95b8d1328621",
+    "experiment/phase285-post-job-process-audit.json": "111d349465ca9b0e36089bbbf88a154baa7f69edc4a1d8ff3bad6be10532a650",
+    "experiment/phase288-health/nvidia-smi-before.xml": "abbf61d0a906d9274fa183a8540fa27b86eb50e175df0f08831a7e6f4e4f1d76",
+    "experiment/phase288-manifest.json": "61aca0866d72c9d7a15856ae84290f74c44fce7d6f81b323683889b65b977dd2"
+  }
+}

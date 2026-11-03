@@ -274,8 +274,12 @@ method, recording Q/K/V/output dtype, shape and stride, with exact same-ABI
 output and producer-stream checks. The native-API control now passes all 48 cases across eight ranks, and the
 complete prefill component gate passes 304 checks with no skips. See
 [the precision evidence](validation/kimi-k3-prefill-precision.json). Renewed
-whole-model quality and 1–48 graph coverage are running in job 878; the
-graph-only R1 gate remains prepared but unsubmitted.
+whole-model quality stopped after680 completed cases in job878 with an unknown
+CUDA error. The subsequent all-device fresh-context smoke fails initialization:
+NVML cannot access GPU7 and marks the other seven devices with recovery action
+`Reboot`. The cause of the original failure is unconfirmed; full model and real
+1–48 replay acceptance remain incomplete. See [the interruption evidence](validation/kimi-k3-gpu-interruption.json).
+The graph-only R1 gate remains prepared but unsubmitted.
 
 ## Initial Mini R0 serving result
 

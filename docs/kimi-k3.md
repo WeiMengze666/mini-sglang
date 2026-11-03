@@ -126,5 +126,6 @@ A subsequent audit identifies a missing FP8 prefill Q/K/V boundary in R0.
 The generic MLA correction at `743a4f5` now passes 304 GPU prefill checks,
 including 48 exact comparisons with the pinned native backend method and
 recorded tensor metadata/kernel options. Full task and graph-size qualification
-of that corrected candidate are running separately; no final performance or
-complete precision-path parity is claimed. See [the precision record](validation/kimi-k3-prefill-precision.json).
+of that corrected candidate are incomplete after a CUDA device interruption;
+new CUDA processes also fail initialization and recovery is required. No final
+performance or complete precision-path parity is claimed. See [the precision record](validation/kimi-k3-prefill-precision.json).
