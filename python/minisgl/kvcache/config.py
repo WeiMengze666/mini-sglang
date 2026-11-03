@@ -1,10 +1,33 @@
-"""Physical cache layout, independent of checkpoint names and model families."""
+"""Cache geometry and byte accounting, independent of checkpoint names and model families."""
 
 from dataclasses import dataclass
+from math import isfinite
 
 import torch
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import local_size, tp_info
+
+
+def cached_state_capacity(
+    available_bytes, bytes_per_state, working_slots, *, ratio, scratch_slots=0
+):
+    """Fit checkpoints into a state/KV byte ratio after mandatory request state.
+
+    ``ratio`` describes state bytes divided by token-cache bytes, so state
+    receives ratio/(1+ratio) of the post-weight budget. Working and overlap
+    scratch slots belong to that same state budget.
+    """
+    if not isfinite(ratio) or ratio <= 0:
+        raise ValueError("State/KV memory ratio must be finite and positive")
+    if bytes_per_state <= 0 or min(working_slots, scratch_slots) < 0:
+        raise ValueError("State capacity requires positive byte sizes and nonnegative slot counts")
+    if available_bytes <= 0:
+        raise MemoryError("No post-load memory is available for recurrent state")
+    slots = int(available_bytes * (ratio / (1 + ratio))) // bytes_per_state
+    cached = slots - working_slots - scratch_slots
+    if cached < 1:
+        raise MemoryError("State budget cannot hold request state, scratch and a checkpoint")
+    return cached
 
 
 @dataclass(frozen=True)

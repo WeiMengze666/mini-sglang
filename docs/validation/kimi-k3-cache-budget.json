@@ -1,0 +1,43 @@
+{
+  "scope": "R3 generic state-cache budget and retention candidate; CPU validated, GPU/performance unmeasured",
+  "source_base": "6f3144f",
+  "files_sha256": {
+    "python/minisgl/engine/config.py": "dbd98a30fda1f963dce1bdf2470d869d67c4ed7ce97379171f855ed582b716d3",
+    "python/minisgl/engine/engine.py": "c856979d2f40df92a922deaef4ee737b2b4f74632f5c408b26fe277d556bc010",
+    "python/minisgl/kvcache/config.py": "bf22af31f8ef47215d93824e2d5140171c68978181914786fdca831af638aae1",
+    "python/minisgl/kvcache/hybrid_cache.py": "0d6c560b95788af0506d4698419e020fda2fa87fbb4c02d27a9680a2949635a8",
+    "python/minisgl/server/args.py": "11763c3ee0e54cabb126a4952d8a0b1010df7e0613f80f789682653538b28411",
+    "tests/core/test_state_budget.py": "c02d0b5ec95eebcc70f5b3b30b31cfd13c9ff14b5ebcddc5902d8541696f7c70",
+    "tests/core/test_hybrid_prefix.py": "eda828b5dd1fd33a55e57da4d4c0542f1fa13d0381479ceaf97cc6fe52143975"
+  },
+  "cpu": {
+    "command": "CUDA_VISIBLE_DEVICES='' MINISGL_RUN_CUDA_TESTS=0 OMP_NUM_THREADS=1 PYTHONPATH=$PWD/python:/home/axis/mengze/sglang/python python -m pytest -o addopts= -q --ignore=tests/kernel",
+    "passed": 867,
+    "skipped": 666,
+    "failed": 0,
+    "log": "experiment/phase287-all-cpu.log",
+    "log_sha256": "f13bb3ebfcc69b14179b543ad41de3c30c50ae5947f8009a029f52e697b6b028",
+    "exclusion": "tests/kernel contains existing manual CUDA scripts with import-time GPU allocation; CPU suite excludes that directory."
+  },
+  "contract": {
+    "state_memory_ratio": "Optional state bytes / KV bytes, overrides manual cached-state count; no model-specific default",
+    "state_fraction": "ratio/(1+ratio) of paired post-load available bytes",
+    "mandatory_state": "Working slots plus overlap scratch are included; automatic cached capacity is the remainder",
+    "tp_coordination": "MIN cached slot count, then MIN remaining bytes after each rank subtracts its own state reservation",
+    "insufficient_rank": "Every rank reaches the count collective before a common MemoryError",
+    "unified_memory": "Derive state ceiling from actual aligned arena, including explicit page cap",
+    "retention": "No implicit per-path checkpoint limit; global capacity and existing branch-aware LRU remain authoritative. Explicit per-path limits still supported."
+  },
+  "validation": [
+    "Static and shared arenas, mandatory scratch, dtype byte accounting",
+    "Different rank memory availability and state footprints; existing paired-budget counterexamples preserved",
+    "Page override respects state reservation",
+    "Earlier fork checkpoint survives more than four snapshots and restores its original state",
+    "CLI automatic and manual checkpoint-budget options are mutually exclusive"
+  ],
+  "limitations": [
+    "No new GPU experiment submitted for R3 while devices need recovery",
+    "Full corrected R2 quality/real graph coverage and R2 AIPerf still precede R3 serving measurement",
+    "No measured throughput/latency gain claimed; lazy extra-buffer ownership and native communication integration remain unfinished"
+  ]
+}

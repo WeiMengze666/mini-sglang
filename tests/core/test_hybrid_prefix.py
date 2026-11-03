@@ -170,3 +170,33 @@ def test_capacity_recycles_restored_state_but_preserves_pending_restore(cache):
     cache.states.finish_request(1, 101, 3)
     for handle in (restored, pending, handles[2]):
         cache.lock_handle(handle, unlock=True)
+
+
+@pytest.mark.parametrize("unified", [False, True])
+@pytest.mark.parametrize("path_limit,expected", [(None, 6), (2, 2)])
+def test_global_budget_retains_earlier_fork_frontiers(monkeypatch, unified, path_limit, expected):
+    monkeypatch.setattr(core, "_GLOBAL_CTX", core.Context(page_size=2))
+    arena = UnifiedMemory(64, 256, 576, "cpu") if unified else None
+    states = RecurrentStatePool(
+        (0, 2), 1, 2, 3, 4, torch.float32, "cpu", max_cached_states=6, arena=arena
+    )
+    tree = HybridPrefixCache(torch.device("cpu"), states, max_states_per_path=path_limit)
+    ids = torch.arange(12, dtype=torch.int32)
+    for length in range(2, 13, 2):
+        req = commit(tree, 0, 100 + length, length, length)
+        handle = tree.insert_prefix(ids[:length], ids[:length]).handle
+        tree.cache_state(req, handle)
+        states.release_request(0, req.uid)
+    assert len(tree.checkpoints) == expected
+    assert tree.match_prefix(ids).cuda_handle.cached_len == 12
+    if path_limit is None:
+        # A future fork may branch far before the most recent four snapshots.
+        assert tree.match_prefix(ids[:4]).cuda_handle.cached_len == 4
+        handle = tree.match_prefix(ids[:4]).cuda_handle
+        tree.lock_handle(handle)
+        tree.restore_state(0, 200, handle)
+        states.begin_request(0, 200, 4)
+        assert states.get_kda_state(0, 0).recurrent.eq(8).all()
+        states.finish_request(0, 200, 5)
+        states.release_request(0, 200)
+        tree.lock_handle(handle, unlock=True)

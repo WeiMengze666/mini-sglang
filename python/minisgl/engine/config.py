@@ -25,6 +25,7 @@ class EngineConfig:
     bf16_precision: str = "auto"
     max_running_req: int = 256
     max_cached_states: int = 8
+    state_memory_ratio: float | None = None
     enable_unified_memory: bool = False
     enable_cache_overlap: bool = False
     recurrent_state_dtype: torch.dtype = torch.float32
@@ -76,8 +77,10 @@ class EngineConfig:
     @property
     def state_slot_budget(self) -> int:
         cached = self.max_cached_states if getattr(self, "cache_type", "hybrid") != "naive" else 0
-        staged = self.max_running_req if cached and self.enable_cache_overlap else 0
-        return self.max_running_req + cached + staged
+        automatic = self.state_memory_ratio is not None
+        staged = self.max_running_req if (cached or automatic) and self.enable_cache_overlap else 0
+        # Automatic checkpoint capacity is resolved from the post-load budget.
+        return self.max_running_req + (0 if automatic else cached) + staged
 
     @property
     def distributed_addr(self) -> str:

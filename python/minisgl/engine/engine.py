@@ -104,11 +104,7 @@ class Engine:
             dtype=self.dtype,
             kv_dtype=config.cache_dtype,
             max_running_req=config.max_running_req,
-            max_cached_states=(
-                getattr(config, "max_cached_states", 0)
-                if getattr(config, "cache_type", "hybrid") != "naive"
-                else 0
-            ),
+            max_cached_states=self.cached_state_capacity,
             unified_memory=config.enable_unified_memory,
             enable_cache_overlap=config.enable_cache_overlap,
             state_dtype=config.recurrent_state_dtype,
@@ -287,45 +283,78 @@ class Engine:
             }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
-        new_free_memory = self._sync_get_memory()[
-            0 if (config.model_config.cache_config is not None) else 1
-        ]
-        cache_per_page = (
-            2  # key + value
-            * config.model_config.head_dim
-            * div_even(config.model_config.num_kv_heads, config.tp_info.size, allow_replicate=True)
-            * config.logical_page_size
-            * config.cache_dtype.itemsize
-            * config.model_config.num_layers
-        )
-        fixed_state = 0
-        if config.model_config.cache_config is not None:
-            layout = config.model_config.cache_config
+        layout = config.model_config.cache_config
+        new_free_memory = self._sync_get_memory()[0 if layout is not None else 1]
+        self.cached_state_capacity = 0
+        num_pages = config.num_page_override
+        if layout is not None:
+            from minisgl.kvcache.config import cached_state_capacity
+
             cache_per_page = layout.cache_bytes_per_page(
                 config.cache_dtype, config.logical_page_size
             )
-            state_slots = config.state_slot_budget
-            fixed_state = state_slots * layout.state_bytes_per_request(
+            state_bytes = layout.state_bytes_per_request(
                 self.dtype, tp_size=config.tp_info.size, state_dtype=config.recurrent_state_dtype
             )
-            if getattr(config, "enable_unified_memory", False):
+            unified = getattr(config, "enable_unified_memory", False)
+            if unified:
                 from minisgl.kvcache.unified import align_bytes
 
-                cache_per_page = align_bytes(cache_per_page)
-                fixed_state = 0  # states and token pages draw from the same bytes
-        num_pages = config.num_page_override
-        if config.model_config.cache_config is not None:
-            # Preserve each rank's before/after pairing. Subtracting separately
-            # reduced minima can spend another rank's reserved ratio headroom.
+                cache_per_page, state_bytes = align_bytes(cache_per_page), align_bytes(state_bytes)
+            # Keep each rank's before/after pairing. State bytes can differ
+            # between ranks: agree on slot count first, then reduce the local
+            # token budget after subtracting each rank's own state reservation.
             before = self._initial_free_memory
-            available_memory = (
-                int(config.memory_ratio * before) - (before - self._local_free_memory) - fixed_state
+            available = int(config.memory_ratio * before) - (before - self._local_free_memory)
+            cached = (
+                getattr(config, "max_cached_states", 0)
+                if getattr(config, "cache_type", "hybrid") != "naive"
+                else 0
             )
-            budget = torch.tensor(available_memory, device="cpu", dtype=torch.int64)
+            overlap = getattr(config, "enable_cache_overlap", False)
+            ratio = getattr(config, "state_memory_ratio", None)
+            if ratio is not None:
+                state_budget = available
+                if unified:
+                    pages = available // cache_per_page if num_pages is None else num_pages + 1
+                    state_budget = min(available, pages * cache_per_page)
+                try:
+                    cached = cached_state_capacity(
+                        state_budget,
+                        state_bytes,
+                        config.max_running_req,
+                        ratio=ratio,
+                        scratch_slots=config.max_running_req if overlap else 0,
+                    )
+                except MemoryError:
+                    cached = 0  # all ranks must reach the capacity collective
+                capacity = torch.tensor(cached, device="cpu", dtype=torch.int64)
+                torch.distributed.all_reduce(
+                    capacity, op=torch.distributed.ReduceOp.MIN, group=self.tp_cpu_group
+                )
+                cached = int(capacity.item())
+                if cached < 1:
+                    raise MemoryError(
+                        "State budget on a TP rank cannot hold request state, scratch and a checkpoint"
+                    )
+            scratch = config.max_running_req if cached and overlap else 0
+            state_slots = (
+                config.max_running_req + cached + scratch
+                if ratio is not None
+                else config.state_slot_budget
+            )
+            fixed_state = 0 if unified else state_slots * state_bytes
+            budget = torch.tensor(available - fixed_state, device="cpu", dtype=torch.int64)
             torch.distributed.all_reduce(
                 budget, op=torch.distributed.ReduceOp.MIN, group=self.tp_cpu_group
             )
-            max_pages = int(budget.item()) // cache_per_page - 1  # dummy page
+            available = int(budget.item())
+            self.cached_state_capacity = cached
+            logger.info(
+                f"Recurrent state capacity: {config.max_running_req} working, {cached} cached, "
+                f"{scratch} overlap scratch; budget {mem_GB(state_slots * state_bytes)}"
+            )
+            max_pages = available // cache_per_page - 1  # dummy page
             if num_pages is None:
                 num_pages = max_pages
             elif num_pages > max_pages:
@@ -333,17 +362,27 @@ class Engine:
                     f"Hybrid requested {num_pages} cache pages, but the least-safe TP "
                     f"rank permits {max_pages} within its post-load memory budget"
                 )
-        elif num_pages is None:
-            model_memory = old_free_memory - new_free_memory
-            available_memory = (
-                int(config.memory_ratio * old_free_memory) - model_memory - fixed_state
+        else:
+            cache_per_page = (
+                2
+                * config.model_config.head_dim
+                * div_even(
+                    config.model_config.num_kv_heads, config.tp_info.size, allow_replicate=True
+                )
+                * config.logical_page_size
+                * config.cache_dtype.itemsize
+                * config.model_config.num_layers
             )
-            num_pages = available_memory // cache_per_page
-
+            if num_pages is None:
+                available = int(config.memory_ratio * old_free_memory) - (
+                    old_free_memory - new_free_memory
+                )
+                num_pages = available // cache_per_page
         assert num_pages > 1, "Not enough memory for KV cache, try reducing --num-pages"
         num_tokens = num_pages * config.logical_page_size
-        real_kv_size = num_pages * cache_per_page
-        logger.info(f"Allocating {num_tokens} tokens for KV cache, K + V = {mem_GB(real_kv_size)}")
+        logger.info(
+            f"Allocating {num_tokens} tokens for KV cache, K + V = {mem_GB(num_pages * cache_per_page)}"
+        )
         return num_pages
 
     def _sync_get_memory(self) -> Tuple[int, int]:
@@ -437,6 +476,16 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("page_size must be positive")
     if config.enable_unified_memory and not config.model_config.has_recurrent_state:
         raise ValueError("Unified memory requires a hybrid recurrent/token cache")
+    if config.state_memory_ratio is not None:
+        from math import isfinite
+
+        if not isfinite(config.state_memory_ratio) or config.state_memory_ratio <= 0:
+            raise ValueError("State/KV memory ratio must be finite and positive")
+        if (
+            not config.model_config.has_recurrent_state
+            or getattr(config, "cache_type", None) == "naive"
+        ):
+            raise ValueError("State/KV memory ratio requires recurrent prefix caching")
 
     if config.model_config.is_moe and config.moe_backend == "auto":
         quantization = getattr(config.model_config.hf_config, "quantization_config", None)
@@ -473,7 +522,12 @@ def _adjust_config(config: EngineConfig):
             override("cuda_graph_max_bs", 0)
         if hasattr(config, "cache_type"):
             if config.cache_type != "naive":
-                override("cache_type", "hybrid" if config.max_cached_states > 0 else "naive")
+                override(
+                    "cache_type",
+                    "hybrid"
+                    if config.max_cached_states > 0 or config.state_memory_ratio is not None
+                    else "naive",
+                )
         logger.warning_rank0(
             f"Hybrid attention {config.attention_backend}: TP={config.tp_info.size}, "
             f"DCP={config.dcp_size}, EP={config.ep_size}; sparse recurrent checkpoints; "

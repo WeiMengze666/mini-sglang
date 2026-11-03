@@ -157,11 +157,18 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         default=str(ServerArgs.recurrent_state_dtype).removeprefix("torch."),
         help="Persistent recurrent state storage, independent of model/KV dtype.",
     )
-    parser.add_argument(
+    state_budget = parser.add_mutually_exclusive_group()
+    state_budget.add_argument(
         "--max-cached-states",
         type=int,
         default=ServerArgs.max_cached_states,
         help="Maximum sparse recurrent checkpoints retained by the hybrid prefix cache.",
+    )
+    state_budget.add_argument(
+        "--state-memory-ratio",
+        type=float,
+        default=ServerArgs.state_memory_ratio,
+        help="Recurrent state bytes / KV bytes; derive checkpoint capacity from the post-load budget.",
     )
     parser.add_argument(
         "--enable-cache-overlap",

@@ -28,9 +28,11 @@ class HybridPrefixCache(RadixPrefixCache):
             else 0
         )
 
-    def __init__(self, device, states: RecurrentStatePool, max_states_per_path=4):
+    def __init__(self, device, states: RecurrentStatePool, max_states_per_path: int | None = None):
         super().__init__(device)
-        if max_states_per_path < 1 or states.max_cached_states < 1:
+        if (
+            max_states_per_path is not None and max_states_per_path < 1
+        ) or states.max_cached_states < 1:
             raise ValueError("Hybrid prefix caching requires positive checkpoint capacity")
         self.states = states
         self.max_states_per_path = max_states_per_path
@@ -120,7 +122,7 @@ class HybridPrefixCache(RadixPrefixCache):
             if parent.uuid in self.checkpoints:
                 path.append(parent)
             parent = parent.parent
-        if len(path) >= self.max_states_per_path:
+        if self.max_states_per_path is not None and len(path) >= self.max_states_per_path:
             candidates = [n for n in path if n.uuid not in pinned]
             if not candidates:
                 return

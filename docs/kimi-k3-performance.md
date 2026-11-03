@@ -318,3 +318,27 @@ contributions are not yet isolated. First qualify the prefill precision correcti
 and graph policy, measure that candidate, then evaluate generic ratio-based
 state/KV capacity and checkpoint ownership/policy improvements. The post-run
 audit finds no owned R0 server processes remaining.
+
+## Prepared generic cache-budget candidate
+
+R0 has eight checkpoint slots and an implicit four-checkpoint limit per radix
+path. The R3 candidate adds optional `--state-memory-ratio 0.31` in place of
+`--max-cached-states 8`; both CLI options are mutually exclusive. State receives
+`ratio / (1 + ratio)` of the post-weight budget, including working and overlap
+scratch slots. Checkpoint count is derived from the selected state/convolution
+dtypes, then agreed across ranks. Each rank subtracts its own state bytes before
+the remaining KV budget is reduced, preserving asymmetric-rank memory safety.
+Shared-arena sizing uses its actual aligned capacity and explicit page limit.
+No model name, attention algorithm switch or numerical kernel is introduced.
+
+The default checkpoint policy retains prefixes up to the global state budget
+with the existing branch-aware LRU, allowing future forks before the latest four
+snapshots. Explicit per-path limits remain supported. Snapshot contents, copy
+ownership, precision and state updates are unchanged.
+
+[CPU evidence](validation/kimi-k3-cache-budget.json) records 867 passed and 666
+skipped with manual CUDA scripts excluded. Tests include earlier-prefix restore,
+static/shared storage and unequal rank state footprints. R3 has no GPU or
+performance acceptance yet. Device recovery and the pending R2 correctness and
+serving measurements come first; native lazy extra-buffer ownership and mature
+communication integration still remain to be completed.
