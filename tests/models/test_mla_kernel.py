@@ -142,3 +142,95 @@ def test_native_prefill_uses_the_producer_stream():
         assert native._expanded_workspace is not None
     assert tvm_ffi.get_raw_stream(ffi_device) == previous
     torch.cuda.current_stream().wait_stream(producer)
+
+
+@pytest.mark.parametrize("cache_dtype", [torch.bfloat16, torch.float8_e4m3fn])
+@pytest.mark.parametrize("length,tokens", [(17, 7), (143, 64), (129, 129)])
+def test_prefill_precision_matches_native_runner(
+    cache_dtype, length, tokens, monkeypatch, record_property
+):
+    import json
+    from types import SimpleNamespace
+
+    import flashinfer.prefill
+    import tvm_ffi
+    from minisgl.layers.linear import linear_bf16
+    from sglang.srt.layers.attention.trtllm_mla_backend import TRTLLMMLABackend
+
+    calls = []
+    native_kernel = flashinfer.prefill.trtllm_ragged_attention_deepseek
+
+    def observed(**options):
+        contract = {
+            name: {
+                "dtype": str(options[name].dtype),
+                "shape": list(options[name].shape),
+                "stride": list(options[name].stride()),
+            }
+            for name in ("query", "key", "value", "out")
+        }
+        contract["host_options"] = {
+            name: options.get(name)
+            for name in (
+                "batch_size",
+                "max_q_len",
+                "max_kv_len",
+                "bmm1_scale",
+                "bmm2_scale",
+                "o_sf_scale",
+                "window_left",
+                "enable_pdl",
+                "is_causal",
+                "return_lse",
+                "skip_softmax_threshold_scale_factor",
+            )
+        }
+        calls.append(contract)
+        return native_kernel(**options)
+
+    monkeypatch.setattr(flashinfer.prefill, "trtllm_ragged_attention_deepseek", observed)
+    producer = torch.cuda.Stream()
+    ffi_device = tvm_ffi.device(f"cuda:{torch.cuda.current_device()}")
+    previous = tvm_ffi.get_raw_stream(ffi_device)
+    with torch.cuda.stream(producer):
+        torch.cuda._sleep(1_000_000)
+        heads, nope, value = 16, 128, 128
+        q = torch.randn(tokens, heads, 192, device="cuda", dtype=torch.bfloat16) * 0.1
+        latent = torch.randn(length, 512, device="cuda", dtype=torch.bfloat16) * 0.1
+        suffix = torch.randn(length, 64, device="cuda", dtype=torch.bfloat16) * 0.1
+        weight = torch.randn(heads * 256, 512, device="cuda", dtype=torch.bfloat16) * 0.05
+        expanded = linear_bf16(latent, weight).view(length, heads, 256)
+        keys = torch.cat((expanded[..., :nope], suffix[:, None].expand(-1, heads, -1)), -1)
+        expected = q.new_empty((tokens, heads, value))
+        # Exercise the pinned native backend method, including its quantization
+        # and kernel options, without constructing a second serving runtime.
+        native = object.__new__(TRTLLMMLABackend)
+        native.data_type = cache_dtype
+        native.workspace_buffer = torch.empty(128 << 20, dtype=torch.uint8, device=q.device)
+        with tvm_ffi.use_torch_stream():
+            native._run_prefill_kernel(
+                q=q,
+                k=keys,
+                v=expanded[..., nope:],
+                layer=SimpleNamespace(scaling=192**-0.5),
+                batch_size=1,
+                cum_seq_lens_q=torch.tensor([0, tokens], dtype=torch.int32, device=q.device),
+                max_q_len=tokens,
+                seq_lens_kv=torch.tensor([length], dtype=torch.int32, device=q.device),
+                cum_seq_lens_kv=torch.tensor([0, length], dtype=torch.int32, device=q.device),
+                max_kv_len=length,
+                is_causal=True,
+                return_lse=False,
+                out_buffer=expected,
+            )
+        adapter = FlashInferMLAAdapter(kv_dtype=cache_dtype)
+        for _ in range(3):
+            actual = adapter.prefill(q, latent, suffix, weight, nope_dim=nope, value_dim=value)
+            assert actual.dtype == q.dtype
+            torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+            assert calls[-1] == calls[0]
+        for name in ("query", "key", "value"):
+            assert calls[0][name]["dtype"] == str(cache_dtype)
+        record_property("native_kernel_inputs", json.dumps(calls[0], sort_keys=True))
+    assert tvm_ffi.get_raw_stream(ffi_device) == previous
+    torch.cuda.current_stream().wait_stream(producer)

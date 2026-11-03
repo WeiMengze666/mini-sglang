@@ -193,3 +193,13 @@ def test_prefill_uses_unquantized_current_rows_and_dequantized_cached_prefix():
         readouts[1][1], torch.cat((history_key.bfloat16(), suffix[3:])), rtol=0, atol=0
     )
     assert readouts[1][2].tolist() == list(range(5))
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float8_e4m3fn])
+def test_flashinfer_prefill_precision_follows_cache_format(dtype):
+    from minisgl.attention.fi import FlashInferMLABackend
+
+    cache = SimpleNamespace(dtype=dtype)
+    backend = FlashInferMLABackend(None, cache=cache)
+    assert backend.kvcache is cache
+    assert backend.attention.kv_dtype == dtype

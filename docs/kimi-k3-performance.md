@@ -252,3 +252,23 @@ The candidate passes 23 focused CPU checks, including graph-runner wiring,
 request-capacity limits, explicit bucket selection and launcher cleanup. Its GPU
 and serving effect remain unmeasured. R0 continues from its frozen source and
 provides the comparison baseline before candidate performance acceptance.
+
+## Additional prefill precision gap
+
+A further audit of native `baa9bef` finds that `TRTLLMMLABackend` uses the KV
+format for its ragged prefill Q/K/V as well: FP8 E4M3 inputs and a BF16 output
+for this checkpoint's unit scales. Mini R0 stores FP8 KV and quantizes decode
+queries, but passes BF16 expanded Q/K/V to the prefill kernel. The earlier
+execution-contract comparison did not describe this boundary. Its GSM8K
+results and component checks remain valid for their recorded paths; they do
+not establish full precision-path equality. R0 measurements must retain this
+explicit limitation and must not be published as a precision-matched ratio.
+
+The correction passes cache precision into the generic FlashInfer MLA adapter
+and uses normal Torch casts at the SDK boundary, as the native backend does.
+Producer output stays BF16. There is no new numerical kernel or model-name
+condition. Focused CPU coverage reports 89 passed and one skipped. Six opt-in
+GPU cases are prepared to compare against the actual native backend prefill
+method, recording Q/K/V/output dtype, shape and stride, with exact same-ABI
+output and producer-stream checks. GPU and renewed whole-model quality
+acceptance are pending; the graph-only R1 gate remains prepared but unsubmitted.

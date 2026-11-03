@@ -76,6 +76,11 @@
       "value": "mxfp8",
       "status": "Confirmed in canonical S0 runtime server-info; see docs/validation/kimi-k3-aiperf-reference.json",
       "path": "python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py:1088-1098"
+    },
+    "prefill_attention_precision": {
+      "value": "fp8_e4m3fn Q/K/V, BF16 destination",
+      "status": "Pinned native source verified; native method GPU contract control prepared",
+      "path": "python/sglang/srt/layers/attention/trtllm_mla_backend.py:TRTLLMMLABackend._run_prefill_kernel"
     }
   },
   "acceptance": {
@@ -227,7 +232,8 @@
       "model": "torch.bfloat16",
       "moe_activation": "mxfp8",
       "kv": "torch.float8_e4m3fn",
-      "kda_state": "torch.bfloat16"
+      "kda_state": "torch.bfloat16",
+      "prefill_qkv": "torch.bfloat16; known R0 gap from native FP8 prefill"
     },
     "orchestration_note": "1800s bootstrap/collective timeout for large checkpoint loading; not a precision or workload change",
     "source_commit": "07d94b5de00b883be81a45f6c6cc7c3d92d8de45",
@@ -236,7 +242,8 @@
       "Fixed8 cached states instead of native ratio-based extra_buffer budget/capacity; checkpoint/restore/eviction lifecycle validated",
       "No built-in native MNNVL transport",
       "No native small-batch fused route+quant prepared input; FP32 unfused routing weights",
-      "Serial hybrid scheduling by default"
+      "Serial hybrid scheduling by default",
+      "Prefill Q/K/V remain BF16 while native TRTLLM MLA uses FP8 for FP8 KV; R0 is an initial baseline, not a precision-parity ratio"
     ]
   },
   "accounting_note": "Native K3 API deducts3 generation-stub tokens from prompt usage; model input IDs verified identical on all512 completed S0 requests. Mini reports actual IDs. Normalize input-derived metrics in comparison; retain raw exports."

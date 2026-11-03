@@ -277,7 +277,8 @@ class FlashInferMLABackend(MLAAttentionBackend):
 
     cache_implementation = "sgl"
 
-    def __init__(self, config):
+    def __init__(self, config, *, cache=None):
         from .mla.flashinfer import FlashInferMLAAdapter
 
-        super().__init__(config, attention=FlashInferMLAAdapter())
+        cache = get_global_ctx().kv_cache if cache is None else cache
+        super().__init__(config, attention=FlashInferMLAAdapter(kv_dtype=cache.dtype), cache=cache)

@@ -338,5 +338,13 @@
     "experiment/phase277-post-job-process-audit.json": "cc410822f45cbf533df49706d01f6879aa30a328323d568b67ff8ade5eaaf965",
     "experiment/phase277-gsm8k-mini/responses.jsonl": "41acf43678bd6090da5375fb9c02f5c21fef14125c94f9663cd9e92b8d7f7ab1",
     "experiment/phase272-gsm8k-official/responses.jsonl": "dd5b32f432201f3abc2320318a84e9622e29785b2c2416593f5c99734c527c3d"
+  },
+  "attention_precision_audit": {
+    "status": "Additional gap found after initial gate; R0 is not full precision-path parity",
+    "mini_r0_prefill_qkv": "bfloat16",
+    "native_trtllm_mla_prefill_qkv": "float8_e4m3fn with unit scales for this checkpoint",
+    "source": "sglang/srt/layers/attention/trtllm_mla_backend.py:TRTLLMMLABackend._run_prefill_kernel and _quantize_fp8_qkv at pinned native commit",
+    "limitation": "The original execution-contract equality records KV/MoE/KDA formats and does not include prefill Q/K/V. Original reports remain unchanged.",
+    "followup": "Generic MLA adapter correction prepared; native backend method input/output GPU control and renewed full task validation required."
   }
 }

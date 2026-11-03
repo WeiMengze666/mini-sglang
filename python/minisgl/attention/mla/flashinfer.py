@@ -66,7 +66,8 @@ class _MLAPlan:
 
 
 class FlashInferMLAAdapter:
-    def __init__(self):
+    def __init__(self, *, kv_dtype: torch.dtype | None = None):
+        self.kv_dtype = kv_dtype
         self._expanded_workspace = None
         self._decode_plan = None
         self._decode_workspace = None
@@ -193,11 +194,16 @@ class FlashInferMLAAdapter:
         expanded = linear_bf16(latent, weight).view(total, heads, nope_dim + value_dim)
         keys = torch.cat((expanded[..., :nope_dim], key[:, None].expand(-1, heads, -1)), -1)
         output = q.new_empty((tokens, heads, value_dim))
+        query, values = q.contiguous(), expanded[..., nope_dim:]
+        if self.kv_dtype == torch.float8_e4m3fn:
+            # TRTLLM's FP8 path quantizes current Q/K/V as well as resident KV.
+            # Keep the destination in producer precision, matching the SDK ABI.
+            query, keys, values = (part.to(self.kv_dtype) for part in (query, keys, values))
         with use_torch_stream():
             trtllm_ragged_attention_deepseek(
-                query=q.contiguous(),
+                query=query,
                 key=keys,
-                value=expanded[..., nope_dim:],
+                value=values,
                 workspace_buffer=self._expanded_workspace,
                 seq_lens=torch.tensor([total], dtype=torch.int32, device=q.device),
                 max_q_len=tokens,
