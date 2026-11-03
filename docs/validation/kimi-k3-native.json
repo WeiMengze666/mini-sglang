@@ -136,5 +136,12 @@
     "reference_retry_job": 863,
     "retry_changes": "Only launcher readiness7200s and orchestration10800s; original serve and900s AIPerf argv unchanged",
     "mini_measurement": "pending"
+  },
+  "completion_budget_cpu": {
+    "checks": 49,
+    "native_parser_tokenizer_cases": 22,
+    "wire_payloads_checked": 386,
+    "aiperf_token_limit_field": "max_completion_tokens",
+    "scope": "CPU request/protocol and validation-runner precision options; no GPU acceptance"
   }
 }

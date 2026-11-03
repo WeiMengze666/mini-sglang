@@ -24,7 +24,7 @@ from minisgl.message import (
 from minisgl.utils import ZmqAsyncPullQueue, ZmqAsyncPushQueue, init_logger
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from starlette.background import BackgroundTask
 
 from .args import ServerArgs
@@ -97,7 +97,9 @@ class OpenAICompletionRequest(BaseModel):
     separate_reasoning: bool = True
     stream_reasoning: bool = True
 
-    max_tokens: int = 16
+    max_tokens: int = Field(
+        default=16, validation_alias=AliasChoices("max_completion_tokens", "max_tokens")
+    )
     temperature: float = 1.0
 
     top_k: int = -1

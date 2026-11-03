@@ -28,8 +28,9 @@ def test_final_explicit_answer_and_numeric_normalization(text, expected):
 
 
 @pytest.mark.parametrize("engine_kind", ["mini", "sglang"])
+@pytest.mark.parametrize("target", [False, True])
 def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
-    monkeypatch, tmp_path, engine_kind
+    monkeypatch, tmp_path, engine_kind, target
 ):
     import sys
     from contextlib import nullcontext
@@ -92,12 +93,12 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
         dcp_size=1,
         ep_size=1,
         attention_backend="auto",
-        mxfp4_backend="torch",
-        moe_backend="marlin",
-        activation_precision="bf16",
-        kv_cache_dtype="bfloat16",
-        recurrent_state_dtype="float32",
-        bf16_precision="strict",
+        mxfp4_backend="flashinfer" if target else "torch",
+        moe_backend="auto" if target else "marlin",
+        activation_precision="mxfp8" if target else "bf16",
+        kv_cache_dtype="fp8_e4m3" if target else "bfloat16",
+        recurrent_state_dtype="bfloat16" if target else "float32",
+        bf16_precision="default" if target else "strict",
         max_context=4,
         batch_size=1,
         max_new_tokens=1,
@@ -110,17 +111,15 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
     suite["run_" + engine_kind](args, [{"id": 0, "gold": "1", "input_ids": [0]}], {1})
     if engine_kind == "mini":
         config = seen["config"]
-        assert (
-            config.kv_cache_dtype == torch.bfloat16
-            and config.recurrent_state_dtype == torch.float32
-        )
-        assert config.mxfp4_activation_precision == "bf16" and config.moe_backend == "marlin"
+        assert config.kv_cache_dtype == (torch.float8_e4m3fn if target else torch.bfloat16)
+        assert config.recurrent_state_dtype == (torch.bfloat16 if target else torch.float32)
+        assert config.mxfp4_activation_precision == args.activation_precision
+        assert config.moe_backend == args.moe_backend
     else:
         config = seen["kwargs"]
-        assert config["kv_cache_dtype"] == "bfloat16" and config["mamba_ssm_dtype"] == "float32"
-        assert (
-            config["flashinfer_mxfp4_moe_precision"] == "bf16"
-            and config["moe_runner_backend"] == "marlin"
-        )
+        assert config["kv_cache_dtype"] == args.kv_cache_dtype
+        assert config["mamba_ssm_dtype"] == args.recurrent_state_dtype
+        assert config["flashinfer_mxfp4_moe_precision"] == ("default" if target else "bf16")
+        assert config["moe_runner_backend"] == args.moe_backend
     assert seen["closed"]
     assert not torch.cuda.is_initialized()

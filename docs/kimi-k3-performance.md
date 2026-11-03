@@ -128,3 +128,9 @@ generic adapters. CPU checks cover actual K3 thinking modes, tool conversations,
 streaming/non-streaming composition and another supported model format. This
 qualifies the protocol adapter on CPU; it does not establish GPU serving or
 target precision acceptance.
+
+AIPerf 0.13 uses `max_completion_tokens` by default. Mini accepts both completion
+budget spellings and forwards the requested limit to scheduling. CPU validation
+checked 386 actual captured AgentX payloads and their native-parser construction;
+all preserved their requested output budgets. These are interface checks,
+separate from model and serving-performance acceptance.

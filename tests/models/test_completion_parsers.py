@@ -144,7 +144,8 @@ def test_trusted_chat_tokenizer_matches_native_and_generation_eos(thinking):
 
 
 @pytest.mark.parametrize("stream", [False, True])
-def test_chat_api_composes_native_parsers_and_preserves_usage(monkeypatch, stream):
+@pytest.mark.parametrize("limit_field", ["max_tokens", "max_completion_tokens"])
+def test_chat_api_composes_native_parsers_and_preserves_usage(monkeypatch, stream, limit_field):
     from types import SimpleNamespace
 
     import minisgl.server.api_server as api
@@ -179,11 +180,13 @@ def test_chat_api_composes_native_parsers_and_preserves_usage(monkeypatch, strea
                 **REQUEST,
                 "tools": TOOLS,
                 "stream": stream,
+                limit_field: 2048,
                 "stream_options": {"include_usage": True},
             },
         )
     assert response.status_code == 200, response.text
     assert seen[0].chat_template_kwargs["tools"] == TOOLS
+    assert seen[0].sampling_params.max_tokens == 2048
     if stream:
         chunks = [
             json.loads(line[6:])

@@ -300,7 +300,9 @@ def run_sglang(args, cases, stop_ids):
         mamba_ssm_dtype=args.recurrent_state_dtype,
         kv_cache_dtype=args.kv_cache_dtype,
         moe_runner_backend=args.moe_backend,
-        flashinfer_mxfp4_moe_precision=args.activation_precision,
+        flashinfer_mxfp4_moe_precision=(
+            "default" if args.activation_precision == "mxfp8" else "bf16"
+        ),
         enable_deterministic_inference=args.bf16_precision == "strict",
         **attention_options,
         chunked_prefill_size=4096,
