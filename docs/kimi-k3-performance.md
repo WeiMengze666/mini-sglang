@@ -180,3 +180,12 @@ Mini's cache-read usage is reported as `usage.prompt_tokens_details.cached_token
 It counts the prefix skipped at admission and remains constant across this
 request's own prefill chunks. Completed cache-read token totals are also exposed
 in frontend metrics. This is token reuse accounting, not device-memory telemetry.
+
+The native API deliberately omits K3's three-token assistant generation stub
+from reported/billed prompt usage, while the model consumes those tokens.
+Mini reports actual input token IDs through its generic usage interface. A CPU
+replay of nine captured AgentX requests confirms complete input-ID equality with
+the native OpenAI encoder and reproduces its billing deduction. Preserve raw
+AIPerf exports and normalize input-derived metrics to actual model tokens when
+comparing; output throughput and latency need no such adjustment. No prompt
+framing is removed to make usage counts match.

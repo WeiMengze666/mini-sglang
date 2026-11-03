@@ -10,18 +10,23 @@ from minisgl.layers.base import BaseOP, OPList
 
 
 def allocate_weight_views(
-    expected: dict[str, torch.Tensor], device: torch.device, alignment: int = 256
+    expected: dict[str, torch.Tensor],
+    device: torch.device,
+    alignment: int = 256,
+    *,
+    max_arena_bytes: int | None = 1 << 30,
 ) -> dict[str, torch.Tensor]:
-    """Allocate aligned arenas while preserving declared contiguous storage groups.
+    """Use bounded arenas without splitting declared contiguous storage groups.
 
-    Tensor-by-tensor device loading can exhaust allocation/mapping resources
-    before VRAM fills on models with hundreds of thousands of small expert
-    tensors. Views preserve each layer's ordinary tensor interface and ownership.
+    Shared views avoid exhausting device allocation/mapping resources. Bounded
+    arenas also let repacking release raw weights progressively, without another
+    layer pinning a whole-model allocation. An indivisible group may exceed the
+    soft byte bound; ``None`` selects one unbounded arena per dtype.
     """
     if alignment < 1:
         raise ValueError("Weight alignment must be positive")
-    # Meta views describe projection groups before any device allocation.
-    # Independent parameters remain aligned; grouped views retain their offsets.
+    if max_arena_bytes is not None and max_arena_bytes < 1:
+        raise ValueError("Weight arena byte bound must be positive")
     groups = {}
     for name, tensor in expected.items():
         key = (
@@ -29,29 +34,35 @@ def allocate_weight_views(
             tensor.untyped_storage()._cdata if tensor.is_contiguous() else name,
         )
         groups.setdefault(key, []).append((name, tensor))
-    sizes: dict[torch.dtype, int] = {}
-    offsets = {}
+    sizes, offsets, current = {}, {}, {}
     for items in groups.values():
         dtype = items[0][1].dtype
         elements = alignment // dtype.itemsize
         if alignment % dtype.itemsize:
             raise ValueError("Weight alignment must be divisible by the element size")
-        offset = (sizes.get(dtype, 0) + elements - 1) // elements * elements
         origin = min(tensor.storage_offset() for _, tensor in items)
         end = max(tensor.storage_offset() + tensor.numel() for _, tensor in items)
+        key = dtype, current.get(dtype, 0)
+        offset = (sizes.get(key, 0) + elements - 1) // elements * elements
+        if (
+            max_arena_bytes is not None
+            and offset > 0
+            and (offset + end - origin) * dtype.itemsize > max_arena_bytes
+        ):
+            current[dtype] = key[1] + 1
+            key, offset = (dtype, current[dtype]), 0
         for name, tensor in items:
-            offsets[name] = offset + tensor.storage_offset() - origin
-        sizes[dtype] = offset + end - origin
+            offsets[name] = key, offset + tensor.storage_offset() - origin
+        sizes[key] = offset + end - origin
     arenas = {}
-    for dtype, size in sizes.items():
+    for key, size in sizes.items():
+        dtype = key[0]
         arena = torch.empty(size + alignment // dtype.itemsize, dtype=dtype, device=device)
         shift = (-arena.data_ptr() % alignment) // dtype.itemsize
-        arenas[dtype] = arena[shift : shift + size]
+        arenas[key] = arena[shift : shift + size]
     return {
-        name: arenas[tensor.dtype][offsets[name] : offsets[name] + tensor.numel()].view(
-            tensor.shape
-        )
-        for name, tensor in expected.items()
+        name: arenas[key][offset : offset + expected[name].numel()].view(expected[name].shape)
+        for name, (key, offset) in offsets.items()
     }
 
 

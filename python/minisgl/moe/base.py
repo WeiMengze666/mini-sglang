@@ -13,9 +13,6 @@ class BaseMoeBackend(ABC):
                 f"{type(self).__name__} supports activation precision {self.activation_precisions}"
             )
 
-    def uses_weight_views(self, linear_backend: str) -> bool:
-        """Repacking kernels release individual raw allocations after preparation."""
-        return linear_backend != "flashinfer"
 
     def route(self, logits, **options):
         """Return optimized (weights, IDs), or defer to portable routing."""

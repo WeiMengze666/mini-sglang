@@ -98,3 +98,11 @@ local experts, so it does not replace whole-checkpoint validation. KDA BF16 stat
 updates match both canonical and indexed native pools exactly. FP32-state native
 layout variation is preserved as a diagnostic while identical-ABI comparisons
 remain exact. Full target-format GSM8K and Mini serving measurements are pending.
+
+Weight loading uses aligned, bounded arenas shared across ordinary parameters.
+Declared contiguous projection groups stay intact; separate arenas can be freed
+as expert backends repack their raw inputs. Storage lifetime is a loader concern,
+so MoE backends no longer choose a special tensor-by-tensor load path. A metadata
+plan for the released TP8/EP1 checkpoint coalesces 497,052 tensors into 195 arenas
+while preserving shapes/dtypes. CPU content, aliasing and lifetime checks pass;
+the complete model now loads and runs the target-format task suite.

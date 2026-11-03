@@ -67,3 +67,44 @@ def test_after_load_runs_bottom_up_once_and_rebuilds_on_reload(streamed):
             model.load_state_dict(state)
         assert events[-3:] == [4 * value, 4 * value, "root"]
     assert len(events) == 6
+
+
+@pytest.mark.parametrize("limit,allocations", [(None, 1), (256, 4)])
+def test_bounded_arenas_coalesce_small_weights_and_release_independently(limit, allocations):
+    import gc
+
+    from torch.multiprocessing.reductions import StorageWeakRef
+
+    expected = {f"weight{i}": torch.empty(32, device="meta") for i in range(8)}
+    views = allocate_weight_views(
+        expected, torch.device("cpu"), alignment=64, max_arena_bytes=limit
+    )
+    assert len({t.untyped_storage()._cdata for t in views.values()}) == allocations
+    first = StorageWeakRef(views["weight0"].untyped_storage())
+    for i, name in enumerate(views):
+        views[name].fill_(i)
+    for i, name in enumerate(views):
+        assert views[name].eq(i).all()
+    del views["weight0"], views["weight1"]
+    gc.collect()
+    assert first.expired() == (limit is not None)
+    assert views["weight2"].eq(2).all()
+
+
+def test_arena_bound_never_splits_a_declared_projection_group():
+    storage = torch.empty(40, device="meta")
+    expected = {
+        "prefix": torch.empty(8, device="meta"),
+        "gate": storage[3:13],
+        "up": storage[13:33],
+        "tail": torch.empty(8, device="meta"),
+    }
+    views = allocate_weight_views(expected, torch.device("cpu"), alignment=64, max_arena_bytes=64)
+    assert views["gate"].untyped_storage()._cdata == views["up"].untyped_storage()._cdata
+    assert views["up"].storage_offset() - views["gate"].storage_offset() == 10
+    assert views["gate"].untyped_storage()._cdata != views["prefix"].untyped_storage()._cdata
+    assert views["up"].untyped_storage()._cdata != views["tail"].untyped_storage()._cdata
+    assert views["gate"].data_ptr() % 64 == views["tail"].data_ptr() % 64 == 0
+    for value in (0, -1):
+        with pytest.raises(ValueError, match="byte bound"):
+            allocate_weight_views(expected, torch.device("cpu"), max_arena_bytes=value)

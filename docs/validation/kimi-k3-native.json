@@ -157,7 +157,18 @@
     "passed": 320,
     "job": 870,
     "evidence": "docs/validation/kimi-k3-target-components.json",
-    "full_quality": "running job870; no result yet",
+    "full_quality": "Mini running job874; official1284/1319 complete",
     "mini_serving": "pending"
+  },
+  "bounded_weight_storage": {
+    "cpu_passed": 857,
+    "gpu_only_skipped": 638,
+    "focused_checks": 37,
+    "real_metadata_tensors": 497052,
+    "arena_allocations": 195,
+    "logical_bytes": 206774131184,
+    "allocated_bytes": 206774195456,
+    "gpu_load": "succeeded in job874; full target quality running",
+    "scope": "Aligned bounded storage only; numerical kernels unchanged"
   }
 }

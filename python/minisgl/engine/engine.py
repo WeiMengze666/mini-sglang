@@ -89,14 +89,7 @@ class Engine:
         )
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
-            # Compute backend owns its weight preparation and lifetime contract.
-            backend = getattr(self.ctx, "moe_backend", None)
-            use_views = backend is None or backend.uses_weight_views(config.mxfp4_backend)
-            weight_device = self.device if use_views else None
-            weights = self._iter_weights(config)
-            if weight_device is None:
-                weights = ((name, item.to(device=self.device)) for name, item in weights)
-            self.model.load_weights(weights, device=weight_device)
+            self.model.load_weights(self._iter_weights(config), device=self.device)
         else:
             self.model.load_state_dict(self._load_weight_state_dict(config))
 

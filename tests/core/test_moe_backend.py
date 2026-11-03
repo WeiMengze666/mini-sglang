@@ -85,7 +85,6 @@ def test_single_output_keeps_layout_and_uses_selected_transport():
 def test_marlin_precision_contract_is_explicit():
     backend = create_moe_backend("marlin")
     backend.validate_precision("bf16")
-    assert not backend.uses_weight_views("triton")
     with pytest.raises(ValueError, match="bf16"):
         backend.validate_precision("mxfp8")
 

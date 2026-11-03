@@ -18,8 +18,6 @@ from .routing import RoutingPolicy, align_routes
 class MarlinMoeBackend(FusedMoe):
     activation_precisions = ("bf16",)
 
-    def uses_weight_views(self, linear_backend: str) -> bool:
-        return False
 
     def prepare_experts(self, experts, **options):
         from . import create_expert_executor
