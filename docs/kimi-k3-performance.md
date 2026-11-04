@@ -1,5 +1,28 @@
 # Kimi-K3 serving performance target
 
+## Current checked scope (2026-11-05 CST)
+
+Runtime `9ec11fe` includes generic native-MNNVL payload canonicalization, qualified
+by 947 CPU/Gloo passes and 256 exact eight-GPU mixed-view results. The retained
+[whole-model native quality record](validation/kimi-k3-native-quality.json)
+separately scopes the full GSM8K result to model source `385d797`: 1281/1319,
+one invalid/truncated answer, versus native 1284/1319. The ABI update has component
+and new-source whole-model B48 controls, not a separately rerun full-task score.
+
+Default native AR algorithms produce eager/graph differences at batch 37–48.
+Both directions of algorithm matching restore exact logits and convolution/KDA
+state on eight ranks. Independent native SDK replay reproduces retained multicast
+outputs exactly; real-input numerical checks use separately stated path envelopes.
+The initial uniform FP32/single-output-rounding check remains a failed hypothesis.
+These controls support numerical attribution to the native reduction path without
+asserting an exact hardware reduction tree or changing serving precision.
+
+The exact canonical paired AIPerf393-entry/concurrency48/900-second measurement
+is running as phase330, using native SDK default heuristics. No current Mini
+serving throughput, fair ratio or near-SGLang performance claim exists yet.
+Historical stages below retain their original source and acceptance boundaries.
+
+
 The primary performance target is the user-specified SGLang serving profile in
 [`kimi-k3-sglang.json`](../benchmark/online/profiles/kimi-k3-sglang.json).
 The profile preserves the exact requested argument vector. It is a target,
