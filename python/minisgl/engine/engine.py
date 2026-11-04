@@ -15,6 +15,7 @@ from minisgl.distributed import (
     enable_mnnvl_distributed,
     enable_pynccl_distributed,
     load_mnnvl_provider,
+    prepare_mnnvl_provider,
     set_tp_info,
 )
 from minisgl.distributed.context import init_context_parallel
@@ -187,6 +188,9 @@ class Engine:
             enable_pynccl_distributed(config.tp_info, tp_cpu_group, max_bytes)
             return tp_cpu_group
         if backend == "mnnvl":
+            prepare_mnnvl_provider(
+                config.distributed_provider, tp_info=config.tp_info, device=self.device
+            )
             torch.distributed.init_process_group(
                 backend="gloo",
                 rank=config.tp_info.rank,

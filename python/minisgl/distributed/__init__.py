@@ -12,6 +12,7 @@ from .mnnvl import (
     MNNVLProvider,
     enable_mnnvl_distributed,
     load_mnnvl_provider,
+    prepare_mnnvl_provider,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "MNNVLProvider",
     "enable_mnnvl_distributed",
     "load_mnnvl_provider",
+    "prepare_mnnvl_provider",
 ]

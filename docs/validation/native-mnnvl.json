@@ -1,0 +1,298 @@
+{
+  "scope": "Optional generic native collective provider; not model, serving or multi-node acceptance",
+  "recorded_utc": "2026-11-04T18:12:07.678952+00:00",
+  "execution": "Direct GPU temporarily authorized by user while gpuq unavailable",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "tested_base_commit": "80c3504a674405ec69b5d25b327545ee28f261c4",
+  "tested_source_sha256": {
+    "python/minisgl/distributed/sgl.py": "69e85530b04a3fa23b12f6d53cc740735aef679669c3852a61d7efea7afe4ff9",
+    "python/minisgl/distributed/mnnvl.py": "71c4c83d0d1bbbacab106a21cbde769aee85394bacde6881f35d92abdf6672a6",
+    "experiment/phase311-mnnvl-gpu.py": "7cd2018a78ef5e7f2e8dba3dd0f0a77b5fcc7b589c615f6e9eed1568e51f3b26"
+  },
+  "host_checks": {
+    "passed": 26,
+    "cuda_initialized": false,
+    "log": "experiment/phase312-mnnvl-cpu.log"
+  },
+  "gpu": {
+    "passed_ranks": 8,
+    "dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "native_eager_cases": 64,
+    "fallback_eager_cases": 16,
+    "graph_replays": 384,
+    "all_gather_cases": 8,
+    "aligned_nonzero_storage_offset": 8,
+    "nondefault_stream": true,
+    "exact": true,
+    "native_graph_rows_per_rank": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "sglang_world_uninitialized": true,
+    "cleanup_complete": true,
+    "rank0_records": [
+      {
+        "kind": "eager",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          8
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          1024
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          32768
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          262144
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          3
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": false,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.float32",
+        "shape": [
+          8
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.float32",
+        "shape": [
+          1024
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.float32",
+        "shape": [
+          32768
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.float32",
+        "shape": [
+          262144
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.TWO_SHOT_PULL: 3>, use_graph=False, use_multicast=True)",
+        "exact": true
+      },
+      {
+        "kind": "eager",
+        "dtype": "torch.float32",
+        "shape": [
+          3
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": false,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "exact": true
+      },
+      {
+        "kind": "all_gather",
+        "native": false,
+        "exact": true
+      },
+      {
+        "kind": "graph",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          1024
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "replays": 8,
+        "exact": true
+      },
+      {
+        "kind": "graph",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          262144
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "replays": 8,
+        "exact": true
+      },
+      {
+        "kind": "graph",
+        "dtype": "torch.bfloat16",
+        "shape": [
+          3
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": false,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "replays": 8,
+        "exact": true
+      },
+      {
+        "kind": "graph",
+        "dtype": "torch.float32",
+        "shape": [
+          1024
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "replays": 8,
+        "exact": true
+      },
+      {
+        "kind": "graph",
+        "dtype": "torch.float32",
+        "shape": [
+          262144
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": true,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.TWO_SHOT_PULL: 3>, use_graph=True, use_multicast=False)",
+        "replays": 8,
+        "exact": true
+      },
+      {
+        "kind": "graph",
+        "dtype": "torch.float32",
+        "shape": [
+          3
+        ],
+        "stride": [
+          1
+        ],
+        "storage_offset": 8,
+        "native": false,
+        "config": "AllReduceConfig(algo=<AllReduceAlgo.ONE_SHOT_PUSH: 1>, use_graph=False, use_multicast=False)",
+        "replays": 8,
+        "exact": true
+      }
+    ]
+  },
+  "retained_attempts": [
+    {
+      "stage": "phase308",
+      "result": "rc127: stale torchrun launcher interpreter; no component ran"
+    },
+    {
+      "stage": "phase310",
+      "result": "rc1 after arithmetic: fixture expected AssertionError for missing SDK world, actual API raises RuntimeError; production source unchanged"
+    }
+  ],
+  "raw_evidence": [
+    "experiment/phase311-mnnvl-status.json",
+    "experiment/phase311-mnnvl-gpu",
+    "experiment/phase311-mnnvl-intent.json"
+  ],
+  "model_quality_verified": false,
+  "performance_verified": false,
+  "default_backend_changed": false
+}

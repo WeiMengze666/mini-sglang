@@ -215,7 +215,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         "--distributed-backend",
         choices=["auto", "torch", "pynccl", "mnnvl"],
         default=ServerArgs.distributed_backend,
-        help="Tensor-parallel communication backend. mnnvl loads an external provider factory.",
+        help="Tensor-parallel communication backend. mnnvl loads the selected provider factory.",
     )
     parser.add_argument(
         "--distributed-timeout",
@@ -227,7 +227,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         "--distributed-provider",
         type=str,
         default=ServerArgs.distributed_provider,
-        help="Python module exposing create_provider for the mnnvl backend.",
+        help="MNNVL provider module, for example minisgl.distributed.sgl (native kernels).",
     )
     parser.add_argument(
         "--attention-provider",

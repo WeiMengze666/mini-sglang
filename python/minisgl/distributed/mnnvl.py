@@ -9,7 +9,7 @@ implementations self-contained and portable.
 from __future__ import annotations
 
 import importlib
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Protocol
 
 import torch
@@ -34,13 +34,15 @@ class MNNVLAllReduceProvider:
     collectives use the same process group through ordinary Torch/NCCL calls.
     """
 
-    def __init__(self, comm, *, group=None):
+    def __init__(self, comm, *, group=None, execution_context=nullcontext):
         self.comm = comm
         self.group = group
+        self.execution_context = execution_context
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         if not getattr(self.comm, "disabled", False) and self.comm.should_custom_ar(x):
-            return self.comm.custom_all_reduce(x)
+            with self.execution_context():
+                return self.comm.custom_all_reduce(x)
         dist.all_reduce(x, group=self.group)
         return x
 
@@ -51,9 +53,11 @@ class MNNVLAllReduceProvider:
         dist.all_gather_into_tensor(output, x, group=self.group)
         return output
 
+    @contextmanager
     def capture(self):
         capture = getattr(self.comm, "capture", None)
-        return capture() if capture is not None else nullcontext()
+        with self.execution_context(), capture() if capture is not None else nullcontext():
+            yield
 
     def close(self) -> None:
         close = getattr(self.comm, "close", None)
@@ -112,20 +116,29 @@ def enable_mnnvl_distributed(provider: MNNVLProvider) -> MNNVLDistributedImpl:
     return backend
 
 
-def load_mnnvl_provider(module_name: str, **kwargs) -> MNNVLProvider:
-    """Load an external provider factory without importing a vendor runtime.
-
-    The factory receives the process groups, device and byte budget selected by
-    mini.  It may construct a vendor communicator and return any object that
-    implements :class:`MNNVLProvider`.
-    """
-
+def _provider_factory(module_name: str):
     if not module_name:
         raise ValueError("An MNNVL provider module is required for the mnnvl backend")
     module = importlib.import_module(module_name)
     factory = getattr(module, "create_provider", None)
-    if factory is None:
+    if not callable(factory):
         raise AttributeError(f"MNNVL provider module {module_name!r} lacks create_provider")
+    return module, factory
+
+
+def prepare_mnnvl_provider(module_name: str, **kwargs) -> None:
+    """Run optional local preparation before any process group is created."""
+    module, _ = _provider_factory(module_name)
+    prepare = getattr(module, "prepare", None)
+    if prepare is not None:
+        if not callable(prepare):
+            raise TypeError("MNNVL provider prepare must be callable")
+        prepare(**kwargs)
+
+
+def load_mnnvl_provider(module_name: str, **kwargs) -> MNNVLProvider:
+    """Create a provider after bootstrap and device process groups are ready."""
+    _, factory = _provider_factory(module_name)
     provider = factory(**kwargs)
     if not callable(getattr(provider, "all_reduce", None)) or not callable(
         getattr(provider, "all_gather", None)
@@ -140,4 +153,5 @@ __all__ = [
     "MNNVLProvider",
     "enable_mnnvl_distributed",
     "load_mnnvl_provider",
+    "prepare_mnnvl_provider",
 ]
