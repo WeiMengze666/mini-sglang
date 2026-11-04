@@ -17,7 +17,8 @@ FlashInfer/TRTLLM prefill and CuTe-DSL decode kernels.
 
 `HybridCache` composes MLA token pages and recurrent working/checkpoint state.
 Allocation/ownership stay in `kvcache/`; kernel adaptation is under `kernel/`.
-`DistributedInfo` describes rank groups. `ParallelLayout` derives TP, DCP and
+`DistributedInfo` describes rank groups. Optional [communication providers](distributed-backends.md)
+adapt mature kernels through `DistributedImpl`. `ParallelLayout` derives TP, DCP and
 expert groups; `ShardSpec` describes tensor slices. DCP widens MLA decode head
 ownership; KDA remains sharded across the full TP group.
 

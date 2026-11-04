@@ -71,8 +71,9 @@ listed operator contracts, rather than a full serving workload.
 
 ## Measurement boundary
 
-Run both servers on the same hardware through gpuq. Keep development and CPU
-validation remote. Record the model/tokenizer revision, both source commits and
+Run both servers on the same hardware through gpuq. During the current queue
+outage the user explicitly permits direct GPU execution; retain the same
+process ownership and serialization. Keep development and CPU validation remote. Record the model/tokenizer revision, both source commits and
 dirty diff hashes, CUDA/NCCL/Torch/FlashInfer versions, resolved startup
 configuration, and fallback warnings.
 
@@ -399,12 +400,12 @@ execution path at that observation; the raw evidence is in the
 [device interruption report](validation/kimi-k3-gpu-interruption.json). CPU work
 continues, while TP8/DCP8 quality and AIPerf acceptance require device recovery.
 
-The built-in native MNNVL transport is still incomplete. The pinned custom-AR v2
-cold P2P check consults SGLang's global world despite accepting a process group.
-Its optional skip-check setting trusts the driver's report and is not an
-independent P2P test. A standalone bootstrap integration must retain explicit
-process-group ownership and validated peer access; the existing external-provider
-adapter is not evidence that this initialization boundary has been solved.
+At the device interruption, native MNNVL bootstrap was still incomplete. The
+pinned custom-AR v2 cold P2P check consults SGLang's global world despite
+accepting a process group. The [native provider](distributed-backends.md) now
+runs the official peer probe before group creation, then constructs the native
+communicator with Mini-owned groups. Eight-device eager/graph communication
+qualification passed; whole-model quality and serving performance remain pending.
 
 ## Device recovery qualification
 
@@ -418,8 +419,8 @@ script's teardown. No native internal stack was captured, and this does not
 attribute the earlier device fault to the inference implementation.
 
 The unchanged R2 prefill component suite passed again on all ranks: 304 tests,
-zero failures, errors or skips. Its whole-model bounded/full task and graph/state
-checks are still in progress. These recovery and component results do not replace
+zero failures, errors or skips. The subsequent whole-model and graph/state
+checks completed as described below. These recovery and component results do not replace
 whole-model quality or serving acceptance. The user temporarily authorized direct
 GPU execution while GPUq is unavailable; each stage has an owned-process ledger,
 launch manifest and retained exit status. No direct run is recorded as a GPUq job.
@@ -461,3 +462,35 @@ accumulator, rounding boundary or fused path matches. Earlier immutable reports
 used `precision_contract_verified` for this narrower declared-field check; retain
 them as recorded, with that scope. The scorer, task protocol and accuracy values
 are unchanged. Forty related CPU checks passed after this reporting clarification.
+
+
+## R2 recovery qualification and fresh official baseline
+
+The complete [R2 record](validation/kimi-k3-r2-recovery.json) uses frozen source
+`743a4f53e79d9c6cf844bed7b02aecf68e965e6c`. It scores 1279/1319 versus the retained
+canonical-precision native task result of 1284/1319, with one invalid fractional
+answer and zero truncations. Thirteen valid-answer comparisons differ; the
+comparison reports declared dtype/layout equality separately from unverified
+kernel precision-path equality. No grader or failed record was changed.
+
+With 48 distinct 30-token contexts, all eight ranks pass every batch size 1–48:
+three teacher-forced eager steps and prefill plus two graph replays produce
+bitwise-equal logits and persistent convolution/KDA states. State slots are
+released after each batch. This establishes Mini graph/eager consistency for
+that workload, not independent native model-quality agreement. The bounded and
+full task runs also differ on case 423; their preceding batches/tuning context
+differ, so repeatability and rounding attribution remain open.
+
+The restored-device [official refresh](validation/kimi-k3-reference-refresh.json)
+uses the exact user-specified serve/AIPerf arguments and SDK versions. It
+completes the canonical 900-second workload with 524 completed requests, zero
+HTTP errors and three deadline cancellations. AIPerf reports 389.47 output
+tokens/s, TTFT P50/P95 589.22/4747.35 ms, ITL P50/P95 25.59/50.36 ms and 93.37%
+prompt-cache reads under its original accounting. Historical S0 remains intact.
+
+The frozen R2 Mini serving measurement is in progress. It fixes R0's MLA
+prefill precision and graph-size coverage while retaining eight cached states,
+unfused FP32 routing, PyNCCL and serial scheduling. It is an intermediate
+performance measurement. Final quality, fused-path precision, cache-policy and
+serving acceptance remain open. The native communication provider is opt-in and
+is not included in this frozen R2 measurement.
