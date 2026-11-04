@@ -131,3 +131,49 @@ def test_native_dense_page_table_alignment_does_not_change_logical_lengths(width
     assert plan.blocks[:, width:].eq(0).all()
     assert plan.local is meta.local_lengths and plan.global_ is meta.global_lengths
     torch.testing.assert_close(meta.block_table, original, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("cp,rank", [(1, 0)] + [(8, rank) for rank in range(8)])
+@pytest.mark.parametrize("global_length", [1, 7, 513, 1048575])
+@pytest.mark.parametrize("graph", [False, True])
+def test_native_scheduling_bound_is_local_and_positive(monkeypatch, cp, rank, global_length, graph):
+    calls = []
+
+    def run(**options):
+        calls.append(options)
+        q = options["query"]
+        return torch.zeros((*q.shape[:-1], 512)), torch.zeros(q.shape[:-1])
+
+    monkeypatch.setitem(
+        sys.modules, "flashinfer.decode", SimpleNamespace(trtllm_batch_decode_with_kv_cache_mla=run)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "sglang.kernels.ops.attention.utils",
+        SimpleNamespace(concat_mla_absorb_q_general=lambda q, suffix: torch.cat((q, suffix), -1)),
+    )
+    monkeypatch.setitem(sys.modules, "tvm_ffi", SimpleNamespace(use_torch_stream=nullcontext))
+    local_length = global_length // cp + int(rank < global_length % cp)
+    local_pages = (local_length + 63) // 64
+    meta = metadata([local_length], [[0] * max(local_pages, 1)], cp=cp, rank=rank)
+    meta.global_lengths.fill_(global_length)
+    meta.max_seq_len = global_length
+    capacity = (1048576 + 64 * cp - 1) // (64 * cp)
+    plan = CuTeMLADecodePlan(
+        torch.empty(1, dtype=torch.uint8),
+        **({"batch_size": 1, "max_pages": capacity} if graph else {}),
+    )
+    plan.prepare(meta, {})
+    plan.run(
+        (torch.zeros(1, 12, 512), torch.zeros(1, 12, 64)),
+        torch.empty(1, 64, 576),
+        nope_dim=128,
+        scale=192**-0.5,
+    )
+    call = calls[0]
+    assert call["max_seq_len"] == (capacity * 64 if graph else max(local_length, 1))
+    assert call["seq_lens"].tolist() == [local_length]
+    if cp > 1:
+        assert call["causal_seqlens_kv_global"].tolist() == [global_length]
+    else:
+        assert call["causal_seqlens_kv_global"] is None

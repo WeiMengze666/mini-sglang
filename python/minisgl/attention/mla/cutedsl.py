@@ -66,9 +66,13 @@ class CuTeMLADecodePlan:
                 block_tables=self.blocks,
                 seq_lens=self.local,
                 max_seq_len=(
-                    self.max_pages * metadata.page_size * metadata.cp_size
+                    self.max_pages * metadata.page_size
                     if self.graph
-                    else metadata.max_seq_len
+                    else max(
+                        1,
+                        (metadata.max_seq_len + metadata.cp_size - 1 - metadata.cp_rank)
+                        // metadata.cp_size,
+                    )
                 ),
                 bmm1_scale=scale,
                 backend="cute-dsl",

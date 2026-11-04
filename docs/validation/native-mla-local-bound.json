@@ -1,0 +1,16 @@
+{
+  "recorded_utc": "2026-11-04T23:30:39.930635+00:00",
+  "scope": "Native MLA local scheduling bound; preserve separate global causal lengths. Kernel ABI and attention controls, not whole-model quality or serving performance acceptance.",
+  "baseline_runtime": "9ec11fe416adcda59fdd532999551420c354125b",
+  "source_file_sha256": "d4afe892409dda04fd95fa00e0c860fb657051c1eee3d5db1a5e4f08198e6434",
+  "host_tests": 82,
+  "native_gpu_tests": 64,
+  "micro_control_rows": 64,
+  "micro_max_output_abs": 0.0,
+  "stable_speedup_observed": false,
+  "retained_failure": "phase347 long micro requested one excess page; guard raised ValueError. Only private benchmark ceiling corrected in phase352. Original log retained.",
+  "raw_directories": [
+    "experiment/phase347-native.log",
+    "experiment/phase352-mla-bound"
+  ]
+}
