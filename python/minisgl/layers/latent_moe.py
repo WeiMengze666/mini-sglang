@@ -10,7 +10,7 @@ from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.linear import Linear, MergedLinear, linear_bf16, linear_fp32
 from minisgl.layers.norm import TorchRMSNorm
 from minisgl.moe import TorchExpertExecutor, get_moe_backend
-from minisgl.moe.routing import RoutingPolicy
+from minisgl.moe.routing import GroupedRouting, RoutingPolicy
 from minisgl.precision import use_strict_bf16
 
 __all__ = ["GatedMLP", "GroupedRouter", "LatentMoE", "situ_and_mul"]
@@ -122,12 +122,13 @@ class GroupedRouter(BaseOP):
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         return self.route(linear_fp32(x, self.weight))
 
-    def route(self, logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def routing(self, logits: torch.Tensor) -> GroupedRouting:
+        """Keep scores available for an executor that fuses routing and quantization."""
         c = self._config
         if logits.ndim != 2 or logits.shape[1] != c.num_experts:
             raise ValueError("Router logits must have one column per expert")
-        optimized = self._backend.route(
-            logits,
+        return GroupedRouting(
+            logits=logits,
             bias=self.e_score_correction_bias,
             topk=c.num_experts_per_token,
             num_groups=c.num_expert_group,
@@ -136,36 +137,9 @@ class GroupedRouter(BaseOP):
             renormalize=c.moe_renormalize,
             scale=c.routed_scaling_factor,
         )
-        if optimized is not None:
-            return optimized
-        if c.moe_router_activation_func == "sigmoid":
-            scores = logits.sigmoid()
-        elif c.moe_router_activation_func == "softmax" and self.e_score_correction_bias is None:
-            scores = logits.softmax(-1)
-        else:
-            raise ValueError("Bias-corrected routing requires sigmoid scores")
-        choices = scores
-        if self.e_score_correction_bias is not None:
-            choices = choices + self.e_score_correction_bias.float()
-        grouped = choices.reshape(logits.shape[0], c.num_expert_group, -1)
-        group_scores = (
-            grouped.topk(2, dim=-1).values.sum(-1)
-            if self.e_score_correction_bias is not None
-            else grouped.amax(-1)
-        )
-        group_ids = group_scores.topk(c.topk_group, dim=-1, sorted=False).indices
-        mask = torch.zeros_like(group_scores, dtype=torch.bool).scatter_(1, group_ids, True)
-        mask = mask.unsqueeze(-1).expand_as(grouped).reshape_as(choices)
-        ids = (
-            choices.masked_fill(~mask, -torch.inf)
-            .topk(c.num_experts_per_token, dim=-1, sorted=False)
-            .indices
-        )
-        # Correction bias affects selection only, never the mixing weights.
-        weights = scores.gather(1, ids)
-        if c.moe_renormalize:
-            weights = weights / (weights.sum(-1, keepdim=True) + 1e-20)
-        return weights * c.routed_scaling_factor, ids
+
+    def route(self, logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.routing(logits).select(self._backend)
 
 
 class LatentMoE(BaseOP):
@@ -234,7 +208,8 @@ class LatentMoE(BaseOP):
         if not x.shape[0]:
             return x.reshape(shape)
         front = self._front.forward(x) if self._front is not None else None
-        weights, ids = self.gate.forward(x) if front is None else self.gate.route(front["router"])
+        logits = linear_fp32(x, self.gate.weight) if front is None else front["router"]
+        routing = self.gate.routing(logits)
         input_dtype = getattr(self._expert_executor, "input_dtype", None) or x.dtype
         down = self.routed_expert_down_proj
         if down is None:
@@ -248,7 +223,7 @@ class LatentMoE(BaseOP):
         else:
             routed = down.forward(x).to(input_dtype)
         # The executor owns mixture precision; normalization follows expert reduction.
-        mixed = self._expert_executor.forward(routed, weights, ids)
+        mixed = self._backend.forward_experts(self._expert_executor, routed, routing)
         strict_bf16 = x.dtype == torch.bfloat16 and use_strict_bf16()
         if strict_bf16:
             mixed = mixed.to(x.dtype)

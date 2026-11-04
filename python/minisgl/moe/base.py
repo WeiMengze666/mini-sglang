@@ -13,7 +13,6 @@ class BaseMoeBackend(ABC):
                 f"{type(self).__name__} supports activation precision {self.activation_precisions}"
             )
 
-
     def route(self, logits, **options):
         """Return optimized (weights, IDs), or defer to portable routing."""
         return None
@@ -22,6 +21,15 @@ class BaseMoeBackend(ABC):
         from . import create_expert_executor
 
         return create_expert_executor(experts, **options)
+
+    def forward_experts(self, executor, x, routing):
+        """Let an executor fuse routing with compute, then use ordinary routes."""
+        fused = getattr(executor, "try_forward_routed", None)
+        output = fused(x, routing) if fused is not None else None
+        if output is not None:
+            return output
+        weights, ids = routing.select(self)
+        return executor.forward(x, weights, ids)
 
     def reduce_outputs(self, parallel, *outputs):
         """Pack expert/shared partials for the selected communication implementation."""

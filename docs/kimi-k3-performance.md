@@ -488,9 +488,32 @@ HTTP errors and three deadline cancellations. AIPerf reports 389.47 output
 tokens/s, TTFT P50/P95 589.22/4747.35 ms, ITL P50/P95 25.59/50.36 ms and 93.37%
 prompt-cache reads under its original accounting. Historical S0 remains intact.
 
-The frozen R2 Mini serving measurement is in progress. It fixes R0's MLA
+The first restored-device R2 Mini serving attempt failed during its first
+warmup with a CUDA OOM in cached-prefix DCP all-gather. The GPU workers exited
+while the HTTP frontend waited; the owned tree was stopped and raw evidence
+retained. No profiling result was produced. Frozen R2 fixes R0's MLA
 prefill precision and graph-size coverage while retaining eight cached states,
 unfused FP32 routing, PyNCCL and serial scheduling. It is an intermediate
 performance measurement. Final quality, fused-path precision, cache-policy and
 serving acceptance remain open. The native communication provider is opt-in and
 is not included in this frozen R2 measurement.
+
+
+## Native MoE preparation candidate
+
+The [component-qualified candidate](validation/native-moe-preparation.json)
+keeps raw router scores and model-level grouping/scoring choices in
+`moe/routing.py`. `BaseMoeBackend.forward_experts` lets a local expert executor
+attempt combined routing and activation preparation before materializing
+ordinary routes. The FlashInfer executor adapts the official fused router/MXFP8
+kernel and forwards its packed BF16 routing weights, FP8 activations and UE8M0
+scales directly to the mature expert kernel. Coverage comes from the SDK and
+model-independent semantic checks. Prepared tensors have explicit ownership;
+Mini introduces no global handoff.
+
+Uncovered inputs preserve standalone routing, quantization and supplied routing
+precision. Eight GPU ranks pass 352 component checks, including native runner
+comparisons, fused/unfused preparation, packed-weight rounding, strided inputs
+and changing scores/activations across graph replays. Full CPU regression passes
+918 tests with 695 skips. This candidate has no full-model quality or serving
+acceptance yet and was not used in the frozen R2 serving attempt.

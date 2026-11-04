@@ -1,0 +1,125 @@
+{
+  "scope": "Generic raw-routing interface and mature native fused preparation; component qualification only",
+  "recorded_utc": "2026-11-04T18:36:23.296443+00:00",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "source": {
+    "base_commit": "86fb359eca7b3c0683404962397c4f6542a269d3",
+    "diff_sha256": "e2e9e91728e39a5271015c96b911cdf7b2ec888ab3ae89f0572328d51dd88011",
+    "files": {
+      "python/minisgl/layers/latent_moe.py": "fa91b43e6407fe74b3a639bd543b53b1356920a51bb3c714b16a949bdfa53ce2",
+      "python/minisgl/moe/base.py": "d861269fe346fa5a50cf3094a1eca15f63e0ddc6127dbeb23199a3fb59dd7572",
+      "python/minisgl/moe/flashinfer.py": "1d60916b83ae1fa05aaabe18ddca1aa7dc9b051aaa1a6a8a84a8d84209bdcd72",
+      "python/minisgl/moe/routing.py": "535363d7994b584d7b8061b3d2d692940cf9ee86e90edcc03e9f5d1501e5eb77",
+      "python/minisgl/moe/sgl.py": "d07a93ee7f2b290201d1325d69e9d6468dce0ee100e08dd04eef39403c639cfc",
+      "tests/core/test_flashinfer_route_dtype.py": "10f71f7e009441b6935be4f3095f717f5f60eec22326416fcf027c92de5636ea",
+      "tests/models/test_native_flashinfer_experts.py": "ac7c5a9d8037c01255b219431d40dffb7440f6e0b835d7b1ea535ddb35326af2"
+    },
+    "scope": "native fused route+MXFP8 preparation and expert interface, not model/performance"
+  },
+  "cpu": {
+    "passed": 918,
+    "skipped": 695,
+    "manual_cuda_directory_excluded": true,
+    "cuda_initialized": false,
+    "log": "experiment/phase315-full-cpu.log"
+  },
+  "gpu": {
+    "ranks": [
+      {
+        "rank": "rank-0",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "rank": "rank-1",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "rank": "rank-2",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "rank": "rank-3",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "rank": "rank-4",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "rank": "rank-5",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "rank": "rank-6",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      {
+        "rank": "rank-7",
+        "tests": 44,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      }
+    ],
+    "total_passed": 352,
+    "native_unpacked_expert_cases": 192,
+    "native_fused_expert_cases": 96,
+    "fused_vs_unfused_preparation_cases": 16,
+    "graph_tests": 48,
+    "graph_replays": 144,
+    "native_runner_outputs_bitwise_equal": true,
+    "quantized_activations_and_scales_bitwise_equal_to_native_unfused": true,
+    "packed_weights_equal_bf16_rounded_native_weights": true,
+    "raw_input_dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "unpacked_route_dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "input_layouts": [
+      "dense",
+      "strided"
+    ],
+    "decode_tokens": [
+      1,
+      7,
+      48
+    ]
+  },
+  "integration": {
+    "routing": "GroupedRouting preserves raw scores and model semantics. BaseMoeBackend lets an executor attempt combined routing/compute before resolving ordinary routes.",
+    "coverage": "Semantic guards plus native covered()/available(); no model name, expert-count, hidden-width or token-limit constants in Mini adapter.",
+    "ownership": "Prepared tensors flow explicitly into the FlashInfer executor; no global handoff in Mini.",
+    "fallback": "Uncovered inputs retain mature standalone routing, MXFP8 quantization and caller FP32/BF16 route dtype."
+  },
+  "raw_evidence": [
+    "experiment/phase314-moe-status.json",
+    "experiment/phase314-moe-components",
+    "experiment/phase314-manifest.json"
+  ],
+  "whole_model_quality_verified": false,
+  "performance_verified": false
+}

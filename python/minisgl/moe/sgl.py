@@ -23,3 +23,34 @@ def grouped_topk(logits, *, bias, topk, num_groups, topk_groups, scoring_func, r
             routed_scaling_factor=scale,
             apply_routed_scaling_factor_on_output=scale != 1.0,
         )
+
+
+def fused_route_quant(x, routing):
+    """Try the native combined router/MXFP8 preparation for covered semantics."""
+    if (
+        not x.is_cuda
+        or not routing.logits.is_cuda
+        or routing.bias is None
+        or routing.scoring_func != "sigmoid"
+        or routing.num_groups != 1
+        or routing.topk_groups != 1
+    ):
+        return None
+    from sglang.kernels.ops.moe import moe_route_quant_fused as native
+
+    if not native.covered(routing.logits, routing.bias, routing.topk, x):
+        return None
+    if not native.available():
+        return None
+    from tvm_ffi import use_torch_stream
+
+    with use_torch_stream():
+        return native.route_quant_fused(
+            routing.logits,
+            routing.bias,
+            x,
+            routing.topk,
+            routing.renormalize,
+            routing.scale,
+            routing.scale != 1.0,
+        )

@@ -157,7 +157,7 @@ class FlashInferMXFP4Experts:
         # Preserve projection accumulators until MXFP8 quantization.
         return torch.float32 if self._precision == "mxfp8" else torch.bfloat16
 
-    def forward(self, x: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+    def _validate_input(self, x: torch.Tensor) -> None:
         if x.ndim != 2 or x.shape[-1] != self._hidden:
             raise ValueError("FlashInfer FP4 expects [tokens, hidden] input")
         allowed = (
@@ -165,15 +165,28 @@ class FlashInferMXFP4Experts:
         )
         if x.dtype not in allowed or not x.is_cuda:
             raise ValueError(f"FlashInfer FP4 requires CUDA inputs with dtype in {allowed}")
+
+    def try_forward_routed(self, x, routing):
+        if self._precision != "mxfp8":
+            return None
+        self._validate_input(x)
+        from .sgl import fused_route_quant
+
+        prepared = fused_route_quant(x, routing)
+        if prepared is None:
+            return None
+        _, _, packed_routes, x_input, x_scale = prepared
+        x_scale = x_scale.view(torch.float8_e4m3fn).reshape(x.shape[0], -1)
+        return self._run(x_input, x_scale, packed_routes, routing.topk)
+
+    def forward(self, x: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+        self._validate_input(x)
         if ids.ndim != 2 or weights.shape != ids.shape:
             raise ValueError(
                 "FlashInfer route IDs and weights must have the same [tokens, topk] shape"
             )
         if weights.dtype not in (torch.bfloat16, torch.float32):
             raise ValueError("FlashInfer route weights must be bfloat16 or float32")
-        from flashinfer import trtllm_fp4_block_scale_routed_moe
-        from flashinfer.fused_moe.core import ActivationType
-        from flashinfer.tllm_enums import RoutingMethodType, SfLayout
 
         if self._precision == "mxfp8":
             from sglang.kernels.ops.quantization.per_token_group_quant import per_token_group_quant
@@ -182,10 +195,24 @@ class FlashInferMXFP4Experts:
             x_scale = x_scale.view(torch.float8_e4m3fn).reshape(x.shape[0], -1)
         else:
             x_input, x_scale = x, None
-        output = torch.empty((x.shape[0], self._hidden), dtype=torch.bfloat16, device=x.device)
+        return self._run(
+            x_input,
+            x_scale,
+            (ids.to(torch.int32).contiguous(), weights.contiguous()),
+            ids.shape[1],
+        )
+
+    def _run(self, x_input, x_scale, routes, topk):
+        from flashinfer import trtllm_fp4_block_scale_routed_moe
+        from flashinfer.fused_moe.core import ActivationType
+        from flashinfer.tllm_enums import RoutingMethodType, SfLayout
+
+        output = torch.empty(
+            (x_input.shape[0], self._hidden), dtype=torch.bfloat16, device=x_input.device
+        )
         trtllm_fp4_block_scale_routed_moe(
             # The SDK consumes this dtype directly, including in finalization.
-            topk_ids=(ids.to(torch.int32).contiguous(), weights.contiguous()),
+            topk_ids=routes,
             routing_bias=None,
             hidden_states=x_input,
             hidden_states_scale=x_scale,
@@ -203,7 +230,7 @@ class FlashInferMXFP4Experts:
             output1_scale_gate_scalar=None,
             output2_scale_scalar=None,
             num_experts=self._global_experts,
-            top_k=ids.shape[1],
+            top_k=topk,
             n_group=None,
             topk_group=None,
             intermediate_size=self._intermediate,
@@ -216,7 +243,7 @@ class FlashInferMXFP4Experts:
                 if self._activation == "situ"
                 else ActivationType.Swiglu.value
             ),
-            tune_max_num_tokens=self._tune_tokens(x.shape[0]),
+            tune_max_num_tokens=self._tune_tokens(x_input.shape[0]),
             output=output,
             do_finalize=True,
             enable_pdl=True,
