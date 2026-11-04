@@ -56,7 +56,12 @@ def compare(left, right, *, expected_examples=None):
         "left": str(left),
         "right": str(right),
         "examples": len(lr),
-        "precision_contract_verified": contracts[0] is not None,
+        "declared_execution_contract_matches": contracts[0] is not None,
+        "kernel_precision_path_verified": None,
+        "contract_scope": (
+            "Compares declared dtypes and layout only; kernel input/output rounding, "
+            "accumulators and fused-path coverage require separate runtime evidence."
+        ),
         "execution_contract": contracts[0],
         "cases_sha256": ls["cases_sha256"],
         "left_accuracy": ls["accuracy"],

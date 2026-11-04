@@ -117,11 +117,11 @@ def test_different_precision_or_state_layout_cannot_claim_paired_quality(tmp_pat
         compare(left, right)
 
 
-def test_precision_verified_requires_both_runs_to_declare_the_same_contract(tmp_path):
+def test_declared_contract_match_does_not_verify_kernel_precision_path(tmp_path):
     left, right = tmp_path / "left", tmp_path / "right"
     write_run(left, ["1"])
     write_run(right, ["1"])
-    assert not compare(left, right)["precision_contract_verified"]
+    assert not compare(left, right)["declared_execution_contract_matches"]
     contract = {
         "model_dtype": "bfloat16",
         "recurrent_state_dtype": "float32",
@@ -143,7 +143,8 @@ def test_precision_verified_requires_both_runs_to_declare_the_same_contract(tmp_
             with pytest.raises(ValueError, match="precision or parallel"):
                 compare(left, right)
     result = compare(left, right)
-    assert result["precision_contract_verified"]
+    assert result["declared_execution_contract_matches"]
+    assert result["kernel_precision_path_verified"] is None
     assert result["execution_contract"] == contract
 
 

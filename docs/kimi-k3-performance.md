@@ -451,3 +451,13 @@ cancellation counts, token accounting, workload differences, missing metadata an
 duplicate exports. The helper also reproduced the original S0/R0 throughput and
 completion/cancellation counts from their unmodified exports. This reporting
 validation is separate from the pending new serving measurements.
+
+## Scope of task contract comparison
+
+The task comparator now reports `declared_execution_contract_matches` and leaves
+`kernel_precision_path_verified` unknown. Matching declared model/MoE/KV/state
+dtypes, parallel layout and page size does not prove that every kernel input,
+accumulator, rounding boundary or fused path matches. Earlier immutable reports
+used `precision_contract_verified` for this narrower declared-field check; retain
+them as recorded, with that scope. The scorer, task protocol and accuracy values
+are unchanged. Forty related CPU checks passed after this reporting clarification.
