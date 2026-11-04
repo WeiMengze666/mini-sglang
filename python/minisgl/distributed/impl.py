@@ -140,6 +140,19 @@ class FallbackDistributedImpl(DistributedImpl):
 class TorchDistributedImpl(DistributedImpl):
     group: dist.ProcessGroup | None = None
 
+    def warmup(self, device: torch.device) -> None:
+        """Allocate NCCL collective resources before measuring cache capacity."""
+        if dist.get_backend(self.group) != dist.Backend.NCCL:
+            return
+        size = dist.get_world_size(self.group)
+        if size == 1:
+            return
+        probe = torch.zeros((size, 1), dtype=torch.float32, device=device)
+        self.all_reduce(probe)
+        self.all_gather(probe)
+        self.all_to_all(probe)
+        torch.cuda.synchronize(device)
+
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         tp_size = dist.get_world_size(self.group)
         if tp_size == 1:

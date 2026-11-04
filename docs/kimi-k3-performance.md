@@ -517,3 +517,22 @@ comparisons, fused/unfused preparation, packed-weight rounding, strided inputs
 and changing scores/activations across graph replays. Full CPU regression passes
 918 tests with 695 skips. This candidate has no full-model quality or serving
 acceptance yet and was not used in the frozen R2 serving attempt.
+
+## Long-prefill allocation failure and initialization fix
+
+The restored R2 serving failure was reproduced with 65,537 synthetic input IDs,
+32K chunks, all graph sizes 1–48 and the original dtype/memory settings. After
+the first chunk, rank 0 had about 5.5 MiB driver-free memory while Torch retained
+about 20 GiB of unused reserved storage. The next chunk's first cached-prefix
+DCP all-gather failed allocating NCCL resources. The
+[controlled record](validation/native-collective-bootstrap.json) retains all
+rank outcomes and allocator/shape/stride metadata.
+
+Initializing DCP collectives before weights and cache-budget measurement lets
+all eight ranks complete the same three chunks and clean up. No hot-path cache
+purge, precision change, chunk-size reduction or capacity override was used.
+The production fix prepares Torch/NCCL resources during communication startup;
+the builtin native provider also prepares its NCCL fallback. Updated full-model,
+cache-lifecycle and serving validation remain pending. Worker exits now wake
+pending frontend requests and make readiness/new requests return 503, avoiding
+the HTTP wait observed in the failed serving attempt.

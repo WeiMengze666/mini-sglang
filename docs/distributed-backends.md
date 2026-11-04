@@ -44,3 +44,19 @@ separates host lifecycle tests, real eager/graph collectives and pending model
 validation. It establishes neither multi-node qualification nor a performance
 improvement. Whole-model quality, cache lifecycle and a controlled serving
 comparison remain necessary before enabling it for a performance candidate.
+
+## Collective resource lifetime
+
+Torch/NCCL groups allocate collective resources before the engine measures
+memory for cache capacity. Context groups are prepared only on member ranks;
+Torch tensor groups and the native provider's NCCL fallback use the same helper.
+This keeps late communicator allocation out of the memory pressure created by a
+large prefill. It changes neither model precision nor the requested cache-memory
+fraction. The [controlled qualification](validation/native-collective-bootstrap.json)
+records the frozen R2 cold failure, successful 65,537-token warm control on all
+eight GPUs, repeated native-provider graph checks, and CPU/Gloo coverage.
+
+The frontend retains owned worker handles for its lifetime. If a scheduler or
+tokenizer exits after readiness, it finishes pending responses with an error and
+rejects new requests/readiness checks with HTTP 503. Backend teardown remains
+scoped to those owned processes on normal shutdown or frontend failure.

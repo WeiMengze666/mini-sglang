@@ -173,6 +173,11 @@ def test_native_factory_delegates_collectives_capture_and_close(native_host, mon
         def close(self):
             events.append("close")
 
+    monkeypatch.setattr(
+        sgl.TorchDistributedImpl,
+        "warmup",
+        lambda self, device: events.append("fallback-warmup"),
+    )
     original = importlib.import_module
 
     def vendor(name, *a, **kw):
@@ -221,6 +226,7 @@ def test_native_factory_delegates_collectives_capture_and_close(native_host, mon
         pass
     provider.close()
     assert events == [
+        "fallback-warmup",
         "stream-enter",
         "stream-exit",
         "stream-enter",

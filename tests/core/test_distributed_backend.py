@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 from minisgl.distributed import FallbackDistributedImpl
 from minisgl.distributed.mnnvl import (
@@ -157,4 +158,36 @@ def test_unsupported_residual_fusion_uses_capable_reduction_then_epilogue():
     )
     torch.testing.assert_close(
         primary.all_reduce_residual(x, residual, norm=torch.square), expected
+    )
+
+
+@pytest.mark.parametrize("backend,size", [("nccl", 4), ("nccl", 1), ("gloo", 4)])
+def test_torch_collectives_are_prepared_before_cache_budget(monkeypatch, backend, size):
+    from minisgl.distributed.impl import TorchDistributedImpl
+
+    group = object()
+    implementation = TorchDistributedImpl(group)
+    monkeypatch.setattr(torch.distributed, "get_backend", lambda g: backend)
+    monkeypatch.setattr(torch.distributed, "get_world_size", lambda g: size)
+    events = []
+    zeros = torch.zeros
+
+    def allocate(shape, *, dtype, device):
+        assert shape == (size, 1) and dtype == torch.float32 and device.type == "cuda"
+        events.append("allocate")
+        return zeros(shape, dtype=dtype)
+
+    monkeypatch.setattr(torch, "zeros", allocate)
+    monkeypatch.setattr(torch.cuda, "synchronize", lambda device: events.append("synchronize"))
+    for operation in ["all_reduce", "all_gather", "all_to_all"]:
+        monkeypatch.setattr(
+            implementation,
+            operation,
+            lambda tensor, operation=operation: events.append(operation) or tensor,
+        )
+    implementation.warmup(torch.device("cuda:0"))
+    assert events == (
+        ["allocate", "all_reduce", "all_gather", "all_to_all", "synchronize"]
+        if backend == "nccl" and size > 1
+        else []
     )

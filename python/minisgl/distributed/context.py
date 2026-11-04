@@ -7,7 +7,7 @@ from .impl import DistributedCommunicator, TorchDistributedImpl
 from .layout import get_parallel_layout
 
 
-def init_context_parallel(*, backend=None):
+def init_context_parallel(*, backend=None, device: torch.device | None = None):
     """Every TP rank creates subgroups in the same order, once at startup."""
     layout = get_parallel_layout()
     previous = DistributedCommunicator.groups.pop("context", None)
@@ -19,7 +19,10 @@ def init_context_parallel(*, backend=None):
         ranks = list(range(start, start + layout.dcp_size))
         group = dist.new_group(ranks, backend=backend)
         if layout.tensor.rank in ranks:
-            DistributedCommunicator.enable(TorchDistributedImpl(group), group="context")
+            implementation = TorchDistributedImpl(group)
+            if device is not None:
+                implementation.warmup(device)
+            DistributedCommunicator.enable(implementation, group="context")
 
 
 def merge_attention(output, lse):

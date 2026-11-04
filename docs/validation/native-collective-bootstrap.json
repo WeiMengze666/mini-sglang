@@ -1,0 +1,1751 @@
+{
+  "scope": "Collective initialization before cache budgeting and generic worker failure propagation; final serving acceptance pending",
+  "recorded_utc": "2026-11-04T18:58:47.535022+00:00",
+  "execution": "direct GPU temporarily authorized while gpuq unavailable",
+  "frozen_model_commit": "743a4f53e79d9c6cf844bed7b02aecf68e965e6c",
+  "cold": {
+    "passed_ranks": 0,
+    "failed_ranks": 8,
+    "rank0": {
+      "rank": 0,
+      "events": [
+        {
+          "utc": "2026-11-04T18:39:53.798659+00:00",
+          "kind": "ready",
+          "rank": 0,
+          "num_pages": 54807,
+          "memory": {
+            "free": 21373648896,
+            "allocated": 257494764544,
+            "reserved": 257836449792,
+            "peak_allocated": 257494984192,
+            "inactive_split": 176010240
+          },
+          "synthetic_input_tokens": 65537
+        },
+        {
+          "utc": "2026-11-04T18:39:53.802821+00:00",
+          "kind": "before_forward",
+          "rank": 0,
+          "phase": "prefill",
+          "batch": 1,
+          "cached": [
+            0
+          ],
+          "extend": [
+            32768
+          ],
+          "memory": {
+            "free": 21373648896,
+            "allocated": 257495684096,
+            "reserved": 257836449792,
+            "peak_allocated": 257495684096,
+            "inactive_split": 175090688
+          }
+        },
+        {
+          "utc": "2026-11-04T18:40:06.114574+00:00",
+          "kind": "after_forward",
+          "rank": 0,
+          "memory": {
+            "free": 5767168,
+            "allocated": 257629908480,
+            "reserved": 278797484032,
+            "peak_allocated": 269683401728,
+            "inactive_split": 242192896
+          }
+        },
+        {
+          "utc": "2026-11-04T18:40:06.116006+00:00",
+          "kind": "before_forward",
+          "rank": 0,
+          "phase": "prefill",
+          "batch": 1,
+          "cached": [
+            32768
+          ],
+          "extend": [
+            32768
+          ],
+          "memory": {
+            "free": 5767168,
+            "allocated": 257659177472,
+            "reserved": 278797484032,
+            "peak_allocated": 269683401728,
+            "inactive_split": 210826752
+          }
+        },
+        {
+          "utc": "2026-11-04T18:40:06.153043+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 5767168,
+            "allocated": 260360505856,
+            "reserved": 278797484032,
+            "peak_allocated": 269683401728,
+            "inactive_split": 4004378112
+          }
+        },
+        {
+          "utc": "2026-11-04T18:40:06.156264+00:00",
+          "kind": "all_gather_error",
+          "rank": 0,
+          "memory": {
+            "free": 5767168,
+            "allocated": 260398254592,
+            "reserved": 278797484032,
+            "peak_allocated": 269683401728,
+            "inactive_split": 3966629376
+          }
+        },
+        {
+          "utc": "2026-11-04T18:40:08.902922+00:00",
+          "kind": "cleanup_complete",
+          "rank": 0
+        }
+      ],
+      "passed": false,
+      "cleaned": true
+    },
+    "raw": "experiment/phase316-cold"
+  },
+  "warm_control": {
+    "passed_ranks": 8,
+    "cleaned_ranks": 8,
+    "rank0": {
+      "rank": 0,
+      "events": [
+        {
+          "utc": "2026-11-04T18:43:02.938538+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8,
+            1
+          ],
+          "stride": [
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "requests": [],
+          "memory": {
+            "free": 285713367040,
+            "allocated": 512,
+            "reserved": 2097152,
+            "peak_allocated": 512,
+            "inactive_split": 2096640
+          }
+        },
+        {
+          "utc": "2026-11-04T18:43:10.096137+00:00",
+          "kind": "communication_warmed",
+          "rank": 0,
+          "memory": {
+            "free": 282005602304,
+            "allocated": 512,
+            "reserved": 2097152,
+            "peak_allocated": 1024,
+            "inactive_split": 2096640
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:02.920095+00:00",
+          "kind": "ready",
+          "rank": 0,
+          "num_pages": 51035,
+          "memory": {
+            "free": 24288624640,
+            "allocated": 254157231616,
+            "reserved": 254518755328,
+            "peak_allocated": 254157435904,
+            "inactive_split": 195848704
+          },
+          "synthetic_input_tokens": 65537
+        },
+        {
+          "utc": "2026-11-04T18:47:02.924387+00:00",
+          "kind": "before_forward",
+          "rank": 0,
+          "phase": "prefill",
+          "batch": 1,
+          "cached": [
+            0
+          ],
+          "extend": [
+            32768
+          ],
+          "memory": {
+            "free": 24288624640,
+            "allocated": 254158151168,
+            "reserved": 254518755328,
+            "peak_allocated": 254158151168,
+            "inactive_split": 194929152
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.396710+00:00",
+          "kind": "after_forward",
+          "rank": 0,
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254292375552,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 262031360
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.398307+00:00",
+          "kind": "before_forward",
+          "rank": 0,
+          "phase": "prefill",
+          "batch": 1,
+          "cached": [
+            32768
+          ],
+          "extend": [
+            32768
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254321997312,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 230312448
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.434810+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257022342656,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.506688+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257022342656,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.572534+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257022342656,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.642784+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257492104704,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.714489+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257492104704,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.785558+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257492104704,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.857043+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257961866752,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4494608896
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:10.930515+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257961866752,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4494608896
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.003901+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 257961866752,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4494608896
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.077341+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 258431628800,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.152208+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 258431628800,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.226391+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 258431628800,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.301296+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 258901390848,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4494608896
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.378639+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 258901390848,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4494608896
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.456257+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 258901390848,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4494608896
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.534210+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 259371152896,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.612794+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 259371152896,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.691111+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 259371152896,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 4024846848
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.769758+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 259840914944,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 3555084800
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.849386+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 259840914944,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 3555084800
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:11.928783+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 259840914944,
+            "reserved": 275479789568,
+            "peak_allocated": 266345832960,
+            "inactive_split": 3555084800
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:12.009183+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 260310676992,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 8070253056
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:12.090082+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 260310676992,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 8070253056
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:12.110179+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            4096,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 32768,
+              "extend": 32768
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 260310676992,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 3085322752
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:12.133415+00:00",
+          "kind": "after_forward",
+          "rank": 0,
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254321997824,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 230311936
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:13.979266+00:00",
+          "kind": "before_forward",
+          "rank": 0,
+          "phase": "prefill",
+          "batch": 1,
+          "cached": [
+            65536
+          ],
+          "extend": [
+            1
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254350252544,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 202057216
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.031531+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373928448,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178381312
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.040399+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373928448,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178381312
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.049056+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373928448,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178381312
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.057474+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373942784,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178366976
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.065748+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373942784,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178366976
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.074004+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373942784,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178366976
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.083600+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373957120,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178352640
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.091665+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373957120,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178352640
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.099960+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373957120,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178352640
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.111979+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373971456,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178338304
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.120006+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373971456,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178338304
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.128024+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373971456,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178338304
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.136024+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373985792,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178323968
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.144163+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373985792,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178323968
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.152363+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254373985792,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178323968
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.160546+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374000128,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178309632
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.168713+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374000128,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178309632
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.176877+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374000128,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178309632
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.184984+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374014464,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178295296
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.193136+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374014464,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178295296
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.201296+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374014464,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178295296
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.209459+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374028800,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178280960
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.217638+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374028800,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178280960
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.221304+00:00",
+          "kind": "before_all_gather",
+          "rank": 0,
+          "shape": [
+            8192,
+            576
+          ],
+          "stride": [
+            576,
+            1
+          ],
+          "dtype": "torch.bfloat16",
+          "requests": [
+            {
+              "uid": 100,
+              "table": 47,
+              "cached": 65536,
+              "extend": 1
+            }
+          ],
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254374028800,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 178280960
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.224613+00:00",
+          "kind": "after_forward",
+          "rank": 0,
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254350253568,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 202056192
+          }
+        },
+        {
+          "utc": "2026-11-04T18:47:14.225305+00:00",
+          "kind": "passed",
+          "rank": 0,
+          "memory": {
+            "free": 2920742912,
+            "allocated": 254350247936,
+            "reserved": 275479789568,
+            "peak_allocated": 266375488000,
+            "inactive_split": 202061824
+          },
+          "steps": 3
+        },
+        {
+          "utc": "2026-11-04T18:47:16.812216+00:00",
+          "kind": "cleanup_complete",
+          "rank": 0
+        }
+      ],
+      "passed": true,
+      "cleaned": true
+    },
+    "raw": "experiment/phase316-warm",
+    "scope": "Private startup wrapper initializes DCP all-gather and all-to-all before weights/cache budgeting. Frozen model and kernels unchanged. Production Torch warmup additionally initializes all-reduce."
+  },
+  "contract": {
+    "tp": 8,
+    "dcp": 8,
+    "ep": 1,
+    "page_size": 64,
+    "max_context": 1048576,
+    "prefill_chunk": 32768,
+    "max_running_requests": 48,
+    "cached_states": 8,
+    "graphs": "all 1..48",
+    "input_tokens": 65537,
+    "kv_dtype": "fp8_e4m3",
+    "kda_and_conv_dtype": "bfloat16",
+    "moe_activations": "mxfp8",
+    "memory_fraction": 0.9
+  },
+  "cpu_gloo": {
+    "passed": 931,
+    "skipped": 691,
+    "returncode": 0,
+    "log": "experiment/phase321-full-cpu.log",
+    "scope": "Full CPU/Gloo suite, manual CUDA directory excluded; includes real runtime CPU worker exit, pending request completion, 503 readiness and lifecycle cleanup."
+  },
+  "native_mnnvl_repeat": {
+    "ranks": 8,
+    "exact": true,
+    "graph_replays": 384,
+    "cleanup_complete": true,
+    "sglang_world_uninitialized": true,
+    "source_sha256": {
+      "python/minisgl/distributed/impl.py": "6f595079da596a419fa681ffa302c70ecdd5e8f117dc04b4dacd01c7fa95f853",
+      "python/minisgl/distributed/sgl.py": "37f221e8fbd744d6b6de04066a62936f5311c1e3b425824d03df129a9fe1f6b4",
+      "python/minisgl/distributed/mnnvl.py": "71c4c83d0d1bbbacab106a21cbde769aee85394bacde6881f35d92abdf6672a6",
+      "experiment/phase320-mnnvl-gpu.py": "22bc6d9df5f72d77af961ce9f9b4afaaf676dabc8362e6adbd262aa63a09094c"
+    },
+    "raw": "experiment/phase320-mnnvl-gpu"
+  },
+  "production_source_sha256": {
+    "python/minisgl/distributed/impl.py": "6f595079da596a419fa681ffa302c70ecdd5e8f117dc04b4dacd01c7fa95f853",
+    "python/minisgl/distributed/context.py": "27048f8b37a51599fbed7b6180ba12fefd0cd5eac4600209d39eeedbba7d01a1",
+    "python/minisgl/distributed/sgl.py": "37f221e8fbd744d6b6de04066a62936f5311c1e3b425824d03df129a9fe1f6b4",
+    "python/minisgl/engine/engine.py": "7d3638b9866a195de55b28dd38f2295e84c64fbdf9219c83fa1b65042ff326cd",
+    "python/minisgl/server/api_server.py": "82e20fb19c45e79952a9994224f81db286870c83b76b4845fb80229edc87fb00",
+    "python/minisgl/server/launch.py": "739dbee57b5fe6180275d4dc60728403ce7c4ac739d01d8c8f17ac77904b4920"
+  },
+  "serving_failure": {
+    "stage": "phase300-mini first warmup",
+    "profiling_started": false,
+    "valid_performance_result": false,
+    "oom_location": "cached-prefix DCP all-gather",
+    "raw": "experiment/phase300-mini-aiperf",
+    "owned_stop_reason": "experiment/phase300-mini-stop-reason.json"
+  },
+  "remaining": "Production long-prefill/cache lifecycle, updated full-model quality and canonical serving measurements remain pending."
+}

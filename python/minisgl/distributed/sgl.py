@@ -12,6 +12,7 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 
+from .impl import TorchDistributedImpl
 from .info import DistributedInfo
 from .mnnvl import MNNVLAllReduceProvider
 
@@ -74,6 +75,7 @@ def create_provider(*, tp_info, cpu_group, device_group, device, max_bytes):
             raise ValueError("MNNVL process group differs from tensor-parallel coordinates")
     if dist.get_process_group_ranks(cpu_group) != dist.get_process_group_ranks(device_group):
         raise ValueError("MNNVL bootstrap and device groups must have the same ordered ranks")
+    TorchDistributedImpl(device_group).warmup(device)
     native = importlib.import_module(
         "sglang.srt.distributed.device_communicators.custom_all_reduce_v2"
     )

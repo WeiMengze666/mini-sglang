@@ -19,6 +19,7 @@ from minisgl.distributed import (
     set_tp_info,
 )
 from minisgl.distributed.context import init_context_parallel
+from minisgl.distributed.impl import TorchDistributedImpl
 from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.layout import ParallelLayout, configure_parallel
 from minisgl.kvcache import create_kvcache_pool
@@ -61,7 +62,7 @@ class Engine:
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
-        init_context_parallel(backend="nccl")
+        init_context_parallel(backend="nccl", device=self.device)
         if config.model_config.is_moe:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
             self.moe_backend.validate_precision(config.mxfp4_activation_precision)
@@ -224,6 +225,7 @@ class Engine:
             )
             tp_cpu_group = torch.distributed.new_group(backend="gloo")
             assert tp_cpu_group is not None
+            TorchDistributedImpl().warmup(self.device)
             return tp_cpu_group
         raise ValueError(f"Unsupported distributed backend: {backend}")
 

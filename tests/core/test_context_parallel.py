@@ -91,3 +91,35 @@ def test_token_gather_rejects_inconsistent_host_lengths(monkeypatch, total, loca
     cp.group = type("Group", (), {"rank": 0, "size": 4})()
     with pytest.raises(ValueError, match="cyclic partition"):
         cp.gather_interleaved(torch.empty(local_rows, 3), total)
+
+
+def test_context_bootstrap_prepares_only_member_group_before_return(monkeypatch):
+    from types import SimpleNamespace
+
+    import minisgl.distributed.context as context
+    from minisgl.distributed.info import DistributedInfo
+
+    events = []
+    monkeypatch.setattr(
+        context,
+        "get_parallel_layout",
+        lambda: SimpleNamespace(
+            tensor=DistributedInfo(1, 4),
+            dcp_size=2,
+        ),
+    )
+    monkeypatch.setattr(context.DistributedCommunicator, "groups", {})
+
+    def group(ranks, *, backend):
+        events.append(("group", tuple(ranks)))
+        return tuple(ranks)
+
+    def prepare(self, device):
+        assert self.group == (0, 1) and device == torch.device("cuda:1")
+        events.append(("warmup", self.group))
+
+    monkeypatch.setattr(context.dist, "new_group", group)
+    monkeypatch.setattr(context.TorchDistributedImpl, "warmup", prepare)
+    context.init_context_parallel(backend="nccl", device=torch.device("cuda:1"))
+    assert events == [("group", (0, 1)), ("warmup", (0, 1)), ("group", (2, 3))]
+    assert context.DistributedCommunicator.groups["context"].group == (0, 1)

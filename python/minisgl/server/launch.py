@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import sys
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from queue import Empty
 from typing import TYPE_CHECKING
@@ -75,7 +75,8 @@ def launch_server(run_shell: bool = False) -> None:
     server_args, run_shell = parse_args(sys.argv[1:], run_shell)
     logger = init_logger(__name__, "initializer")
 
-    def start_subprocess() -> None:
+    @contextmanager
+    def start_subprocess():
         import multiprocessing as mp
 
         from minisgl.tokenizer import tokenize_worker
@@ -142,7 +143,7 @@ def launch_server(run_shell: bool = False) -> None:
             for message in _wait_for_workers(ack_queue, workers, num_tokenizers + 2):
                 logger.info(message)
             ack_queue.close()
-            startup.pop_all()
+            yield workers
 
     run_api_server(server_args, start_subprocess, run_shell=run_shell)
 

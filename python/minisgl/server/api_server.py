@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from contextlib import aclosing, asynccontextmanager
+from contextlib import AbstractContextManager, aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Callable, Dict, List, Literal, Tuple
@@ -142,6 +142,9 @@ class FrontendManager:
     completed_cached_prompt_tokens: int = 0
     ack_map: Dict[int, List[UserReply]] = field(default_factory=dict)
     event_map: Dict[int, asyncio.Event] = field(default_factory=dict)
+    workers: list = field(default_factory=list, repr=False)
+    backend_error: str | None = None
+    _tasks: list[asyncio.Task] = field(default_factory=list, init=False, repr=False)
 
     @property
     def model_name(self):
@@ -165,7 +168,28 @@ class FrontendManager:
             tokenizer=self.tokenizer if reasoning or tools else None,
         )
 
+    def check_backend(self):
+        if self.backend_error is None:
+            exited = [(w.name, w.exitcode) for w in self.workers if w.exitcode is not None]
+            if exited:
+                self.backend_error = f"Backend workers exited: {exited}"
+                logger.error(self.backend_error)
+                for uid, event in self.event_map.items():
+                    self.ack_map[uid].append(UserReply(uid, "", True, error=self.backend_error))
+                    event.set()
+        if self.backend_error is not None:
+            raise HTTPException(503, self.backend_error)
+
+    async def _watch_workers(self):
+        while True:
+            try:
+                self.check_backend()
+            except HTTPException:
+                return
+            await asyncio.sleep(0.25)
+
     def new_user(self) -> int:
+        self.check_backend()
         uid = self.uid_counter
         self.uid_counter += 1
         self.ack_map[uid] = []
@@ -183,7 +207,9 @@ class FrontendManager:
 
     def _create_listener_once(self):
         if not self.initialized:
-            asyncio.create_task(self.listen())
+            self._tasks.append(asyncio.create_task(self.listen()))
+            if self.workers:
+                self._tasks.append(asyncio.create_task(self._watch_workers()))
             self.initialized = True
 
     async def send_one(self, msg: BaseTokenizerMsg):
@@ -224,7 +250,14 @@ class FrontendManager:
         async with aclosing(self.wait_for_ack(uid)) as replies:
             async for ack in replies:
                 if ack.error is not None:
-                    error = {"error": {"message": ack.error, "type": "invalid_request_error"}}
+                    error = {
+                        "error": {
+                            "message": ack.error,
+                            "type": "server_error"
+                            if self.backend_error
+                            else "invalid_request_error",
+                        }
+                    }
                     yield f"data: {json.dumps(error)}\n\n".encode()
                 else:
                     yield f"data: {ack.incremental_output}\n".encode()
@@ -239,7 +272,14 @@ class FrontendManager:
             async for ack in replies:
                 usage = ack.usage
                 if ack.error is not None:
-                    error = {"error": {"message": ack.error, "type": "invalid_request_error"}}
+                    error = {
+                        "error": {
+                            "message": ack.error,
+                            "type": "server_error"
+                            if self.backend_error
+                            else "invalid_request_error",
+                        }
+                    }
                     yield f"data: {json.dumps(error)}\n\n".encode()
                     yield b"data: [DONE]\n\n"
                     return
@@ -274,6 +314,8 @@ class FrontendManager:
         await self.send_one(AbortMsg(uid=uid))
 
     def shutdown(self):
+        for task in self._tasks:
+            task.cancel()
         self.send_tokenizer.stop()
         self.recv_tokenizer.stop()
 
@@ -371,7 +413,7 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
     async with aclosing(state.wait_for_ack(uid)) as replies:
         async for ack in replies:
             if ack.error is not None:
-                raise HTTPException(400, ack.error)
+                raise HTTPException(503 if ack.error == state.backend_error else 400, ack.error)
             full_content += ack.incremental_output
             usage = ack.usage
 
@@ -420,6 +462,7 @@ async def metrics():
 @app.get("/v1/models")
 async def available_models():
     state = get_global_state()
+    state.check_backend()
     return ModelList(data=[ModelCard(id=state.model_name, root=state.config.model_path)])
 
 
@@ -514,14 +557,16 @@ async def shell():
             child.kill()
 
 
-def run_api_server(config: ServerArgs, start_backend: Callable[[], None], run_shell: bool) -> None:
+def run_api_server(
+    config: ServerArgs, start_backend: Callable[[], AbstractContextManager], run_shell: bool
+) -> None:
     """
     Run the frontend API server (FastAPI + uvicorn) and wire it to the tokenizer process via ZMQ.
 
     Args:
         config: Server configuration (host/port, ZMQ IPC addresses, etc).
-        start_backend: Callback that launches the backend worker processes (TP schedulers +
-            tokenizer/detokenizer).
+        start_backend: Context manager yielding owned scheduler/tokenizer processes.
+            It releases them on startup failure and frontend shutdown.
         run_shell: If True, run an interactive terminal shell instead of starting uvicorn.
     """
 
@@ -548,11 +593,11 @@ def run_api_server(config: ServerArgs, start_backend: Callable[[], None], run_sh
         ),
     )
 
-    # start the backend here
-    start_backend()
-
-    logger.info(f"API server is ready to serve on {host}:{port}")
-    if not run_shell:
-        uvicorn.run(app, host=host, port=port)
-    else:
-        asyncio.run(shell())
+    # The backend context owns worker cleanup on startup failure and shutdown.
+    with start_backend() as workers:
+        _GLOBAL_STATE.workers = workers
+        logger.info(f"API server is ready to serve on {host}:{port}")
+        if not run_shell:
+            uvicorn.run(app, host=host, port=port)
+        else:
+            asyncio.run(shell())
