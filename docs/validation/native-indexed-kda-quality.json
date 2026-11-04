@@ -1,0 +1,71 @@
+{
+  "recorded_utc": "2026-11-04T23:46:41.073534+00:00",
+  "source_commit": "e87b651741596e54bbd746d45101f0575b08dcc0",
+  "scope": "Complete indexed-state candidate task quality and eight-rank1..48batch execution/state diagnostics. Not canonical serving performance acceptance.",
+  "raw_directory": "experiment/phase357-indexed-full",
+  "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+  "execution_contract": {
+    "model_dtype": "bfloat16",
+    "moe_activation_precision": "mxfp8",
+    "kv_cache_dtype": "fp8_e4m3",
+    "recurrent_state_dtype": "bfloat16",
+    "conv_state_dtype": "bfloat16",
+    "bf16_precision": "default",
+    "tp_size": 8,
+    "dcp_size": 8,
+    "ep_size": 1,
+    "page_size": 64
+  },
+  "quality": {
+    "completed": 1319,
+    "correct": 1283,
+    "invalid": 0,
+    "truncated": 0,
+    "native_correct": 1284,
+    "delta_percentage_points": -0.0758150113722517,
+    "same_valid_answer": 1304,
+    "identical_token_ids_diagnostic_only": 634
+  },
+  "graphs": {
+    "ranks": 8,
+    "batches_per_rank": 48,
+    "execution_finiteness_ownership_pass": true,
+    "nonexact_batches": [
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48
+    ],
+    "max_logit_relative_rms": 0.06723901629447937,
+    "max_state_relative_rms": 0.041972920298576355,
+    "attribution_scope": "SameB37..48boundary as retained nativeARalgorithm-attribution controls; unchanged communicator source and bitwise native indexed/functional BF16 component controls. No separately rerun algorithm-matched full-model causal probe for this source."
+  },
+  "custom_minisgl_numerical_kernel_calls": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "prior_numerical_attribution": "kimi-k3-native-quality.json",
+  "isolated_profile": "native-indexed-kda.json",
+  "raw_report_sha256": "1c732a061ff0b88547e050cd6c0e1678f210cfa529ea5ecbcda46f22e3176a4e",
+  "near_sglang_serving_performance": false,
+  "remaining": [
+    "Production GPU scheduler/cache pressure for aligned prefill and indexed state.",
+    "Diagnose real online cache mismatch; exact CPU warmup replay does not reproduce.",
+    "Native default BF16GEMM candidate has separate component/model checks, not included in this source score.",
+    "Combined final-source canonical AIPerf and model-quality qualification."
+  ]
+}

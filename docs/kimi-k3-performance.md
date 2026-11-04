@@ -82,8 +82,12 @@ with the functional path and normal/unified-pool graph replay.
 
 Matched isolated real-model decode decreases from 25.52 to 20.19 ms/step at batch8,
 and from 39.95 to 29.48 ms/step at batch48 (1K prompts). These are reduced-cache
-component measurements. Full1319 quality and all48batch graph qualification are
-running separately; canonical AIPerf throughput improvement is not yet measured.
+component measurements. The [complete indexed-source quality record](validation/native-indexed-kda-quality.json)
+reports 1283/1319 correct, zero invalid answers and zero truncations, versus native
+1284/1319. All eight ranks execute batches1–48 with finite outputs and released
+owners; only batches37–48 remain nonexact under default native AR choices, matching
+the previously attributed boundary. Canonical AIPerf throughput improvement is not
+yet measured.
 The [prefill frontier change](validation/prefill-page-frontiers.json) has host
 scheduler/cache controls, with production GPU scheduler validation still pending.
 
