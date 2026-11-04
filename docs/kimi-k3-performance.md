@@ -22,10 +22,22 @@ uses all 393 dataset entries, concurrency 48 and the requested 900-second profil
 with native SDK default heuristics. It completed 260 requests with zero request
 errors and five deadline cancellations: 146.59 output tokens/s, TTFT P50 1612.12 ms
 and ITL P50 74.82 ms. Statistics retain AIPerf's own measurement boundary.
-The fresh official paired run is still running as phase330-reference. The retained
-phase300 official result is 389.47 output tokens/s, so the Mini baseline remains
-well short of the performance target. No near-SGLang performance acceptance is
-claimed. Historical stages retain their original source and evidence boundaries.
+The [completed sequential canonical pair](validation/kimi-k3-canonical-pair.json)
+retains both servers' exact arguments, package versions, precision contract,
+source revisions, request errors and deadline cancellations. It shows a substantial
+remaining performance gap; near-SGLang performance acceptance remains false.
+This single closed-loop scenario is not a per-kernel slowdown or an SLO curve.
+
+| Metric | Mini | Official SGLang |
+| --- | ---: | ---: |
+| Output tokens/s | 146.59 | 395.42 |
+| TTFT P50 (ms) | 1612.12 | 554.35 |
+| TTFT P95 (ms) | 81327.42 | 5143.76 |
+| ITL P50 (ms) | 74.82 | 25.67 |
+| ITL P95 (ms) | 290.53 | 47.31 |
+| Completed requests | 260.00 | 526.00 |
+
+Historical stages retain their original source and evidence boundaries.
 
 
 The primary performance target is the user-specified SGLang serving profile in
