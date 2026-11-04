@@ -536,3 +536,22 @@ the builtin native provider also prepares its NCCL fallback. Updated full-model,
 cache-lifecycle and serving validation remain pending. Worker exits now wake
 pending frontend requests and make readiness/new requests return 503, avoiding
 the HTTP wait observed in the failed serving attempt.
+
+## Production long-prefix and automatic state-budget check
+
+The [production qualification](validation/kimi-k3-long-prefix-budget.json) at
+`1100408fa88b41de0cc593c309a15a319b24c85c` passes on all eight GPUs. Under the
+0.90 memory fraction and 0.31 state/KV ratio, each rank resolves 333 cached-state
+slots and 40,368 logical pages. The synthetic 163,841-token request uses 32K
+chunks and retains five checkpoints along one radix path. A repeat restores the
+163,840-token checkpoint; a fork restores the 131,072-token checkpoint into
+distinct private working storage. Copies are exact. Cold/repeat final logits
+and four greedy tokens match exactly; all outputs are finite and resources are
+released. This uses the production collective warmup and mature fused MoE
+preparation, with default PyNCCL and scoped DCP communication.
+
+These are functional cache/state checks. Global-capacity pressure, eviction and
+abort at the automatic capacity, whole-model native-MNNVL, updated task quality
+and the canonical serving measurement remain open. Archived qualification trees
+are pinned by their launch manifests and source hashes; an enclosing checkout's
+HEAD does not identify an archived package.

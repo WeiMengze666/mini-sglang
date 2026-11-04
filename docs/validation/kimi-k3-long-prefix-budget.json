@@ -1,0 +1,540 @@
+{
+  "scope": "Production long-prefix/cache-budget/state-copy functional qualification; no native quality or performance claim",
+  "recorded_utc": "2026-11-04T19:24:17.668956+00:00",
+  "model_source_commit": "1100408fa88b41de0cc593c309a15a319b24c85c",
+  "launch_manifest": "experiment/phase322-production-intent.json",
+  "execution": "direct GPU user-authorized while gpuq unavailable",
+  "configuration": {
+    "tp": 8,
+    "dcp": 8,
+    "ep": 1,
+    "max_running_requests": 48,
+    "max_context": 1048576,
+    "physical_page_size": 64,
+    "prefill_chunk": 32768,
+    "memory_fraction": 0.9,
+    "state_memory_ratio": 0.31,
+    "kv_dtype": "fp8_e4m3",
+    "declared_kda_and_conv_dtype": "bfloat16",
+    "moe_activation_precision": "mxfp8",
+    "communication": "default PyNCCL; scoped Torch/NCCL DCP",
+    "graphs": "all 1..48"
+  },
+  "synthetic_input_tokens": 163841,
+  "passed_ranks": 8,
+  "states_copied_exactly_to_distinct_working_storage": true,
+  "more_than_four_checkpoints_retained_on_one_path": true,
+  "cold_repeat_and_fork_outputs_finite": true,
+  "rows": [
+    {
+      "rank": 0,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    },
+    {
+      "rank": 1,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    },
+    {
+      "rank": 2,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    },
+    {
+      "rank": 3,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    },
+    {
+      "rank": 4,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    },
+    {
+      "rank": 5,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    },
+    {
+      "rank": 6,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    },
+    {
+      "rank": 7,
+      "num_pages": 40368,
+      "cached_state_capacity": 333,
+      "requests": [
+        {
+          "uid": 100,
+          "steps": 9,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 101,
+          "steps": 4,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840
+          ]
+        },
+        {
+          "uid": 102,
+          "steps": 5,
+          "retained_checkpoint_lengths": [
+            32768,
+            65536,
+            98304,
+            131072,
+            163840,
+            163840
+          ]
+        }
+      ],
+      "cold_warm_logits_exact": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "cold_warm_greedy_identical": true,
+      "restores": [
+        {
+          "uid": 101,
+          "table": 47,
+          "length": 163840,
+          "slot": 4
+        },
+        {
+          "uid": 102,
+          "table": 47,
+          "length": 131072,
+          "slot": 3
+        }
+      ],
+      "cleanup_complete": true
+    }
+  ],
+  "remaining": [
+    "Global checkpoint-capacity pressure, eviction and abort under the ratio-based capacity",
+    "Whole-model native-MNNVL qualification",
+    "Updated full GSM8K quality and canonical 900s AIPerf"
+  ],
+  "raw_directory": "experiment/phase322-production"
+}
