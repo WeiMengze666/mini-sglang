@@ -16,6 +16,7 @@ import torch
 from minisgl.utils import Registry
 
 if TYPE_CHECKING:
+    from minisgl.kvcache.recurrent_pool import RecurrentStatePool
     from minisgl.layers.kda import KDALayer
 
     from .reference import KDAState
@@ -23,6 +24,10 @@ if TYPE_CHECKING:
 RecurrenceKernel = Callable[..., tuple["torch.Tensor", "torch.Tensor"]]
 ProjectionKernel = Callable[["KDALayer", "torch.Tensor"], tuple["torch.Tensor", ...]]
 DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
+IndexedDecodeKernel = Callable[
+    ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor"],
+    "KDADecodeResult | None",
+]
 
 
 @dataclass(frozen=True)
@@ -30,12 +35,13 @@ class KDADecodeResult:
     """Core decode output and updated state returned by a fused backend.
 
     ``normed`` is true when the backend already applied KDA's gated output
-    normalization.  The layer still owns the output projection and collective,
-    so a fused kernel never needs to know the model's tensor-parallel layout.
+    normalization. The layer owns the output projection and collective.
+    Functional decode returns state; indexed decode updates its owned pool and
+    leaves ``state`` unset.
     """
 
     output: "torch.Tensor"
-    state: "KDAState"
+    state: "KDAState | None" = None
     normed: bool = False
 
 
@@ -45,6 +51,7 @@ class KDAKernelSpec:
     recurrence: RecurrenceKernel
     decode: DecodeKernel | None = None
     project: ProjectionKernel | None = None
+    indexed_decode: IndexedDecodeKernel | None = None
 
 
 KDA_KERNELS = Registry[KDAKernelSpec]("KDA kernel backend")
@@ -56,10 +63,11 @@ def register_kda_kernel(
     decode: DecodeKernel | None = None,
     *,
     project: ProjectionKernel | None = None,
+    indexed_decode: IndexedDecodeKernel | None = None,
 ):
     """Register a recurrence backend without coupling it to a model class."""
 
-    KDA_KERNELS.register(name)(KDAKernelSpec(name, recurrence, decode, project))
+    KDA_KERNELS.register(name)(KDAKernelSpec(name, recurrence, decode, project, indexed_decode))
 
 
 def register_kda_decode_kernel(name: str, decode: DecodeKernel):
@@ -124,9 +132,17 @@ def _sgl_decode(layer, x, state):
     return decode(layer, x, state)
 
 
+def _sgl_indexed_decode(layer, x, pool, layer_id, indices):
+    from .sgl import indexed_decode
+
+    return indexed_decode(layer, x, pool, layer_id, indices)
+
+
 register_kda_kernel("torch", _torch_recurrence)
 register_kda_kernel("flashinfer", _flashinfer_recurrence)
-register_kda_kernel("sgl", _sgl_recurrence, _sgl_decode, project=_sgl_project)
+register_kda_kernel(
+    "sgl", _sgl_recurrence, _sgl_decode, project=_sgl_project, indexed_decode=_sgl_indexed_decode
+)
 
 
 __all__ = [

@@ -136,8 +136,12 @@ class KDALayer(BaseOP):
             return None
         if not isinstance(result, KDADecodeResult):
             raise TypeError("KDA decode backend must return KDADecodeResult or None")
-        output = result.output
-        if not result.normed:
+        if result.state is None:
+            raise ValueError("Functional KDA decode must return its updated state")
+        return self.finish(x, result.output, normed=result.normed), result.state
+
+    def finish(self, x, output, *, normed=False):
+        if not normed:
             gate = (
                 self.g_proj.forward(x)
                 if self._full_gate
@@ -146,19 +150,7 @@ class KDALayer(BaseOP):
             output = gated_rms_norm(
                 output, gate.reshape_as(output), self.o_norm.weight, self.o_norm.eps
             )
-        output = self._tp.all_reduce(self.o_proj.forward(output.flatten(-2)))
-        return output, result.state
-
-    def finish(self, x, output):
-        gate = (
-            self.g_proj.forward(x)
-            if self._full_gate
-            else self.g_b_proj.forward(self.g_a_proj.forward(x))
-        )
-        output = gated_rms_norm(
-            output, gate.reshape_as(output), self.o_norm.weight, self.o_norm.eps
-        ).flatten(-2)
-        return self._tp.all_reduce(self.o_proj.forward(output))
+        return self._tp.all_reduce(self.o_proj.forward(output.flatten(-2)))
 
     def forward(
         self,

@@ -2,7 +2,7 @@
 
 ## Current checked scope (2026-11-05 CST)
 
-Runtime `9ec11fe` includes generic native-MNNVL payload canonicalization, qualified
+Measured baseline runtime `9ec11fe` includes generic native-MNNVL payload canonicalization, qualified
 by 947 CPU/Gloo passes and 256 exact eight-GPU mixed-view results. The retained
 [whole-model native quality record](validation/kimi-k3-native-quality.json)
 separately scopes the full GSM8K result to model source `385d797`: 1281/1319,
@@ -70,6 +70,22 @@ sglang serve \
   --host 0.0.0.0 \
   --port 38080
 ```
+
+## Indexed KDA candidate
+
+The [indexed KDA record](validation/native-indexed-kda.json) qualifies direct
+working-pool updates through the existing KDA kernel registry. The adapter uses
+the official convolution and recurrence kernels, preserves public K,V state and
+immutable checkpoint ownership, and adds no model-specific scheduling branch.
+288 eight-GPU component checks pass, including exact BF16 output/state comparison
+with the functional path and normal/unified-pool graph replay.
+
+Matched isolated real-model decode decreases from 25.52 to 20.19 ms/step at batch8,
+and from 39.95 to 29.48 ms/step at batch48 (1K prompts). These are reduced-cache
+component measurements. Full1319 quality and all48batch graph qualification are
+running separately; canonical AIPerf throughput improvement is not yet measured.
+The [prefill frontier change](validation/prefill-page-frontiers.json) has host
+scheduler/cache controls, with production GPU scheduler validation still pending.
 
 ## Precision and parallel layout
 

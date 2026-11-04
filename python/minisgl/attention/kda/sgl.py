@@ -206,3 +206,55 @@ def decode(layer, x, state):
     history = conv.reshape(batch, 3, 3, heads * dim).permute(0, 2, 3, 1).contiguous()
     recurrent = pool.transpose(-1, -2).contiguous()
     return KDADecodeResult(output[0], KDAState(history, recurrent), normed=True)
+
+
+def indexed_decode(layer, x, pool, layer_id, indices):
+    """Update BF16 working rows with official convolution and KDA kernels.
+
+    FP32 state retains the existing full-fusion path. Immutable checkpoints are
+    separate allocations; only the active indices may mutate these pool views.
+    """
+    from .causal_conv import _kernels as conv_kernels
+    from .registry import KDADecodeResult
+
+    if (
+        not x.is_cuda
+        or x.dtype != torch.bfloat16
+        or pool.state_dtype != torch.bfloat16
+        or pool.conv_dtype != torch.bfloat16
+        or layer._dim != 128
+    ):
+        return None
+    conv, recurrent = pool.indexed_kda_state(layer_id)
+    weights = layer.prepare_kernel(
+        "sgl_indexed_conv",
+        lambda: torch.cat(
+            [op.weight.squeeze(1) for op in (layer.q_conv1d, layer.k_conv1d, layer.v_conv1d)]
+        ),
+    )
+    q, k, v, forget, beta = project(layer, x)
+    _, update_conv = conv_kernels()
+    _, update_kda, stream = _kernels()
+    with stream():
+        mixed = update_conv(
+            torch.cat((q, k, v), -1),
+            conv,
+            weights,
+            conv_state_indices=indices,
+            activation="silu",
+        )
+        output = x.new_empty((len(x), 1, layer._heads, layer._dim))
+        update_kda(
+            mixed_qkv=mixed,
+            a=forget.reshape(len(x), -1),
+            b=beta.reshape(len(x), layer._heads),
+            A_log=layer.A_log,
+            dt_bias=layer.dt_bias,
+            scale=layer._dim**-0.5,
+            initial_state=recurrent,
+            out=output,
+            ssm_state_indices=indices,
+            use_qk_l2norm_in_kernel=True,
+            lower_bound=layer._config.gate_lower_bound,
+        )
+    return KDADecodeResult(output=output[:, 0])

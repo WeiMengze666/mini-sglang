@@ -39,6 +39,8 @@ class RecurrentStatePool:
         self._conv_shape = (len(self._layers), 3, heads * dim, conv_kernel_size - 1)
         self._conv_dtype = dtype
         self._state_dtype = state_dtype
+        # Logical K,V and channel/history views over native-friendly storage.
+        # Kernel adapters can update indexed rows without repacking the pool.
         self._recurrent = (
             None
             if arena is not None
@@ -46,7 +48,7 @@ class RecurrentStatePool:
                 (len(self._layers), capacity, heads, dim, dim),
                 dtype=state_dtype,
                 device=device,
-            )
+            ).transpose(-1, -2)
         )
         self._conv = (
             None
@@ -55,13 +57,13 @@ class RecurrentStatePool:
                 (
                     len(self._layers),
                     capacity,
+                    conv_kernel_size - 1,
                     3,
                     heads * dim,
-                    conv_kernel_size - 1,
                 ),
                 dtype=dtype,
                 device=device,
-            )
+            ).permute(0, 1, 3, 4, 2)
         )
         self._owners: list[int | None] = [None] * capacity
         self._processed_lens = [0] * capacity
@@ -85,11 +87,14 @@ class RecurrentStatePool:
 
     def _decode_views(self, data):
         recurrent_bytes = prod(self._recurrent_shape) * self.state_dtype.itemsize
+        # Public state remains K,V; native recurrent kernels consume its V,K view.
         recurrent = data[:recurrent_bytes].view(self.state_dtype).view(self._recurrent_shape)
+        recurrent = recurrent.transpose(-1, -2)
         conv_bytes = prod(self._conv_shape) * self.conv_dtype.itemsize
         # Both slot ends are aligned, including mixed dtypes and empty history.
         conv = data[data.numel() - conv_bytes :].view(self.conv_dtype)
-        conv = conv.view(self._conv_shape)
+        layers, parts, channels, history = self._conv_shape
+        conv = conv.view(layers, history, parts, channels).permute(0, 2, 3, 1)
         return conv, recurrent
 
     def _working(self, table_idx):
@@ -277,6 +282,16 @@ class RecurrentStatePool:
             )[:, layer]
             for part in views
         )
+
+    def indexed_kda_state(self, layer_id):
+        """Writable pool views for kernels using active request indices.
+
+        Convolution is [slots, channels, history], with contiguous channels;
+        recurrence is [slots, heads, V, K]. Neither view gathers or copies state.
+        Owners must first be resolved by ``batch_indices`` for this forward.
+        """
+        conv, recurrent = self._batched_layer(layer_id)
+        return conv.flatten(1, 2), recurrent.transpose(-1, -2)
 
     def get_kda_batch(self, layer_id, indices):
         from minisgl.attention.kda import KDAState

@@ -1,0 +1,81 @@
+{
+  "recorded_utc": "2026-11-04T23:31:18.710648+00:00",
+  "scope": "Generic indexed KDA backend and native-friendly working-state views. Component semantics and isolated full-model timing; canonical serving improvement and full-task acceptance pending.",
+  "baseline_runtime": "9ec11fe416adcda59fdd532999551420c354125b",
+  "frozen_source_manifest_sha256": "a7b0e5566eebc485ea14d9f44c2f023e813d1eb73478b8d269809597bda059e7",
+  "kernel_ownership": "Official SGLang causal_conv1d_update and fused_recurrent_kda_packed_decode. No numerical kernel implementation added.",
+  "state_contract": "Public K,V/history state, BF16 persistent state/convolution, unchanged owner indices and checkpoint copies; direct V,K/channel-contiguous pool views only.",
+  "host_regression": {
+    "passed": 1037,
+    "skipped": 706,
+    "scope": "Before adding24CUDA-only indexed tests; no new runtime edit afterward."
+  },
+  "gpu_tests": {
+    "passed": 288,
+    "ranks": 8,
+    "new_indexed_tests": 192,
+    "existing_native_state_controls": 96,
+    "dimensions": "B1/8/48,H12,D128,safe/standard gates,normal/unified pools,eager/CUDAgraphs,three updates",
+    "result": "Indexed BF16 outputs and each persistent-state update bitwise equal to functional native path; inactive slots and checkpoint restore unchanged."
+  },
+  "isolated_model_profile": {
+    "baseline": "experiment/phase346-model-profile",
+    "candidate": "experiment/phase356-model-profile",
+    "rows": [
+      {
+        "case": "b1-l1024",
+        "baseline_step_ms": 19.934751892089842,
+        "indexed_step_ms": 17.30744323730469,
+        "latency_reduction_pct": 13.179540277236534,
+        "baseline_kernel_count": 5462,
+        "indexed_kernel_count": 4427,
+        "baseline_movement_kernel_sum_us": 2702.809999999998,
+        "indexed_movement_kernel_sum_us": 853.7049999999975
+      },
+      {
+        "case": "b24-l1024",
+        "baseline_step_ms": 31.477310180664062,
+        "indexed_step_ms": 24.638765716552733,
+        "latency_reduction_pct": 21.725313963809157,
+        "baseline_kernel_count": 5649,
+        "indexed_kernel_count": 4545,
+        "baseline_movement_kernel_sum_us": 7300.956000000009,
+        "indexed_movement_kernel_sum_us": 1283.6629999999984
+      },
+      {
+        "case": "b48-l1024",
+        "baseline_step_ms": 39.94859466552734,
+        "indexed_step_ms": 29.475233459472655,
+        "latency_reduction_pct": 26.217095479186938,
+        "baseline_kernel_count": 5625,
+        "indexed_kernel_count": 4521,
+        "baseline_movement_kernel_sum_us": 11393.492999999988,
+        "indexed_movement_kernel_sum_us": 1669.0959999999989
+      },
+      {
+        "case": "b8-l1024",
+        "baseline_step_ms": 25.522549438476563,
+        "indexed_step_ms": 20.190758514404298,
+        "latency_reduction_pct": 20.890510710635812,
+        "baseline_kernel_count": 5581,
+        "indexed_kernel_count": 4477,
+        "baseline_movement_kernel_sum_us": 5752.662000000002,
+        "indexed_movement_kernel_sum_us": 1074.665000000001
+      },
+      {
+        "case": "b8-l65536",
+        "baseline_step_ms": 25.445890808105467,
+        "indexed_step_ms": 20.145284271240236,
+        "latency_reduction_pct": 20.830893981423483,
+        "baseline_kernel_count": 5581,
+        "indexed_kernel_count": 4477,
+        "baseline_movement_kernel_sum_us": 5753.522000000021,
+        "indexed_movement_kernel_sum_us": 1076.102000000001
+      }
+    ],
+    "method": "Same reduced cache/graph set and histories;20 unprofiled CUDA-event decode steps per rank, median of8ranks. Separate kernel-only trace grouping, no operator/annotation double counting.",
+    "limitations": "Single sequential control. Additive kernel times are not critical-path times. Not AIPerf throughput, SLO goodput, whole-task score or canonical memory-pressure validation."
+  },
+  "full1319_quality_and_all48graph_scope": "phase357 running separately; not yet accepted.",
+  "near_sglang_serving_performance": false
+}
