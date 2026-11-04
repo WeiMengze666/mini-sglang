@@ -1,0 +1,13 @@
+{
+  "recorded_utc": "2026-11-04T23:30:39.930635+00:00",
+  "scope": "Generic page-aligned nonfinal prefill chunks under shared token budgets. Final short tails remain legal; subpage configured budgets still progress.",
+  "runtime_file_sha256": "ba463405b6e3c0a132f369052edd882b3d08271b656889e2be631f50fda15c3f",
+  "host_regression": "phase351:1029passed706skipped before indexed-state changes; phase354 indexed-source:1037passed706skipped.",
+  "host_controls": "Mixed real PrefillManager/CacheManager scheduling retains restorable intermediate states and releases state/table resources; exhausted page remainder acquires no slot.",
+  "production_gpu_scheduler_validation": "pending",
+  "performance_acceptance": false,
+  "raw_logs": [
+    "experiment/phase351-cpu-full.log",
+    "experiment/phase354-indexed-cpu-full.log"
+  ]
+}

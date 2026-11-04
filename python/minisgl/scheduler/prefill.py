@@ -35,6 +35,16 @@ class PrefillAdder:
     reserved_size: int
     cache_manager: CacheManager
     table_manager: TableManager
+    chunk_alignment: int = 1
+
+    def _chunk_size(self, req: PendingReq, handle: BaseCacheHandle, cached_len: int) -> int:
+        end = min(cached_len + self.token_budget, req.input_len)
+        replay_until = getattr(handle, "replay_until", 0)
+        if replay_until > cached_len:
+            end = min(end, replay_until)
+        if end < req.input_len:
+            end = end // self.chunk_alignment * self.chunk_alignment
+        return max(0, end - cached_len)
 
     def _try_allocate_one(self, req: PendingReq) -> Tuple[BaseCacheHandle, int] | None:
         if self.table_manager.available_size == 0:
@@ -43,6 +53,8 @@ class PrefillAdder:
         # TODO: consider host cache match case
         handle = self.cache_manager.match_req(req).cuda_handle
         cached_len = handle.cached_len
+        if self._chunk_size(req, handle, cached_len) == 0:
+            return None
         # TODO: better estimate policy
         extend_len = req.input_len - cached_len
         estimated_len = extend_len + req.output_len
@@ -79,12 +91,11 @@ class PrefillAdder:
         cache_handle: BaseCacheHandle,
         table_idx: int,
         cached_len: int,
-    ) -> Req:
+    ) -> Req | None:
         remain_len = pending_req.input_len - cached_len
-        chunk_size = min(self.token_budget, remain_len)
-        replay_until = getattr(cache_handle, "replay_until", 0)
-        if replay_until > cached_len:
-            chunk_size = min(chunk_size, replay_until - cached_len)
+        chunk_size = self._chunk_size(pending_req, cache_handle, cached_len)
+        if chunk_size == 0:
+            return None
         is_chunked = chunk_size < remain_len
         CLS = ChunkedReq if is_chunked else Req
         self.token_budget -= chunk_size
@@ -152,6 +163,13 @@ class PrefillManager:
             reserved_size=self.decode_manager.inflight_tokens,
             cache_manager=self.cache_manager,
             table_manager=self.table_manager,
+            # Keep intermediate frontiers page-aligned for KV and state reuse.
+            # A configured budget below one page must still make progress.
+            chunk_alignment=(
+                self.cache_manager.page_size
+                if prefill_budget >= self.cache_manager.page_size
+                else 1
+            ),
         )
         reqs: List[Req] = []
         chunked_list: List[PendingReq] = []
