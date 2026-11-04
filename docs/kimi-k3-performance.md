@@ -361,3 +361,47 @@ evidence. The fresh health recheck in GPUq
 job880 still reports a missing device and `Reboot` recovery actions; its NVML gate
 stops before CUDA initialization. No corrected whole-model or serving acceptance
 is established by these diagnostics.
+
+## Routing ABI precision and CPU-only continuation
+
+The FlashInfer expert adapter now preserves BF16 or FP32 route weights rather
+than forcing every input to FP32. This is an SDK boundary rule shared by models;
+K3's current router still emits FP32, so this change alone does not switch its
+routing precision or establish fused-path parity. Unsupported weight dtypes fail
+before the SDK call.
+
+The [routing audit](validation/kimi-k3-routing-precision.json) executes the pinned
+native runner's routing helper and FlashInfer's input splitter on CPU. STANDARD
+routes preserve FP32 or BF16 weights; packed routes encode BF16 score bits in the
+low half of each int32 entry. The SDK C++ launcher chooses its expert-weight dtype
+from the unpacked input and borrows its pointer directly. Thus API-format and
+precision choices must be recorded together. Native small-batch route/quant
+fusion uses packed scores, but its STANDARD fallback can retain FP32. S0 did not
+capture per-call fusion coverage; a statement that all native K3 route weights
+are BF16 would be unsupported. Host bit-layout checks do not validate GPU
+finalization or explain any task-answer differences.
+
+Seven CPU-backed adapter ABI fixtures passed. The updated CPU suite passed 886
+checks and skipped 678; manual `tests/kernel` scripts were excluded and queued
+CUDA tests were disabled. The existing native expert component test now covers
+BF16 and FP32 route weights with both activation dtypes and row layouts; these
+additional GPU cases remain unrun. The standalone audit can be repeated with:
+
+```bash
+CUDA_VISIBLE_DEVICES='' PYTHONPATH=python:/path/to/sglang/python \
+  python tests/validation/moe_routing_contract.py --output /fresh/path/routing.json
+```
+
+After permission to use the remaining seven devices, GPUq job 886 selected each
+by its NVML UUID, excluding missing GPU7. All seven fresh processes failed CUDA
+initialization and NVML still reported `Reboot`. This rules out a usable seven-card
+execution path at that observation; the raw evidence is in the
+[device interruption report](validation/kimi-k3-gpu-interruption.json). CPU work
+continues, while TP8/DCP8 quality and AIPerf acceptance require device recovery.
+
+The built-in native MNNVL transport is still incomplete. The pinned custom-AR v2
+cold P2P check consults SGLang's global world despite accepting a process group.
+Its optional skip-check setting trusts the driver's report and is not an
+independent P2P test. A standalone bootstrap integration must retain explicit
+process-group ownership and validated peer access; the existing external-provider
+adapter is not evidence that this initialization boundary has been solved.

@@ -357,7 +357,7 @@
     "BF16 ragged prefill Q/K/V vs native FP8 (KV storage FP8 and decode query quantization already match)",
     "Fixed8 cached recurrent checkpoints vs native ratio0.31 extra_buffer sizing/policy",
     "Sparse9 decode graph buckets; unpadded intermediate batch sizes execute eagerly",
-    "Native unfused FP32 routing weights vs default fused BF16-packed routing",
+    "Mini uses the unfused FP32-weight ABI. Native fused routing packsBF16, STANDARD fallback retainsF32; per-call S0fusion coverage was not captured.",
     "No built-in native MNNVL transport; serial default scheduling"
   ],
   "interpretation": "Initial runnable baseline only. Preserve exported tool denominators and report input billing normalization separately. Do not infer a model-quality or final precision-matched performance acceptance from these numbers.",

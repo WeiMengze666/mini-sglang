@@ -81,19 +81,22 @@ def inputs(tokens, dtype, strided):
 @pytest.mark.parametrize("tokens", [1, 7, 48])
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
 @pytest.mark.parametrize("strided", [False, True])
+@pytest.mark.parametrize("route_dtype", [torch.float32, torch.bfloat16])
 def test_native_quantization_and_bf16_output(
-    experts, native_runner, monkeypatch, tokens, dtype, strided
+    experts, native_runner, monkeypatch, tokens, dtype, strided, route_dtype
 ):
     import flashinfer
 
     torch.manual_seed(272 + tokens)
-    args = inputs(tokens, dtype, strided)
+    x, weights, ids = inputs(tokens, dtype, strided)
+    args = x, weights.to(route_dtype), ids
     expected = native_runner(*args)
     destinations = []
     kernel = flashinfer.trtllm_fp4_block_scale_routed_moe
 
     def observe(*a, **kw):
         destinations.append(kw["output"])
+        assert kw["topk_ids"][1].dtype == route_dtype
         return kernel(*a, **kw)
 
     monkeypatch.setattr(flashinfer, "trtllm_fp4_block_scale_routed_moe", observe)

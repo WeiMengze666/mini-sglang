@@ -118,5 +118,74 @@
     "artifact": "experiment/phase289-health/nvml-summary.json",
     "artifact_sha256": "441e399e61b0d6b5bb3dece20482eac0c517fba3db72586e68c3e56a8be2f8fe",
     "submitted_utc": "2026-11-03T21:11:19Z"
+  },
+  "seven_device_probe": {
+    "job": 886,
+    "observed_utc": "2026-11-04T02:24:15.884577+00:00",
+    "selection": "Seven remaining NVML UUIDs, exclude missingGPU7PCI6C; set each child visibility before importingTorch.",
+    "passed": 0,
+    "selected": 7,
+    "devices": [
+      {
+        "pci": "00000000:43:00.0",
+        "uuid": "GPU-80f619b7-da29-198f-8f27-c55912e48b47",
+        "recovery_action": "Reboot",
+        "passed": false,
+        "error_type": "RuntimeError",
+        "error": "CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero."
+      },
+      {
+        "pci": "00000000:46:00.0",
+        "uuid": "GPU-b65d5a77-7a9c-a51c-e4f8-f7da16e9e17f",
+        "recovery_action": "Reboot",
+        "passed": false,
+        "error_type": "RuntimeError",
+        "error": "CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero."
+      },
+      {
+        "pci": "00000000:49:00.0",
+        "uuid": "GPU-fbb098d4-bf36-ab34-4b4b-80b16d7c57c1",
+        "recovery_action": "Reboot",
+        "passed": false,
+        "error_type": "RuntimeError",
+        "error": "CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero."
+      },
+      {
+        "pci": "00000000:4C:00.0",
+        "uuid": "GPU-6de33ae0-26af-1795-6821-70753ee5232c",
+        "recovery_action": "Reboot",
+        "passed": false,
+        "error_type": "RuntimeError",
+        "error": "CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero."
+      },
+      {
+        "pci": "00000000:63:00.0",
+        "uuid": "GPU-fc0ae525-e670-b911-f023-47e7dc9e9583",
+        "recovery_action": "Reboot",
+        "passed": false,
+        "error_type": "RuntimeError",
+        "error": "CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero."
+      },
+      {
+        "pci": "00000000:66:00.0",
+        "uuid": "GPU-02cb632f-3cc9-0b90-3b9f-2b8bde59eaf2",
+        "recovery_action": "Reboot",
+        "passed": false,
+        "error_type": "RuntimeError",
+        "error": "CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero."
+      },
+      {
+        "pci": "00000000:69:00.0",
+        "uuid": "GPU-b503d68d-3270-1e51-c611-cc5acc37efe1",
+        "recovery_action": "Reboot",
+        "passed": false,
+        "error_type": "RuntimeError",
+        "error": "CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero."
+      }
+    ],
+    "scope": "Fresh context failed at set_device on every selectedGPU; no model inference or benchmark. CPU work continues.",
+    "artifact": "experiment/phase295-seven-gpu/summary.json",
+    "artifact_sha256": "f51ac302b9d5e15e70c5de755a3a6d0ada42e12d333ecbb52ac4b53bc7580b0d",
+    "manifest_sha256": "e1faa7c867e1f3080523d0401b5ab688bb124fb60a846035716089cfbbabd3dd"
   }
 }

@@ -1,0 +1,75 @@
+{
+  "scope": "Routing precision forwarding and native host ABI controls; no GPU arithmetic or model quality acceptance.",
+  "recorded_utc": "2026-11-04T02:55:54.003836+00:00",
+  "parent_mini_commit": "1e9a3bdb3840fdb87b0ae179f23bf9742f8d05f0",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "adapter_change": "Preserve BF16/F32 routing weights at FlashInfer ABI boundary; reject unsupported weight dtypes. Current K3 router emitsF32, so its selected ABI is unchanged.",
+  "native_host_abi": {
+    "scope": "Inspect vendor routing ABIs on CPU; this does not validate GPU arithmetic.",
+    "passed": true,
+    "gpu_arithmetic_checked": false,
+    "validation_source_sha256": "bb34bdfe23c17b7806857c72971227d5de37408d15d14ded0f31e3b36cdfcb34",
+    "native_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "torch": "2.14.1+cu130",
+    "flashinfer": "0.7.1",
+    "rows": [
+      {
+        "format": "unpacked",
+        "weight_dtype": "torch.float32",
+        "weight_shape": [
+          2,
+          4
+        ],
+        "mode": "2"
+      },
+      {
+        "format": "unpacked",
+        "weight_dtype": "torch.bfloat16",
+        "weight_shape": [
+          2,
+          4
+        ],
+        "mode": "2"
+      },
+      {
+        "format": "packed",
+        "weight_dtype": "torch.bfloat16 (low16 bits)",
+        "shape": [
+          2,
+          4
+        ],
+        "mode": "1"
+      }
+    ],
+    "example_max_weight_rounding": 0.0005458295345306396,
+    "source_sha256": {
+      "/home/axis/mengze/sglang/python/sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py": "fbc34eb8df506d09c1a9bdf18e99fb3742107424f660c28359ed6812c0cde2f9",
+      "/home/axis/miniconda3/envs/mengze-sglang/lib/python3.12/site-packages/flashinfer/fused_moe/core.py": "d6a8333a2749e45e17f4ad6443c3ca84fcc8b15bca4d32adecc6cd0373528b17"
+    },
+    "limitation": "Host forwarding and bit layout only. Actual native fused-path coverage, expert finalization and end-to-end quality require GPU validation."
+  },
+  "native_control_artifact": "experiment/phase296-vendor-route-abi-v2.json",
+  "cpu_checks": {
+    "focused": "7passed2warnings3.55s",
+    "full": "886passed678skipped3warnings19.18s",
+    "scope": "CUDA hidden, queued CUDA tests disabled, legacy manual tests/kernel excluded. Seven new tests use CPU-backed device-guard fixture and a fake SDK; vendor host control separately invokes actual pinned API helpers.",
+    "logs": [
+      "experiment/phase296-route-dtype-cpu.log",
+      "experiment/phase296-all-cpu.log"
+    ]
+  },
+  "gpu_checks": {
+    "new_route_dtype_controls": "Prepared only: existing actual-native executor test now covers bothF32/BF16 weights with1/7/48tokens, BF16/F32 activations and dense/strided inputs. No newGPUarithmetic run.",
+    "packed_vs_unpacked_numeric_comparison": "Pending; host bit layout and route forwarding do not establish finalizer equivalence."
+  },
+  "inference_precision_conclusion": "Native STANDARD fallback preservesF32 orBF16; packed usesBF16 score bits. Actual fused-path coverage must be recorded per-call; do not label all nativeK3routingBF16. S0 per-call fusion coverage was not captured.",
+  "performance": "Unmeasured. No speedup claim.",
+  "source_sha256": {
+    "python/minisgl/moe/flashinfer.py": "6def6ed8766901bdf87f1eb409a4f0cf464c88a0e65756077f9795deb73195c9",
+    "tests/core/test_flashinfer_route_dtype.py": "31e554d4244d3f5b87bad7a3432e6bd805d3eacf32797275203b80462662c0de",
+    "tests/models/test_native_flashinfer_experts.py": "aab1a2b0e1b92efc7d557dab707675e20b0c2535ed73430eb2c6ae3c4f9f4558",
+    "tests/validation/moe_routing_contract.py": "bb34bdfe23c17b7806857c72971227d5de37408d15d14ded0f31e3b36cdfcb34",
+    "experiment/phase296-vendor-route-abi-v2.json": "746cb2bb21d5fa75bb986ec7851ac80d77d41ee5f94782d536db949b6ebb87a4",
+    "experiment/phase296-all-cpu.log": "e0cc2f03e508cf775caab996218d8bd13bd9e3124a50f713162e250f25d2736d"
+  }
+}

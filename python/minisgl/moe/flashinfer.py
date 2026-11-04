@@ -169,6 +169,8 @@ class FlashInferMXFP4Experts:
             raise ValueError(
                 "FlashInfer route IDs and weights must have the same [tokens, topk] shape"
             )
+        if weights.dtype not in (torch.bfloat16, torch.float32):
+            raise ValueError("FlashInfer route weights must be bfloat16 or float32")
         from flashinfer import trtllm_fp4_block_scale_routed_moe
         from flashinfer.fused_moe.core import ActivationType
         from flashinfer.tllm_enums import RoutingMethodType, SfLayout
@@ -182,7 +184,8 @@ class FlashInferMXFP4Experts:
             x_input, x_scale = x, None
         output = torch.empty((x.shape[0], self._hidden), dtype=torch.bfloat16, device=x.device)
         trtllm_fp4_block_scale_routed_moe(
-            topk_ids=(ids.to(torch.int32).contiguous(), weights.float().contiguous()),
+            # The SDK consumes this dtype directly, including in finalization.
+            topk_ids=(ids.to(torch.int32).contiguous(), weights.contiguous()),
             routing_bias=None,
             hidden_states=x_input,
             hidden_states_scale=x_scale,
