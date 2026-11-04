@@ -405,3 +405,21 @@ Its optional skip-check setting trusts the driver's report and is not an
 independent P2P test. A standalone bootstrap integration must retain explicit
 process-group ownership and validated peer access; the existing external-provider
 adapter is not evidence that this initialization boundary has been solved.
+
+## Device recovery qualification
+
+The [recovery record](validation/kimi-k3-device-recovery.json) confirms all eight
+B300 devices are visible again with NVML recovery action `None`. Each rank passed
+BF16 and FP32 NCCL graph replay and device-to-host checks, 30 repeats per dtype,
+and exited cleanly. The first smoke run left a captured graph alive while
+attempting process-group destruction and did not exit after its arithmetic
+checks. Explicitly resetting graphs before group destruction resolved the smoke
+script's teardown. No native internal stack was captured, and this does not
+attribute the earlier device fault to the inference implementation.
+
+The unchanged R2 prefill component suite passed again on all ranks: 304 tests,
+zero failures, errors or skips. Its whole-model bounded/full task and graph/state
+checks are still in progress. These recovery and component results do not replace
+whole-model quality or serving acceptance. The user temporarily authorized direct
+GPU execution while GPUq is unavailable; each stage has an owned-process ledger,
+launch manifest and retained exit status. No direct run is recorded as a GPUq job.

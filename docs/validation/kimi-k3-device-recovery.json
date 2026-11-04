@@ -1,0 +1,141 @@
+{
+  "scope": "8GPU device/context/NCCL graph recovery and repeated prefill components only; wholemodel/serving acceptance pending.",
+  "recorded_utc": "2026-11-04T16:26:13.714741+00:00",
+  "execution": "Direct GPU explicitly permitted by user while GPUq unavailable; no GPUqjob or flag spoof. Resume GPUq when user notifies restoration.",
+  "mini_public_commit": "c0c3096a6907afa986c90bb99fc9886a36e4a1c7",
+  "r2_frozen_model_commit": "743a4f53e79d9c6cf844bed7b02aecf68e965e6c",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "driver": "580.126.16",
+  "devices": [
+    {
+      "pci": "00000000:43:00.0",
+      "uuid": "GPU-80f619b7-da29-198f-8f27-c55912e48b47",
+      "recovery_action": "None"
+    },
+    {
+      "pci": "00000000:46:00.0",
+      "uuid": "GPU-b65d5a77-7a9c-a51c-e4f8-f7da16e9e17f",
+      "recovery_action": "None"
+    },
+    {
+      "pci": "00000000:49:00.0",
+      "uuid": "GPU-fbb098d4-bf36-ab34-4b4b-80b16d7c57c1",
+      "recovery_action": "None"
+    },
+    {
+      "pci": "00000000:4C:00.0",
+      "uuid": "GPU-6de33ae0-26af-1795-6821-70753ee5232c",
+      "recovery_action": "None"
+    },
+    {
+      "pci": "00000000:63:00.0",
+      "uuid": "GPU-fc0ae525-e670-b911-f023-47e7dc9e9583",
+      "recovery_action": "None"
+    },
+    {
+      "pci": "00000000:66:00.0",
+      "uuid": "GPU-02cb632f-3cc9-0b90-3b9f-2b8bde59eaf2",
+      "recovery_action": "None"
+    },
+    {
+      "pci": "00000000:69:00.0",
+      "uuid": "GPU-b503d68d-3270-1e51-c611-cc5acc37efe1",
+      "recovery_action": "None"
+    },
+    {
+      "pci": "00000000:6C:00.0",
+      "uuid": "GPU-b6b956a2-7832-b97a-59d2-2d613f08f761",
+      "recovery_action": "None"
+    }
+  ],
+  "health": {
+    "passed_ranks": 8,
+    "dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "graph_replays_and_D2H_per_dtype_per_rank": 30,
+    "exact": true,
+    "cleanup_complete": true,
+    "finished_utc": "2026-11-04T16:00:16.892536+00:00"
+  },
+  "initial_probe_teardown": {
+    "scope": "phase298 arithmetic passed8/8 but did not exit with a capturedNCCLgraph stilllive at groupdestroy. Explicit graphreset beforegroupdestroy let phase299 finish. Nativeinternalstack was not available; attribution is limited to this validationlifecycle comparison.",
+    "owned_processes_remaining_after_interrupt": 0,
+    "limitation": "Healthscript lifecycle fix only; no inferencekernel or model change."
+  },
+  "components": [
+    {
+      "rank": "rank0",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "rank": "rank1",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "rank": "rank2",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "rank": "rank3",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "rank": "rank4",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "rank": "rank5",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "rank": "rank6",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "rank": "rank7",
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "active_qualification": "phase299bounded32+all48graph coverage; full1319/eagergraphstateparity preparedphase301; no partial acceptance.",
+  "artifact_sha256": {
+    "experiment/phase299-health-status.json": "5de84045228b99435f5fe5ae8717697b9b0b42190e8f65e148218522bf611414",
+    "experiment/phase299-health-launch.json": "b065a935b3a518df67e0cd39580909414ee69d6abaa584aa0a690fcb0eb45498",
+    "experiment/phase299-manifest.json": "e4acea9a287565092efc59c7859e4c7cfd622ad1dae1e73d41d2ac097688c179",
+    "experiment/phase298-health-cleanup.json": "ee779cacfe3ddc095f372e7ee6100b93b23d2d561bbe57420a7d73be7f6540ee",
+    "experiment/phase299-inputs/health.py": "278243e82f261101a6f554038d8d7c6f07309c0ea32bd541c790155bbb344dda",
+    "experiment/phase299-health/rank0.json": "1c4aae25f647e8b2cd92f63e870e32bf339a4a4e9cb03af14e812e5895094717",
+    "experiment/phase299-health/rank1.json": "93b4b74fd13c0e3089f307820f8cd03e1e6adf19c302c0a263cd63d75d3ae621",
+    "experiment/phase299-health/rank2.json": "746d3fb77c89fbbbb4c7f5c4d00d4b71ff3e2ba7da3d968a3a72994773b13b50",
+    "experiment/phase299-health/rank3.json": "3889f15d217708a1bcfe7af01b86f6e4ac1b1f544c5987da73a9039a1c152a29",
+    "experiment/phase299-health/rank4.json": "5fab3ee04257003efe9944abfdbb507530c0aa71ad64365345bc9b4df0116a5a",
+    "experiment/phase299-health/rank5.json": "43afd67bc80ed2da5993580b44951003457d434ca7e6f1dfc6982336138fb9e1",
+    "experiment/phase299-health/rank6.json": "42a4986d7d599ac0d9674de282695e0d5daad53ccac45d2a4380db4b88c6c760",
+    "experiment/phase299-health/rank7.json": "cc53ce9a1a02ebc1fac3933fab04f614ce5f4961032cf2442703a025212d67e1"
+  }
+}

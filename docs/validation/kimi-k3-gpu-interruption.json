@@ -187,5 +187,6 @@
     "artifact": "experiment/phase295-seven-gpu/summary.json",
     "artifact_sha256": "f51ac302b9d5e15e70c5de755a3a6d0ada42e12d333ecbb52ac4b53bc7580b0d",
     "manifest_sha256": "e1faa7c867e1f3080523d0401b5ab688bb124fb60a846035716089cfbbabd3dd"
-  }
+  },
+  "recovery_evidence": "kimi-k3-device-recovery.json: all8NVML/CUDA/NCCLgraph/D2H andcleanup nowpass; priorfaultobservations retained."
 }
