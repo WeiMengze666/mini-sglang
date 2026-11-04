@@ -17,6 +17,10 @@ def execution_identity(module_name):
     root = package.parent.parent
 
     def git(*args):
+        # Archived trees may live inside another checkout. Its HEAD cannot
+        # identify this package; launch manifests and source hashes do.
+        if not (root / ".git").exists():
+            return None
         try:
             return subprocess.check_output(
                 ["git", "-C", str(root), *args], text=True, stderr=subprocess.DEVNULL
