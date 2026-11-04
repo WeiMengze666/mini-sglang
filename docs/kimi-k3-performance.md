@@ -555,3 +555,25 @@ abort at the automatic capacity, whole-model native-MNNVL, updated task quality
 and the canonical serving measurement remain open. Archived qualification trees
 are pinned by their launch manifests and source hashes; an enclosing checkout's
 HEAD does not identify an archived package.
+
+## Updated fused-routing whole-model result
+
+The [R4 result](validation/kimi-k3-r4-quality.json) completes all 1,319 task
+examples at frozen model source `1100408fa88b41de0cc593c309a15a319b24c85c`:
+1281 correct, zero invalid and zero truncated. The retained native target result
+has 1284 correct. There are ten differing valid final answers; token identity is
+a diagnostic. All eight ranks again pass the 48 distinct-context graph/eager
+logits and state comparisons exactly. Runtime audit observes native fused
+route/quant calls, BF16 state storage and no Mini numerical kernel calls.
+PyNCCL communication and the portable DCP combine still distinguish this R4
+configuration from the native communication candidate. Final native alignment
+and serving performance remain unqualified.
+
+The next [DCP combine adapter](validation/native-dcp-combine.json) reuses the
+mature native LSE-combine kernel with natural-log statistics. It zeros undefined
+empty-shard values and preserves corrupt active-row diagnostics. Selection uses
+shape/dtype coverage and SDK availability, independently of model identity.
+CPU/reference paths remain available. Eight GPUs pass 120 controls against
+unpartitioned attention, empty/corrupt inputs and changing strided graph inputs;
+the complete CPU/Gloo suite passes 938 tests with 706 skips. Whole-model native
+communication, cache-capacity pressure and serving checks are still pending.

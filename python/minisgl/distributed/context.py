@@ -31,6 +31,12 @@ def merge_attention(output, lse):
     A shard with no visible keys contributes zero, including rows where every
     shard is empty. Arithmetic stays FP32 until the caller's output projection.
     """
+    if output.is_cuda:
+        from minisgl.kernel.dcp import combine_partial_attention
+
+        combined = combine_partial_attention(output, lse)
+        if combined is not None:
+            return combined
     maximum = lse.amax(0)
     # Avoid -inf - -inf only for all-empty rows. Invalid active LSE must
     # propagate instead of silently removing that shard's contribution.

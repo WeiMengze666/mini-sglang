@@ -1,0 +1,35 @@
+{
+  "scope": "Native DCP LSE-combine adapter, component qualification only",
+  "recorded_utc": "2026-11-04T20:01:16.052782+00:00",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "candidate": {
+    "base_commit": "2a8f04108b4256ae80120b6ab0738b35e54bf023",
+    "files": {
+      "python/minisgl/distributed/context.py": "5dc90616d252994024343f75a398e17339fca2b4dc9afccd00a601f7a8510ba7",
+      "python/minisgl/kernel/dcp.py": "5f86328879ba0f4882ab3f0118bf6a16e0f4aa9da8c1474765fbab8203819355",
+      "tests/core/test_dcp_kernel_adapter.py": "f885ef2ab74e82dbfa19c51c96b294e95eb3ef4a55d4c96e9f0724236a12f873",
+      "tests/models/test_dcp_native_combine.py": "b4b5bfac79a1b0881ec9265d3415280660b8c4f92be4b284ec5d7532f03b2b2f"
+    },
+    "scope": "Native DCP combine operator qualification, not model/serving"
+  },
+  "cpu_gloo": {
+    "passed": 938,
+    "skipped": 706,
+    "log": "experiment/phase327-full-cpu.log"
+  },
+  "gpu": {
+    "ranks": 8,
+    "passed": 120,
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "unpartitioned_attention_reference": true,
+    "undefined_empty_outputs_zeroed": true,
+    "active_nan_and_positive_infinity_lse_propagates": true,
+    "strided_bf16_and_fp32_graph_inputs": true,
+    "graph_replays": 64
+  },
+  "implementation": "Reuse official dcp_lse_combine_triton; adapt empty/corrupt-row semantics using Torch. No local numerical kernel or model-name dispatch. Unsupported shapes or absent SDK use existing portable combine.",
+  "raw": "experiment/phase325-moe-components",
+  "model_and_performance_verified": false
+}
