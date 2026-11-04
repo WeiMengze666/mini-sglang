@@ -83,4 +83,9 @@ def create_provider(*, tp_info, cpu_group, device_group, device, max_bytes):
 
     with use_torch_stream():
         comm = native.CustomAllReduceV2(cpu_group, device, max_size=max_bytes)
-    return MNNVLAllReduceProvider(comm, group=device_group, execution_context=use_torch_stream)
+    # The SDK's PDL staging copy uses wider vectors than its 16-byte entry
+    # check on Blackwell. Views must meet the copy's alignment on every rank.
+    alignment = 32 if torch.cuda.get_device_capability(device)[0] >= 10 else 16
+    return MNNVLAllReduceProvider(
+        comm, group=device_group, execution_context=use_torch_stream, input_alignment=alignment
+    )

@@ -22,6 +22,7 @@ def native_host(monkeypatch, tmp_path):
     monkeypatch.setattr(torch.cuda, "_lazy_init", no_cuda)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device: (10, 3))
     monkeypatch.setattr(
         torch.cuda, "get_device_properties", lambda i: SimpleNamespace(uuid=f"gpu-{i}")
     )
@@ -146,7 +147,11 @@ def test_invalid_provider_factory_fails_before_prepare(monkeypatch):
         prepare_mnnvl_provider(module.__name__)
 
 
-def test_native_factory_delegates_collectives_capture_and_close(native_host, monkeypatch):
+@pytest.mark.parametrize("capability,alignment", [((9, 0), 16), ((10, 3), 32)])
+def test_native_factory_delegates_collectives_capture_and_close(
+    native_host, monkeypatch, capability, alignment
+):
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device: capability)
     _, _ = native_host
     events = []
     cpu, gpu = object(), object()
@@ -219,6 +224,7 @@ def test_native_factory_delegates_collectives_capture_and_close(native_host, mon
         device=torch.device("cuda:0"),
         max_bytes=4096,
     )
+    assert provider.input_alignment == alignment
     assert provider.all_reduce(torch.zeros(2)).eq(2).all()
     assert provider.all_reduce(torch.zeros(1)).eq(10).all()
     assert provider.all_gather(torch.ones(2)).shape == (4,)
@@ -265,3 +271,45 @@ def test_native_factory_rejects_different_group_membership(native_host, monkeypa
             device=torch.device("cuda:0"),
             max_bytes=4096,
         )
+
+
+@pytest.mark.parametrize("layout", ["aligned", "offset", "transpose", "strided"])
+@pytest.mark.parametrize("disabled", [False, True])
+def test_native_payload_normalization_preserves_values_and_collective_choice(
+    monkeypatch, layout, disabled
+):
+    from minisgl.distributed.mnnvl import MNNVLAllReduceProvider
+
+    base = torch.arange(64, dtype=torch.bfloat16)
+    if layout == "aligned":
+        tensor = base[:32]
+    elif layout == "offset":
+        tensor = base[8:40]  # 16-byte view offset meets SDK entry but not its PDL copy.
+    elif layout == "transpose":
+        tensor = base.view(8, 8).T
+    else:
+        tensor = base[::2]
+    expected = tensor.clone() * 2
+    entered = []
+
+    def reduce(payload):
+        assert payload.is_contiguous() and payload.data_ptr() % 32 == 0
+        payload.mul_(2)
+        return payload
+
+    def native(payload):
+        entered.append("native")
+        return reduce(payload)
+
+    def fallback(payload, *, group):
+        assert group == "same-ranks"
+        entered.append("fallback")
+        reduce(payload)
+
+    monkeypatch.setattr(torch.distributed, "all_reduce", fallback)
+    comm = SimpleNamespace(
+        disabled=disabled, should_custom_ar=lambda x: True, custom_all_reduce=native
+    )
+    provider = MNNVLAllReduceProvider(comm, group="same-ranks", input_alignment=32)
+    torch.testing.assert_close(provider.all_reduce(tensor), expected, rtol=0, atol=0)
+    assert entered == ["fallback" if disabled else "native"]

@@ -1,0 +1,127 @@
+{
+  "scope": "Generic native collective payload alignment/layout regression; no model-quality or performance claim",
+  "recorded_utc": "2026-11-04T21:16:16.805980+00:00",
+  "base_commit": "36b27fb69140ca9f47090dcfdd9aaf25990a4e28",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "runtime_sha256": {
+    "python/minisgl/distributed/mnnvl.py": "0312ad6d9bb35a54caf7e1ef412069fbbe79a7cc97b2131ad371da471712830c",
+    "python/minisgl/distributed/sgl.py": "0361add1e3abba88a3b900f8d0958c6ca38ddf6ab88a74aa7ad10cbda55a10bf"
+  },
+  "regression": "The native entry checks16byte input alignment but Blackwell PDL staging uses32byte vectors when payload size is aligned. A contiguous view at16byte offset entered the mature staging kernel and raised CUDA misaligned-address. Normalizing each local payload avoids a rank-dependent fallback decision. Dtype and logical values are preserved; aligned contiguous payloads pass through.",
+  "native_source": [
+    "python/sglang/kernels/jit/csrc/distributed/custom_all_reduce.cuh:324",
+    "python/sglang/kernels/jit/csrc/distributed/custom_all_reduce.cuh:365",
+    "python/sglang/kernels/jit/include/sgl_kernel/utils.cuh:149"
+  ],
+  "capability": "Provider input_alignment defaults1; builtin SGLang adapter supplies32 for SM100+ and16 for older devices. Noncontiguous/misaligned tensors are cloned to contiguous aligned storage before native capability selection.",
+  "host": {
+    "targeted_passed": 24,
+    "full_cpu_gloo_passed": 947,
+    "skipped": 706,
+    "cuda_available": false,
+    "excluded_manual_directory": "tests/kernel",
+    "log": "experiment/phase338-full-cpu.log"
+  },
+  "gpu": {
+    "hardware": "single node8B300,SM103",
+    "execution": "direct,userauthorized while gpuq unavailable",
+    "dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "shape": [
+      256,
+      2016
+    ],
+    "rank_layouts": "Aligned,16byte-offset,transposed,strided inputs mixed within each8rank collective",
+    "ranks": [
+      {
+        "rank": 0,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "70f78daa0524ec7b725fd1cdb91da0e6807170f2875db6424d4dba7e5cb2119b"
+      },
+      {
+        "rank": 1,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "87a5ff5cd70a58cf3dae9482f597f97658dcdc7dd1caed7dec58e39712cd45e5"
+      },
+      {
+        "rank": 2,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "7a8df5b5919c5a4de5e9b4d96fea753fdd112990707fa06f885f19d6b2366b0f"
+      },
+      {
+        "rank": 3,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "32c59507b75228a5cf3f98e1c05efab4f0e75c4a9137a8f42873066d7b8f4f3c"
+      },
+      {
+        "rank": 4,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "2a931496b935d9c599bd3d6a333540a02939ae1067846b8a78ba854c56fb0611"
+      },
+      {
+        "rank": 5,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "6a08ef98531869d7142f016ba1b3025a0f1bb495c9cd59a717810fdf5eb6341c"
+      },
+      {
+        "rank": 6,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "c34782085e3c73d7850c825ed9eba5240fae5d0d5e270f66302d497b1b1dac68"
+      },
+      {
+        "rank": 7,
+        "mixed_layout_cases": 8,
+        "eager_results": 8,
+        "graph_replay_results": 24,
+        "native_graph_rows": 8,
+        "all_exact": true,
+        "source_sha256": "1d6701a78b2d4d99542e939980dddcfbb715e8e6ae34792d29264213a82fb815"
+      }
+    ],
+    "eager_results": 64,
+    "graph_replay_results": 192,
+    "all_exact": true,
+    "framework_world_uninitialized": true,
+    "cleanup_complete": true
+  },
+  "retained_failure": {
+    "status": "experiment/phase335-native-status.json",
+    "returncode": 1,
+    "error": "All8 ranks CUDA misaligned address on BF16 16byte-offset view at multicast payload size; original logs unchanged",
+    "aligned_sdk_control": "phase336 at original runtime passed all8, including direct vendor replay; corrected alignment regression uses updated provider in phase338"
+  },
+  "limits": [
+    "SM103 measured; older-device alignment selection host-tested only",
+    "This ABI fix does not qualify native task quality, numerical attribution, or serving speed"
+  ]
+}

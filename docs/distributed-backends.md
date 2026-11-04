@@ -60,3 +60,11 @@ The frontend retains owned worker handles for its lifetime. If a scheduler or
 tokenizer exits after readiness, it finishes pending responses with an error and
 rejects new requests/readiness checks with HTTP 503. Backend teardown remains
 scoped to those owned processes on normal shutdown or frontend failure.
+
+The builtin native provider declares its SDK input-copy alignment (32 bytes on
+Blackwell, 16 on earlier devices). The generic adapter materializes contiguous,
+aligned payloads locally before capability selection, so different view offsets
+or strides on peers do not select different collectives. Dtype is preserved.
+The [alignment regression](validation/native-collective-alignment.json) records
+947 CPU/Gloo passes and 256 exact eight-GPU eager/graph results with mixed
+rank layouts, together with the retained native misaligned-view failure.

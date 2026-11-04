@@ -34,12 +34,19 @@ class MNNVLAllReduceProvider:
     collectives use the same process group through ordinary Torch/NCCL calls.
     """
 
-    def __init__(self, comm, *, group=None, execution_context=nullcontext):
+    def __init__(self, comm, *, group=None, execution_context=nullcontext, input_alignment=1):
         self.comm = comm
         self.group = group
         self.execution_context = execution_context
+        if input_alignment < 1 or input_alignment & (input_alignment - 1):
+            raise ValueError("Collective input alignment must be a positive power of two")
+        self.input_alignment = input_alignment
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
+        # Normalize locally instead of choosing a different collective on peers
+        # whose views have different offsets or strides.
+        if not x.is_contiguous() or x.data_ptr() % self.input_alignment:
+            x = x.clone(memory_format=torch.contiguous_format)
         if not getattr(self.comm, "disabled", False) and self.comm.should_custom_ar(x):
             with self.execution_context():
                 return self.comm.custom_all_reduce(x)
