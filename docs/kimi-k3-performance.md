@@ -577,3 +577,20 @@ CPU/reference paths remain available. Eight GPUs pass 120 controls against
 unpartitioned attention, empty/corrupt inputs and changing strided graph inputs;
 the complete CPU/Gloo suite passes 938 tests with 706 skips. Whole-model native
 communication, cache-capacity pressure and serving checks are still pending.
+
+### Native communication and full-cache lifecycle
+
+The `385d797` candidate passed whole-model TP8/DCP8 pressure with the opt-in
+native MNNVL provider, native DCP LSE combine, FP8 KV, BF16 declared KDA state
+and MXFP8 MoE activation. The 0.31 ratio budget yielded 312 cached state slots
+and 38,152 logical pages per rank. All eight ranks filled the cache with 408
+distinct prefixes, evicted cold checkpoints, restored hot and rebuilt states
+exactly to separate working storage, decoded a live batch of 48, and drained
+queued/prefilling/decoding/inflight abort-and-reuse cases. The native SGLang
+framework World stayed uninitialized; no Mini numerical kernel was observed.
+
+[The state-pressure record](validation/kimi-k3-native-state-pressure.json)
+retains the earlier fixture failure and its independent corrected replay.
+This functional result does not establish task quality, serving performance,
+or native shared-pool memory-policy equivalence. Native-communication full
+GSM8K evaluation and the exact canonical AIPerf comparison are the next gates.

@@ -1,0 +1,319 @@
+{
+  "scope": "Whole-model native communication plus ratio-based hybrid cache pressure/lifecycle qualification; not model quality or serving performance",
+  "recorded_utc": "2026-11-04T20:16:51.052354+00:00",
+  "model_source_commit": "385d79798bf3a9e832bd00c951220e7a2b348949",
+  "official_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "execution": "Direct GPU, explicitly user authorized while gpuq unavailable",
+  "status_artifact": "experiment/phase329-native-status.json",
+  "status_sha256": "37b36f713a944710d45b006a83963a168e27d26c8a615f3613b37406bcf3e7cf",
+  "driver_artifact": "experiment/phase329-pressure.py",
+  "driver_sha256": "9a1a30e3112615f4f252c2b6a0d8d706abe753677c4e17a2c31dc227a96a83be",
+  "configuration": {
+    "tp": 8,
+    "dcp": 8,
+    "ep": 1,
+    "max_running_requests": 48,
+    "context_limit": 1048576,
+    "physical_page_size": 64,
+    "prefill_chunk": 32768,
+    "memory_fraction": 0.9,
+    "state_memory_ratio": 0.31,
+    "kv_dtype": "fp8_e4m3",
+    "declared_state_dtype": "bfloat16",
+    "moe_activation": "mxfp8",
+    "tp_transport": "MNNVL native CustomAllReduceV2 opt-in provider",
+    "dcp_transport": "scoped Torch/NCCL",
+    "dcp_combine": "native dcp_lse_combine_triton adapter",
+    "decode_graphs": "all sizes1..48"
+  },
+  "passed_ranks": 8,
+  "finite_logits_all_evaluated_forwards": true,
+  "custom_minisgl_numerical_kernel_calls_per_rank": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "state_scope": "408 distinct512token prefixes force312slot cache to evict96; hot513token query restores512 without aliasing or mutation, cold query replays and rebuilds512; next query restores rebuilt512; live48decode and queued/prefilling/decoding/inflight abort replacement all drain and release working slots. Synthetic token IDs, no accuracy claim.",
+  "rows": [
+    {
+      "rank": 0,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "5c9d1ecf7f4100c711437c3a5145f38c95f84b61472eef61df209dd059e868a3"
+    },
+    {
+      "rank": 1,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "0f4089a7b0dc45baf8e9a70ce4bcef03b094ca730fda482df2691e76d6c2107d"
+    },
+    {
+      "rank": 2,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "243f1e14af9abdb7230ff1ed846022f29afa916c6a23b7dab1291f4548ce3fd2"
+    },
+    {
+      "rank": 3,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "8099878aa2cd29c3bcd5c54cbc60d53820283035fab0205bb62bd59a5d1070e2"
+    },
+    {
+      "rank": 4,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "3458c2c065cba48cef488bb9720862a718978eef626d204c11ef574e1c2f85c7"
+    },
+    {
+      "rank": 5,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "0e67a3150e4ad5334756fb20b22fbbbd9cef387c5b13dab1392c5d5925021d8b"
+    },
+    {
+      "rank": 6,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "1c4b0802095662ecf547712920b865ef9d1e80030f9d352a534f697b636cc214"
+    },
+    {
+      "rank": 7,
+      "cached_state_capacity": 312,
+      "logical_pages": 38152,
+      "initial_unique_prefixes": 408,
+      "initial_evictions": 96,
+      "final_drops_including_followups": 146,
+      "final_checkpoint_count": 312,
+      "native_collective_graph_rows": 3348,
+      "exact_nonalias_restores": [
+        {
+          "uid": 90000,
+          "length": 512,
+          "table": 24,
+          "slot": 407
+        },
+        {
+          "uid": 90002,
+          "length": 512,
+          "table": 24,
+          "slot": 408
+        }
+      ],
+      "abort_reuse_stages": [
+        "queued",
+        "prefilling",
+        "decoding",
+        "inflight"
+      ],
+      "framework_world_uninitialized": true,
+      "cleanup_complete": true,
+      "log_sha256": "322684166d2f2ea29890d400d4556ab76f3f58110c5f20ec4ab05acddaee84a8"
+    }
+  ],
+  "retained_failure": {
+    "stage": "phase326",
+    "failure": "All8 ranks raised fixture KeyError90002 after successful hot restore and cold replay; fixture demanded a redundant snapshot after the checkpoint was already rebuilt. Original failed logs remain untouched.",
+    "replay": "phase329 corrects the fixture expectation without runtime changes"
+  },
+  "limits": [
+    "Single-node8B300 only; native framework global World remains uninitialized",
+    "Native serving uses fi_a2a DCP exchange, this run uses Torch/NCCL exchange with native combine",
+    "312cached slots are not directly comparable to native372shared working/tracking/cache slots",
+    "Full native-communication GSM8K quality and canonical AIPerf run remain pending"
+  ]
+}
