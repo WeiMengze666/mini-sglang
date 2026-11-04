@@ -423,3 +423,31 @@ checks are still in progress. These recovery and component results do not replac
 whole-model quality or serving acceptance. The user temporarily authorized direct
 GPU execution while GPUq is unavailable; each stage has an owned-process ledger,
 launch manifest and retained exit status. No direct run is recorded as a GPUq job.
+
+## Comparing retained AIPerf exports
+
+`benchmark/online/summarize_aiperf.py` reads completed, submission-valid exports
+and rejects mismatched benchmark arguments or resolved workload settings. Only
+the resolved artifact directory is excluded from workload comparison. Exported
+metric objects and their units are preserved: the helper does not recalculate
+throughput using the nominal 900-second duration. Profiling deadline cancellations
+and HTTP errors are separate, and unavailable phase counts or package metadata
+remain unknown. Workload equality alone does not establish precision, quality,
+cache-policy or hardware parity.
+
+For K3, pass `--reference-prompt-token-offset 3` only when comparing the verified
+native billing convention described above. The generic default offset is zero;
+normalization changes derived input accounting, never raw token counts or output
+throughput. For example, after the candidate is qualified:
+
+```bash
+python benchmark/online/summarize_aiperf.py \
+  --reference /path/to/reference-run --candidate /path/to/candidate-run \
+  --reference-prompt-token-offset 3 --output /fresh/path/comparison.json
+```
+
+Seven CPU fixtures cover incomplete/invalid runs, unchanged tool boundaries,
+cancellation counts, token accounting, workload differences, missing metadata and
+duplicate exports. The helper also reproduced the original S0/R0 throughput and
+completion/cancellation counts from their unmodified exports. This reporting
+validation is separate from the pending new serving measurements.
