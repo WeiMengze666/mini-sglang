@@ -17,10 +17,15 @@ The initial uniform FP32/single-output-rounding check remains a failed hypothesi
 These controls support numerical attribution to the native reduction path without
 asserting an exact hardware reduction tree or changing serving precision.
 
-The exact canonical paired AIPerf393-entry/concurrency48/900-second measurement
-is running as phase330, using native SDK default heuristics. No current Mini
-serving throughput, fair ratio or near-SGLang performance claim exists yet.
-Historical stages below retain their original source and acceptance boundaries.
+The [first complete canonical Mini baseline](validation/kimi-k3-canonical-mini-baseline.json)
+uses all 393 dataset entries, concurrency 48 and the requested 900-second profile,
+with native SDK default heuristics. It completed 260 requests with zero request
+errors and five deadline cancellations: 146.59 output tokens/s, TTFT P50 1612.12 ms
+and ITL P50 74.82 ms. Statistics retain AIPerf's own measurement boundary.
+The fresh official paired run is still running as phase330-reference. The retained
+phase300 official result is 389.47 output tokens/s, so the Mini baseline remains
+well short of the performance target. No near-SGLang performance acceptance is
+claimed. Historical stages retain their original source and evidence boundaries.
 
 
 The primary performance target is the user-specified SGLang serving profile in
