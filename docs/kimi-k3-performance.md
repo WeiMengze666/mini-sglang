@@ -91,6 +91,36 @@ yet measured.
 The [prefill frontier change](validation/prefill-page-frontiers.json) has host
 scheduler/cache controls, with production GPU scheduler validation still pending.
 
+## Selected runtime canonical serving
+
+The [completed selected-runtime profile](validation/kimi-k3-indexed-serving.json)
+uses the exact 393-entry, concurrency-48, 900-second AIPerf workload and the
+qualified indexed/aligned runtime `e87b651`. Dense dispatch retains its previous
+qualified path; the automatic GEMM candidate is excluded.
+
+| Metric | Initial Mini | Selected Mini | Official reference |
+| --- | ---: | ---: | ---: |
+| Output tokens/s | 146.59 | 265.61 | 395.42 |
+| TTFT P50, ms | 1612.12 | 1408.82 | 554.35 |
+| TTFT P95, ms | 81327.42 | 9042.55 | 5143.76 |
+| ITL P50, ms | 74.82 | 45.34 | 25.67 |
+| ITL P95, ms | 290.53 | 80.99 | 47.31 |
+| Cache-read fraction | 70.09% | 90.39% | 93.35% |
+| Completed requests | 260 | 366 | 526 |
+| HTTP/request errors | 0 | 0 | 0 |
+| Deadline cancellations | 5 | 4 | 2 |
+
+Selected throughput improves by 81.2% over the initial Mini baseline and reaches
+67.2% of the retained official point. The serving target remains unmet. These
+are sequential profiles, not a randomized ABBA comparison or an SLO-goodput
+curve. Effective concurrency and trajectory progress differ under this closed
+workload; the ratio does not imply a uniform kernel slowdown. Input-derived
+reference metrics include the documented three-token prompt-stub adjustment.
+
+The same selected runtime scored 1283/1319 with no invalid answers or truncations.
+An isolated persistent residual-bank candidate is under separate qualification;
+its results must not be attributed to this completed serving profile.
+
 ## Aligned prefill and full-capacity cache checks
 
 [Eight-GPU cache qualification](validation/native-indexed-kda-cache.json) uses
@@ -108,7 +138,7 @@ case without an eviction-policy change. The final unaligned tail still lacks an
 interior checkpoint: this fixture matches KV through 584192 but restores state
 at 551936, leaving extra replay. Native cache-policy parity remains unfinished.
 
-A separate untraced canonical AIPerf run is in progress. The retained initial
+The untraced canonical AIPerf result is recorded above. The retained initial
 failed GPU fixture used the wrong final-request predicate; its corrected run
 and host control are separately recorded.
 
