@@ -92,7 +92,172 @@
       868,
       1016,
       1038
-    ]
+    ],
+    "supervisor_returncode": 0,
+    "all_48_graphs": [
+      {
+        "rank": 0,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.04165651649236679
+      },
+      {
+        "rank": 1,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.0438399538397789
+      },
+      {
+        "rank": 2,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.04269293323159218
+      },
+      {
+        "rank": 3,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.0422937236726284
+      },
+      {
+        "rank": 4,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.04293254762887955
+      },
+      {
+        "rank": 5,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.0421663373708725
+      },
+      {
+        "rank": 6,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.04340004548430443
+      },
+      {
+        "rank": 7,
+        "execution_finiteness_ownership_passed": true,
+        "nonexact_batches": [
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48
+        ],
+        "max_logit_relative_rms": 0.18011361360549927,
+        "max_state_relative_rms": 0.043303634971380234
+      }
+    ],
+    "mini_numerical_kernels_seen": 0,
+    "graph_scope": "Execution/finiteness/ownership; nonexact batches37\u201348 under default native all-reduce. No separate candidate-specific causal rerun. Candidate not selected independently of graph result."
   },
   "decision": {
     "default_enabled": false,

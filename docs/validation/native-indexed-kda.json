@@ -76,6 +76,7 @@
     "method": "Same reduced cache/graph set and histories;20 unprofiled CUDA-event decode steps per rank, median of8ranks. Separate kernel-only trace grouping, no operator/annotation double counting.",
     "limitations": "Single sequential control. Additive kernel times are not critical-path times. Not AIPerf throughput, SLO goodput, whole-task score or canonical memory-pressure validation."
   },
-  "full1319_quality_and_all48graph_scope": "phase357 running separately; not yet accepted.",
-  "near_sglang_serving_performance": false
+  "full1319_quality_and_all48graph_scope": "Completed after this initial component record; see native-indexed-kda-quality.json.",
+  "near_sglang_serving_performance": false,
+  "full_capacity_cache_scope": "Completed separately in native-indexed-kda-cache.json; serving performance still pending."
 }

@@ -91,6 +91,27 @@ yet measured.
 The [prefill frontier change](validation/prefill-page-frontiers.json) has host
 scheduler/cache controls, with production GPU scheduler validation still pending.
 
+## Aligned prefill and full-capacity cache checks
+
+[Eight-GPU cache qualification](validation/native-indexed-kda-cache.json) uses
+the selected indexed runtime with the canonical memory split, 312 cached states
+and 38152 logical KV pages. Retained mixed long prompts restore 551936 tokens;
+restored tensors match their checkpoint exactly, and the checkpoint remains
+unchanged. Cache pressure with 408 prefixes, 48-request decode, four cancellation
+stages and slot reuse pass on every rank. These are lifecycle checks, not an
+independent model-quality oracle or serving throughput result.
+
+The host control explains one baseline failure: a partial shared prefill budget
+left every later chunk off the page boundary, so KV keys existed without a
+restorable recurrent state. Aligning intermediate absolute frontiers fixes this
+case without an eviction-policy change. The final unaligned tail still lacks an
+interior checkpoint: this fixture matches KV through 584192 but restores state
+at 551936, leaving extra replay. Native cache-policy parity remains unfinished.
+
+A separate untraced canonical AIPerf run is in progress. The retained initial
+failed GPU fixture used the wrong final-request predicate; its corrected run
+and host control are separately recorded.
+
 ## BF16 GEMM candidate
 
 The [generic GEMM candidate](validation/native-bf16-gemm.json) in commit

@@ -12,7 +12,7 @@ from .weight import decode_mxfp4
 
 
 def _linear(x, weight, bias):
-    # The official CUDA default uses PyTorch/cuBLAS for these dense projections.
+    # Use the task-qualified PyTorch/cuBLAS dense path.
     return F.linear(x, weight, bias)
 
 
