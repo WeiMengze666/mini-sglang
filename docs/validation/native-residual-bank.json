@@ -6,7 +6,7 @@
     "python/minisgl/layers/attn_residual.py": "c15a7e50853f6a3deaf3447302f28117e6a6ad7783f033185021fa3be26e4810",
     "python/minisgl/models/kimi_k3.py": "baf8630f2ec89a23ee4655e157ce33b758d10a73902b84618eefb1519b64d7b6"
   },
-  "scope": "Generic forward-local residual storage; unchanged mature native arithmetic and precision. Canonical serving measurement pending.",
+  "scope": "Generic forward-local residual storage; unchanged mature native arithmetic and precision. Canonical serving measured separately.",
   "decision": "Select owned forward-local storage after local arithmetic, state ownership, native AR attribution and task checks; retain all task differences.",
   "host": {
     "passed": 1047,
@@ -516,7 +516,7 @@
     0,
     0
   ],
-  "canonical_serving_pending": true,
+  "canonical_serving_pending": false,
   "near_sglang_serving_performance": false,
   "raw_directories": [
     "experiment/phase370-native-bank",
@@ -528,5 +528,7 @@
     "experiment/phase379-causal"
   ],
   "raw_report_sha256": "d0620c3aba66209fddf0af0ef852af0572af7b3cb08c65ca4b319a6ffa5298e3",
-  "unchanged_selected_serving_record": "kimi-k3-indexed-serving.json"
+  "unchanged_selected_serving_record": "kimi-k3-indexed-serving.json",
+  "updated_utc": "2026-11-05T04:01:18.043567+00:00",
+  "canonical_serving_record": "kimi-k3-residual-serving.json"
 }

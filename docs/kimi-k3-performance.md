@@ -2,6 +2,11 @@
 
 ## Current checked scope (2026-11-05 CST)
 
+The latest qualified runtime `51420e6` completes the requested canonical profile
+at **276.90 output tokens/s**, 70.0% of the retained official 395.42 tokens/s point. The
+[residual serving record](validation/kimi-k3-residual-serving.json) preserves its
+full metrics and separate 1280/1319 task result. The serving target remains unmet.
+
 Measured baseline runtime `9ec11fe` includes generic native-MNNVL payload canonicalization, qualified
 by 947 CPU/Gloo passes and 256 exact eight-GPU mixed-view results. The retained
 [whole-model native quality record](validation/kimi-k3-native-quality.json)
@@ -91,7 +96,7 @@ recorded below.
 The [prefill frontier change](validation/prefill-page-frontiers.json) has host
 scheduler/cache controls and the full-capacity GPU lifecycle qualification below.
 
-## Selected runtime canonical serving
+## Indexed runtime canonical serving
 
 The [completed selected-runtime profile](validation/kimi-k3-indexed-serving.json)
 uses the exact 393-entry, concurrency-48, 900-second AIPerf workload and the
@@ -166,7 +171,35 @@ Within-process ABBA prefill of 32768 new tokens after 93184 cached tokens decrea
 from 1942.98 to 1822.01 ms (6.2%); peak allocated memory does not decrease. Separate
 reduced-cache decode measurements decrease 1.6-2.4%, with 178 fewer graph kernels.
 These are diagnostic model measurements. A canonical serving measurement of this
-runtime is pending; the completed 265.61 tokens/s point above remains source e87.
+runtime is now recorded separately below; the 265.61 tokens/s point above remains
+source e87.
+
+## Selected residual-bank serving
+
+The [completed bank-runtime profile](validation/kimi-k3-residual-serving.json)
+keeps 393 entries, concurrency 48, 900 seconds and all original precision/resource
+arguments. Runtime `51420e6` includes the owned bank; the FP32-output projection
+and packed-prefill candidates are excluded.
+
+| Metric | Indexed runtime | Residual bank | Official reference |
+| --- | ---: | ---: | ---: |
+| Output tokens/s | 265.61 | 276.90 | 395.42 |
+| TTFT P50, ms | 1408.82 | 1318.71 | 554.35 |
+| TTFT P95, ms | 9042.55 | 9784.74 | 5143.76 |
+| ITL P50, ms | 45.34 | 44.86 | 25.67 |
+| ITL P95, ms | 80.99 | 80.85 | 47.31 |
+| Cache-read fraction | 90.39% | 90.32% | 93.35% |
+| Completed requests | 366 | 373 | 526 |
+| HTTP/request errors | 0 | 0 | 0 |
+| Deadline cancellations | 4 | 4 | 2 |
+
+Throughput rises 4.2% versus the indexed runtime and 88.9% versus the initial Mini
+baseline, reaching 70.0% of the retained official point. TTFT P95 increases;
+not every metric improves. These sequential profiles preserve AIPerf's own
+measurement boundary; they are not a randomized serving ABBA or an SLO-goodput
+curve. Peak GPU memory was not sampled by this no-telemetry profile. Mini still
+has 48 working/312 cached states and 38152 logical KV pages; native has 372 shared
+slots and 39560 pages, under different ownership policies.
 
 ## BF16 GEMM candidate
 
