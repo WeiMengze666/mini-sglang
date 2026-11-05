@@ -71,7 +71,7 @@ sglang serve \
   --port 38080
 ```
 
-## Indexed KDA candidate
+## Qualified indexed KDA
 
 The [indexed KDA record](validation/native-indexed-kda.json) qualifies direct
 working-pool updates through the existing KDA kernel registry. The adapter uses
@@ -86,10 +86,10 @@ component measurements. The [complete indexed-source quality record](validation/
 reports 1283/1319 correct, zero invalid answers and zero truncations, versus native
 1284/1319. All eight ranks execute batches1–48 with finite outputs and released
 owners; only batches37–48 remain nonexact under default native AR choices, matching
-the previously attributed boundary. Canonical AIPerf throughput improvement is not
-yet measured.
+the previously attributed boundary. The selected-runtime canonical result is
+recorded below.
 The [prefill frontier change](validation/prefill-page-frontiers.json) has host
-scheduler/cache controls, with production GPU scheduler validation still pending.
+scheduler/cache controls and the full-capacity GPU lifecycle qualification below.
 
 ## Selected runtime canonical serving
 
@@ -118,8 +118,8 @@ workload; the ratio does not imply a uniform kernel slowdown. Input-derived
 reference metrics include the documented three-token prompt-stub adjustment.
 
 The same selected runtime scored 1283/1319 with no invalid answers or truncations.
-An isolated persistent residual-bank candidate is under separate qualification;
-its results must not be attributed to this completed serving profile.
+The subsequent residual-bank runtime has separate qualification below; its
+results must not be attributed to this completed serving profile.
 
 ## Aligned prefill and full-capacity cache checks
 
@@ -141,6 +141,32 @@ at 551936, leaving extra replay. Native cache-policy parity remains unfinished.
 The untraced canonical AIPerf result is recorded above. The retained initial
 failed GPU fixture used the wrong final-request predicate; its corrected run
 and host control are separately recorded.
+
+## Owned residual bank
+
+The [residual-bank record](validation/native-residual-bank.json) selects generic,
+forward-local storage for frozen block sums. The model supplies its bank capacity;
+the residual layer passes the valid row count to the existing native kernel.
+This removes repeated history stacking without a new numerical kernel, precision
+option or model-specific communication branch. CPU and larger-bank fallbacks remain.
+
+1047 host checks pass. Expanded eight-GPU controls pass 544 checks, including
+528 native-kernel cases and 16 larger-bank fallbacks. On actual model tensors,
+17952 same-input residual reads match the previous stack path bitwise and preserve
+all inputs. All eight ranks execute decode batches 1-48; matching the official AR
+algorithm restores exact B48 eager/graph logits and convolution/KDA states.
+
+The complete task result is 1280/1319, with two invalid answers and one truncation,
+versus previous 1283/1319 and native 1284/1319. The previous and bank versions give
+the same valid answer on 1311 cases. The local-operation and AR controls support the
+numerical qualification; they do not identify the precise cause of every changed
+greedy response. All responses and the lower score remain retained.
+
+Within-process ABBA prefill of 32768 new tokens after 93184 cached tokens decreases
+from 1942.98 to 1822.01 ms (6.2%); peak allocated memory does not decrease. Separate
+reduced-cache decode measurements decrease 1.6-2.4%, with 178 fewer graph kernels.
+These are diagnostic model measurements. A canonical serving measurement of this
+runtime is pending; the completed 265.61 tokens/s point above remains source e87.
 
 ## BF16 GEMM candidate
 

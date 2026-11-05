@@ -1,0 +1,532 @@
+{
+  "recorded_utc": "2026-11-05T03:10:57.870966+00:00",
+  "base_runtime": "e87b651741596e54bbd746d45101f0575b08dcc0",
+  "source_snapshot": "experiment/phase370-source",
+  "source_files": {
+    "python/minisgl/layers/attn_residual.py": "c15a7e50853f6a3deaf3447302f28117e6a6ad7783f033185021fa3be26e4810",
+    "python/minisgl/models/kimi_k3.py": "baf8630f2ec89a23ee4655e157ce33b758d10a73902b84618eefb1519b64d7b6"
+  },
+  "scope": "Generic forward-local residual storage; unchanged mature native arithmetic and precision. Canonical serving measurement pending.",
+  "decision": "Select owned forward-local storage after local arithmetic, state ownership, native AR attribution and task checks; retain all task differences.",
+  "host": {
+    "passed": 1047,
+    "skipped": 742,
+    "raw": "experiment/phase370-full-cpu.xml"
+  },
+  "components": {
+    "initial_checks": 96,
+    "expanded_checks": 544,
+    "expanded_native_arithmetic_checks": 528,
+    "expanded_larger_bank_fallback_checks": 16,
+    "ranks": 8,
+    "tokens": [
+      1,
+      8,
+      48,
+      32768
+    ],
+    "native_frozen_rows": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "controls": [
+      "unused capacity poisoned with NaNs",
+      "three repeated reads with different weights",
+      "inputs and frozen rows immutable",
+      "side stream",
+      "three changing-input graph replays",
+      "bank row9 fallback"
+    ]
+  },
+  "actual_model_reads": {
+    "scope": "Same-input actual-model local operation evidence; does not independently attribute entire model differences to a specific floating-point kernel.",
+    "rank_summaries": [
+      {
+        "rank": 0,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      },
+      {
+        "rank": 1,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      },
+      {
+        "rank": 2,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      },
+      {
+        "rank": 3,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      },
+      {
+        "rank": 4,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      },
+      {
+        "rank": 5,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      },
+      {
+        "rank": 6,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      },
+      {
+        "rank": 7,
+        "reads": 2244,
+        "rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "exact": true
+      }
+    ],
+    "total_reads": 17952
+  },
+  "execution_contract": {
+    "model_dtype": "bfloat16",
+    "moe_activation_precision": "mxfp8",
+    "kv_cache_dtype": "fp8_e4m3",
+    "recurrent_state_dtype": "bfloat16",
+    "conv_state_dtype": "bfloat16",
+    "bf16_precision": "default",
+    "tp_size": 8,
+    "dcp_size": 8,
+    "ep_size": 1,
+    "page_size": 64
+  },
+  "quality": {
+    "completed": 1319,
+    "correct": 1280,
+    "invalid_answers": 2,
+    "truncated": 1,
+    "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942"
+  },
+  "comparison_to_previous": {
+    "accuracy_delta_percentage_points": -0.22744503411675512,
+    "same_valid_answer": 1311,
+    "identical_token_ids": 656,
+    "left_only_correct": [
+      322
+    ],
+    "right_only_correct": [
+      205,
+      425,
+      635,
+      951
+    ]
+  },
+  "comparison_to_native": {
+    "right_accuracy": 0.9734647460197119,
+    "accuracy_delta_percentage_points": -0.3032600454890068,
+    "same_valid_answer": 1305,
+    "identical_token_ids": 664,
+    "left_only_correct": [
+      12,
+      187,
+      1016,
+      1038
+    ],
+    "right_only_correct": [
+      37,
+      205,
+      306,
+      423,
+      425,
+      754,
+      951,
+      1003
+    ]
+  },
+  "graphs": {
+    "ranks": 8,
+    "batches": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48
+    ],
+    "execution_finiteness_ownership_pass": true,
+    "nonexact_default_batches": [
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48
+    ],
+    "bank_source_b48_algorithm_control": {
+      "default": [
+        {
+          "rank": 0,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        },
+        {
+          "rank": 1,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        },
+        {
+          "rank": 2,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        },
+        {
+          "rank": 3,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        },
+        {
+          "rank": 4,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        },
+        {
+          "rank": 5,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        },
+        {
+          "rank": 6,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        },
+        {
+          "rank": 7,
+          "logits_exact": false,
+          "states_exact": false,
+          "passed": true
+        }
+      ],
+      "matched_to_graph": [
+        {
+          "rank": 0,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        },
+        {
+          "rank": 1,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        },
+        {
+          "rank": 2,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        },
+        {
+          "rank": 3,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        },
+        {
+          "rank": 4,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        },
+        {
+          "rank": 5,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        },
+        {
+          "rank": 6,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        },
+        {
+          "rank": 7,
+          "logits_exact": true,
+          "states_exact": true,
+          "passed": true
+        }
+      ]
+    },
+    "attribution_scope": "The bank-source eager/graphB48 difference disappears when the native AR algorithm policy matches. Same-input actual-model residual reads are bitwise exact. These controls do not prove a specific cause for every cross-source greedy divergence."
+  },
+  "isolated_decode": {
+    "scope": "Reduced cache, sequential phase356/377 diagnostic; not serving performance or randomized ABBA.",
+    "cases": {
+      "b1-l1024": {
+        "previous_ms": 17.30744323730469,
+        "bank_ms": 16.88832550048828,
+        "removed_graph_kernels": 178
+      },
+      "b24-l1024": {
+        "previous_ms": 24.638765716552733,
+        "bank_ms": 24.103690338134765,
+        "removed_graph_kernels": 178
+      },
+      "b48-l1024": {
+        "previous_ms": 29.475233459472655,
+        "bank_ms": 29.004808044433595,
+        "removed_graph_kernels": 178
+      },
+      "b8-l1024": {
+        "previous_ms": 20.190758514404298,
+        "bank_ms": 19.730584716796876,
+        "removed_graph_kernels": 178
+      },
+      "b8-l65536": {
+        "previous_ms": 20.145284271240236,
+        "bank_ms": 19.82389907836914,
+        "removed_graph_kernels": 178
+      }
+    }
+  },
+  "prefill_abba": {
+    "scope": "Same-process ABBA eager prefill after warm93184;query32768;reduced cache;not serving performance.",
+    "ranks": [
+      {
+        "rank": "rank0",
+        "legacy_ms": 1943.01806640625,
+        "bank_ms": 1822.0023193359375,
+        "ratio": 0.9377176418672526,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      },
+      {
+        "rank": "rank1",
+        "legacy_ms": 1943.0074462890625,
+        "bank_ms": 1822.0289306640625,
+        "ratio": 0.9377364632049887,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      },
+      {
+        "rank": "rank2",
+        "legacy_ms": 1943.0582885742188,
+        "bank_ms": 1822.08447265625,
+        "ratio": 0.937740511116248,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      },
+      {
+        "rank": "rank3",
+        "legacy_ms": 1942.8740844726562,
+        "bank_ms": 1821.9437255859375,
+        "ratio": 0.9377569756819613,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      },
+      {
+        "rank": "rank4",
+        "legacy_ms": 1942.9578857421875,
+        "bank_ms": 1822.0057373046875,
+        "ratio": 0.9377484456430729,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      },
+      {
+        "rank": "rank5",
+        "legacy_ms": 1942.94287109375,
+        "bank_ms": 1822.0148315429688,
+        "ratio": 0.9377603730146185,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      },
+      {
+        "rank": "rank6",
+        "legacy_ms": 1943.0148315429688,
+        "bank_ms": 1822.0725708007812,
+        "ratio": 0.9377553589510452,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      },
+      {
+        "rank": "rank7",
+        "legacy_ms": 1942.9033813476562,
+        "bank_ms": 1821.9458618164062,
+        "ratio": 0.9377439348284267,
+        "legacy_peak": 12053721088,
+        "bank_peak": 12053721088
+      }
+    ],
+    "median_legacy_ms": 1942.982666015625,
+    "median_bank_ms": 1822.0102844238281,
+    "median_ratio": 0.9377461902357498
+  },
+  "custom_minisgl_numerical_kernel_calls": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "canonical_serving_pending": true,
+  "near_sglang_serving_performance": false,
+  "raw_directories": [
+    "experiment/phase370-native-bank",
+    "experiment/phase374-native-bank",
+    "experiment/phase372-bank-full",
+    "experiment/phase376-residual-probe",
+    "experiment/phase377-model-profile",
+    "experiment/phase378-prefill-pair",
+    "experiment/phase379-causal"
+  ],
+  "raw_report_sha256": "d0620c3aba66209fddf0af0ef852af0572af7b3cb08c65ca4b319a6ffa5298e3",
+  "unchanged_selected_serving_record": "kimi-k3-indexed-serving.json"
+}

@@ -6,7 +6,7 @@ import torch
 from minisgl.core import get_global_ctx
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel
-from minisgl.layers.attn_residual import attention_residual
+from minisgl.layers.attn_residual import ResidualBank, attention_residual
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.embedding import Embedding
 from minisgl.layers.kda import KDALayer
@@ -76,12 +76,19 @@ class KimiModel(BaseOP):
         self.layers = OPList([KimiDecoderLayer(config, i) for i in range(config.num_hidden_layers)])
         self.norm = TorchRMSNorm(config.hidden_size, config.rms_norm_eps)
         self._attn_res = config.attn_res_block_size is not None
+        self._residual_blocks = (
+            (config.num_hidden_layers + config.attn_res_block_size - 1)
+            // config.attn_res_block_size
+            if self._attn_res
+            else 0
+        )
         if self._attn_res:
             self.output_attn_res_norm = TorchRMSNorm(config.hidden_size, config.rms_norm_eps)
             self.output_attn_res_proj = Linear(config.hidden_size, 1)
 
     def forward(self, input_ids, batch, cache, page_table, backend=None):
-        head, bank = self.embed_tokens.forward(input_ids), []
+        head = self.embed_tokens.forward(input_ids)
+        bank = ResidualBank(head, self._residual_blocks) if self._attn_res else []
         for layer in self.layers.op_list:
             head = layer.forward(head, bank, batch, cache, page_table, backend)
         if self._attn_res:
