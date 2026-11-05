@@ -1,0 +1,68 @@
+{
+  "recorded_utc": "2026-11-04T23:56:03.575284+00:00",
+  "scope": "Generic optional BF16 GEMM adapter with caller-owned BF16/FP32 outputs. Components and isolated model execution only. Full-task and canonical serving acceptance pending.",
+  "base_runtime": "e87b651741596e54bbd746d45101f0575b08dcc0",
+  "source_manifest_sha256": "14bdd4c0d24224404828a28d0b468a0f3f7a3f97c652dd53b25efac8217c137b",
+  "dispatch": "Existing strict arithmetic uses its reference path. Default arithmetic on SM10x delegates supported layouts/shapes to the optional official SDK; other cases retain PyTorch. No model-specific shape table or new CLI flag.",
+  "sdk_source": "sglang/kernels/ops/gemm/cutedsl_bf16_gemm.py at baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "official_auto_policy": "unquant.initialize_bf16_gemm_config selects cutedsl for auto onSM100/SM103 when deterministic inference is disabled; server-info retains auto, so this is source-resolved behavior.",
+  "host_regression": {
+    "passed": 1053,
+    "skipped": 826
+  },
+  "gpu_controls": {
+    "ranks": 8,
+    "tests": 768,
+    "actual_native_tests": 256,
+    "unsupported_shape_controls": 512,
+    "native_result": "Bitwise directSDK agreement, independent FP64 forward-error bounds, caller-owned FP32/BF16 outputs, side-stream execution and three graph replays; inputs unchanged.",
+    "unsupported_result": "Adapter returnsNone exactly when native shape policy declines these cases; caller retains existing fallback. These512cases are not native arithmetic tests."
+  },
+  "isolated_model_profile": {
+    "rows": [
+      {
+        "case": "b1-l1024",
+        "indexed_torch_gemm_ms": 17.30744323730469,
+        "indexed_native_gemm_ms": 16.840484619140625,
+        "single_pair_reduction_pct": 2.6980219536850814,
+        "kernels_before": 4427,
+        "kernels_after": 4011
+      },
+      {
+        "case": "b24-l1024",
+        "indexed_torch_gemm_ms": 24.638765716552733,
+        "indexed_native_gemm_ms": 24.767215728759766,
+        "single_pair_reduction_pct": -0.5213329826856405,
+        "kernels_before": 4545,
+        "kernels_after": 4545
+      },
+      {
+        "case": "b48-l1024",
+        "indexed_torch_gemm_ms": 29.475233459472655,
+        "indexed_native_gemm_ms": 29.50074157714844,
+        "single_pair_reduction_pct": -0.0865408503408771,
+        "kernels_before": 4521,
+        "kernels_after": 4521
+      },
+      {
+        "case": "b8-l1024",
+        "indexed_torch_gemm_ms": 20.190758514404298,
+        "indexed_native_gemm_ms": 19.91288299560547,
+        "single_pair_reduction_pct": 1.3762510140497564,
+        "kernels_before": 4477,
+        "kernels_after": 4061
+      },
+      {
+        "case": "b8-l65536",
+        "indexed_torch_gemm_ms": 20.145284271240236,
+        "indexed_native_gemm_ms": 19.894963836669923,
+        "single_pair_reduction_pct": 1.2425758366074513,
+        "kernels_before": 4477,
+        "kernels_after": 4061
+      }
+    ],
+    "scope": "Same reduced cache/graph set as indexed-state model profile;20unprofiled steps per rank. Single sequential pair, modest small-batch changes and larger-batch variation, no stable serving speedup claim."
+  },
+  "quality_score_scope": "1283/1319 belongs to e87b651 before this GEMM change. Full combined-source quality must be repeated.",
+  "near_sglang_serving_performance": false
+}

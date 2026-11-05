@@ -91,6 +91,17 @@ yet measured.
 The [prefill frontier change](validation/prefill-page-frontiers.json) has host
 scheduler/cache controls, with production GPU scheduler validation still pending.
 
+## Native BF16 GEMM dispatch
+
+The [generic GEMM adapter](validation/native-bf16-gemm.json) delegates default
+arithmetic to the optional official CuTe DSL/TGV SDK on supported SM10x layouts
+and shapes. Strict arithmetic retains its reference path. FP32 merged-front
+outputs remain caller-owned FP32 buffers; the SDK owns kernel selection.
+1053 CPU/Gloo tests pass. Eight-GPU controls include 256 actual native arithmetic
+cases and 512 unsupported-shape capability cases. Isolated model timing changes
+are modest (about 1–3% at small batches in one sequential pair); a stable serving
+speedup and full-task quality for this added change are not yet established.
+
 ## Precision and parallel layout
 
 A model-level BF16 label is insufficient to establish parity. Record the actual
