@@ -8,13 +8,12 @@ from minisgl.distributed import DistributedCommunicator, get_tp_info
 from minisgl.utils import div_even
 
 from .base import BaseOP
-from .gemm import try_native_bf16_gemm
 from .weight import decode_mxfp4
 
 
 def _linear(x, weight, bias):
-    output = try_native_bf16_gemm(x, weight, bias)
-    return F.linear(x, weight, bias) if output is None else output
+    # The official CUDA default uses PyTorch/cuBLAS for these dense projections.
+    return F.linear(x, weight, bias)
 
 
 def linear_bf16(x: torch.Tensor, weight: torch.Tensor, bias=None) -> torch.Tensor:
@@ -26,9 +25,7 @@ def linear_fp32(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     """Retain projection accumulators using the official PyTorch GEMM API."""
     if x.is_cuda and x.dtype == weight.dtype and x.dtype in (torch.bfloat16, torch.float16):
         flat = x.reshape(-1, x.shape[-1])
-        result = torch.empty((len(flat), weight.shape[0]), device=x.device, dtype=torch.float32)
-        if try_native_bf16_gemm(flat, weight, out=result) is None:
-            torch.mm(flat, weight.t(), out=result, out_dtype=torch.float32)
+        result = torch.mm(flat, weight.t(), out_dtype=torch.float32)
         return result.view(*x.shape[:-1], weight.shape[0])
     return F.linear(x.float(), weight.float())
 
@@ -110,8 +107,7 @@ class MergedLinear:
             output = torch.empty(
                 (flat.shape[0], self.weight.shape[0]), device=x.device, dtype=torch.float32
             )
-            if try_native_bf16_gemm(flat, self.weight, out=output) is None:
-                torch.mm(flat, self.weight.t(), out=output, out_dtype=torch.float32)
+            torch.mm(flat, self.weight.t(), out=output, out_dtype=torch.float32)
         else:
             output = F.linear(flat.float(), self.weight.float())
         output = output.view(*x.shape[:-1], self.weight.shape[0])

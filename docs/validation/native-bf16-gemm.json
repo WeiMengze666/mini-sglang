@@ -1,6 +1,6 @@
 {
   "recorded_utc": "2026-11-04T23:56:03.575284+00:00",
-  "scope": "Generic optional BF16 GEMM adapter with caller-owned BF16/FP32 outputs. Components and isolated model execution only. Full-task and canonical serving acceptance pending.",
+  "scope": "Retained generic BF16 GEMM candidate47e4961; components passed, full-task point estimate regressed. Default dense dispatch restored to previously qualified indexed runtime.",
   "base_runtime": "e87b651741596e54bbd746d45101f0575b08dcc0",
   "source_manifest_sha256": "14bdd4c0d24224404828a28d0b468a0f3f7a3f97c652dd53b25efac8217c137b",
   "dispatch": "Existing strict arithmetic uses its reference path. Default arithmetic on SM10x delegates supported layouts/shapes to the optional official SDK; other cases retain PyTorch. No model-specific shape table or new CLI flag.",
@@ -64,5 +64,39 @@
     "scope": "Same reduced cache/graph set as indexed-state model profile;20unprofiled steps per rank. Single sequential pair, modest small-batch changes and larger-batch variation, no stable serving speedup claim."
   },
   "quality_score_scope": "1283/1319 belongs to e87b651 before this GEMM change. Full combined-source quality must be repeated.",
-  "near_sglang_serving_performance": false
+  "near_sglang_serving_performance": false,
+  "full_task": {
+    "correct": 1274,
+    "completed": 1319,
+    "invalid_answers": 3,
+    "truncated": 2,
+    "previous_indexed_correct": 1283,
+    "previous_indexed_invalid_answers": 0,
+    "previous_indexed_truncated": 0,
+    "official_correct": 1284,
+    "same_frozen_grader": true,
+    "raw": "experiment/phase363-gemm-full",
+    "candidate_only_correct_vs_previous": [
+      37,
+      796
+    ],
+    "previous_only_correct": [
+      73,
+      187,
+      234,
+      255,
+      406,
+      425,
+      439,
+      635,
+      868,
+      1016,
+      1038
+    ]
+  },
+  "decision": {
+    "default_enabled": false,
+    "reason": "Marginal isolated1\u20133% timing changes do not justify the worse task point estimate and extra invalid outputs. Components do not establish that the SDK arithmetic is erroneous. Retain candidate source/tests in47e4961 and raw evidence; no responses excluded.",
+    "selected_runtime_source": "e87b651741596e54bbd746d45101f0575b08dcc0"
+  }
 }
