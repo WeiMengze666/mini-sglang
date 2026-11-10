@@ -38,7 +38,9 @@ class KDAAttentionBackend(BaseAttnBackend):
                 indices = cache.recurrent.batch_indices([req.table_idx for req in batch.reqs])
                 metadata.state_indices = indices
             if is_decode and self.kernel.indexed_decode is not None:
-                result = self.kernel.indexed_decode(layer, x, cache.recurrent, layer_id, indices)
+                result = self.kernel.indexed_decode(
+                    layer, x, cache.recurrent, layer_id, indices, metadata
+                )
                 if result is not None:
                     return layer.finish(x, result.output, normed=result.normed)
             initial = cache.recurrent.get_kda_batch(layer_id, indices)

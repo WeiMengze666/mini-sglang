@@ -19,13 +19,14 @@ if TYPE_CHECKING:
     from minisgl.kvcache.recurrent_pool import RecurrentStatePool
     from minisgl.layers.kda import KDALayer
 
+    from .backend import KDAMetadata
     from .reference import KDAState
 
 RecurrenceKernel = Callable[..., tuple["torch.Tensor", "torch.Tensor"]]
 ProjectionKernel = Callable[["KDALayer", "torch.Tensor"], tuple["torch.Tensor", ...]]
 DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
 IndexedDecodeKernel = Callable[
-    ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor"],
+    ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor", "KDAMetadata"],
     "KDADecodeResult | None",
 ]
 
@@ -132,10 +133,10 @@ def _sgl_decode(layer, x, state):
     return decode(layer, x, state)
 
 
-def _sgl_indexed_decode(layer, x, pool, layer_id, indices):
+def _sgl_indexed_decode(layer, x, pool, layer_id, indices, metadata):
     from .sgl import indexed_decode
 
-    return indexed_decode(layer, x, pool, layer_id, indices)
+    return indexed_decode(layer, x, pool, layer_id, indices, metadata)
 
 
 register_kda_kernel("torch", _torch_recurrence)

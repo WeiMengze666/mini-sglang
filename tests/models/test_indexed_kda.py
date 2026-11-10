@@ -6,6 +6,7 @@ import pytest
 import torch
 from minisgl.attention.config import KDAConfig
 from minisgl.attention.kda import KDAState
+from minisgl.attention.kda.backend import KDAMetadata
 from minisgl.attention.kda.registry import get_kda_kernel
 from minisgl.attention.kda.sgl import indexed_decode, project
 from minisgl.distributed import DistributedInfo
@@ -58,7 +59,7 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
         state_dtype=torch.bfloat16,
         arena=arena,
     )
-    tables = list(reversed(range(1, 2 * batch, 2)))
+    tables = list(reversed(range(0, 2 * batch, 2)))
     for table in tables:
         pool.begin_request(table, table + 100, 0)
         state = pool.get_kda_state(0, table)
@@ -69,6 +70,9 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
     for table in tables:
         pool.begin_request(table, table + 100, 13)
     indices = pool.batch_indices(tables)
+    metadata = KDAMetadata(
+        torch.arange(batch + 1, device="cuda", dtype=torch.int32), state_indices=indices
+    )
     initial = pool.get_kda_batch(0, indices)
     x = torch.randn(batch, 512, device="cuda", dtype=torch.bfloat16) * 0.1
     kernel = get_kda_kernel("sgl")
@@ -78,11 +82,11 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
     with torch.cuda.stream(stream):
         if graph_mode:
             for _ in range(2):
-                indexed_decode(layer, x, pool, 0, indices)
+                indexed_decode(layer, x, pool, 0, indices, metadata)
                 pool.set_kda_batch(0, indices, initial)
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph, stream=stream):
-                result = indexed_decode(layer, x, pool, 0, indices)
+                result = indexed_decode(layer, x, pool, 0, indices, metadata)
             pool.set_kda_batch(0, indices, initial)
         native_conv, native_state = pool.indexed_kda_state(0)
         inactive = torch.tensor(
@@ -103,7 +107,7 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
             if graph_mode:
                 graph.replay()
             else:
-                result = indexed_decode(layer, x, pool, 0, indices)
+                result = indexed_decode(layer, x, pool, 0, indices, metadata)
             assert result.state is None and not result.normed
             torch.testing.assert_close(result.output, expected[:, 0], rtol=0, atol=0)
             actual = pool.get_kda_batch(0, indices)

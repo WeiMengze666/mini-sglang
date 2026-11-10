@@ -1,0 +1,98 @@
+{
+  "scope": "Isolated native safe-gate adapter candidate; production default unchanged pending full1319 quality",
+  "runtime_matches_gpu32_source_byte_for_byte": true,
+  "runtime_file_count": 140,
+  "published_base_commit": "e238f0a7c16d99e6f8244482ccf1b64e7c42e6b4",
+  "gpu_source_base": "fb8a8c660b6f83ef290edb2603c9ef63748ebbc9",
+  "patch_sha256": "e4f553c8dd0eaa765899ea8f415703385b7d896ead67a6b86031ba08cafe2487",
+  "component_review_path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-kda-safe-decode-prepared-v2/component-review.json",
+  "component_review_sha256": "ca87e28d611bfeff9aad89a2e79fc91cc40f8852786bd90f9c41e1798821cd3f",
+  "component_review": {
+    "status": "component_review_passed",
+    "root_accepted": true,
+    "full_model_quality_may_proceed": true,
+    "gpuq_job_id": 32,
+    "component_plan_sha256": "d6a45c5612e37143431b6bb3ca9d5fd9553f0f0c42285e2c8e47a5c49f8f663e",
+    "source_commit": "fb8a8c660b6f83ef290edb2603c9ef63748ebbc9",
+    "tracked_diff_sha256": "e4f553c8dd0eaa765899ea8f415703385b7d896ead67a6b86031ba08cafe2487",
+    "source_sha256_digest": "2b719ac283b23113bc0d56d5aafe270a13749aebfd6125f8a25cc8c3cba7dfb3",
+    "total_cases": 440,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "controller_sha256": "44da8be3b540ca263478bb5cc8e721e5f31ca734c13fed1eca0e414dd32cd445",
+    "ranks": [
+      {
+        "rank": 0,
+        "cases": 55,
+        "xml_sha256": "67c8e8e603bff697b112916d0303a06bdc40a3da79bd638907adaab8c428b524",
+        "result_sha256": "9298f53331086a3597bde6d3ce8a619d81031ed3fc7c31379f897cfee5754eb8"
+      },
+      {
+        "rank": 1,
+        "cases": 55,
+        "xml_sha256": "a8ae419e836a2a7632c43d58277d14c7111bb8b003bc96a0e59457bd067d8675",
+        "result_sha256": "a059cbc11da22f6dabfd8661c935e5b197dfffd73344a7a0961b99a27a579bbc"
+      },
+      {
+        "rank": 2,
+        "cases": 55,
+        "xml_sha256": "d0173df4f3539f39838a88151e2906e815cd3a27e5077d2e5b0faf4f976a7dfb",
+        "result_sha256": "7f9e22f5153b333a04a9b41743727865bf01b742c2088ea5a01a1b007ad68394"
+      },
+      {
+        "rank": 3,
+        "cases": 55,
+        "xml_sha256": "75e4e1dab7c614ac9955dafc3d461b383b5decd1615acf9a3e27aec1419a3eda",
+        "result_sha256": "e57dfbc2ff47444b2f1772f397ed58dfa987b95c816d57b6ae1f243f2e127db8"
+      },
+      {
+        "rank": 4,
+        "cases": 55,
+        "xml_sha256": "e88505fd055f3826c3b60b835a9710590fac3aaab3cc9392b34be0064f877476",
+        "result_sha256": "d0f485c3048792e44a62d6e628de2bc0f166f840b359495092cb9f1dde7d01bf"
+      },
+      {
+        "rank": 5,
+        "cases": 55,
+        "xml_sha256": "6a3b7a0c7d647a345a1151d6948dd7acc2d74db657a10d7f4548d1ff229bc44a",
+        "result_sha256": "764c5d184bef912c5486a8d86d0b5ad32072515ff4fd012fc309e20b206b91da"
+      },
+      {
+        "rank": 6,
+        "cases": 55,
+        "xml_sha256": "bd7dd3dc9a6161ce5f5f6d86b5c602032f392a252e49991ce0d75ec78c82cc81",
+        "result_sha256": "73ebff096d96429a5456fdb6d3f995a93dafd8f6d72055cf62b8d009c33cd3c8"
+      },
+      {
+        "rank": 7,
+        "cases": 55,
+        "xml_sha256": "467bb2d4b820376ced286545cb42464651e44e66639857fb307ec1a86105df60",
+        "result_sha256": "86fed2c2be2facca26ec8fdb9675dce26b3579d3e79a00190cd8fde449cc1545"
+      }
+    ],
+    "reviewed_utc": "2026-11-10T20:27:00.660536+00:00",
+    "scope": "Actual public operator same-input/output/full-state equality; indexed BF16, functional BF16/FP32, storage/graph controls. No full-model/serving acceptance.",
+    "old_packed_diagnostics": {
+      "count": 576,
+      "max_output_abs_difference": 0.002899169921875,
+      "max_state_abs_difference": 6.103515625e-05,
+      "interpretation": "Different mature entry points have numerical differences; not an arithmetic defect or full-model quality attribution."
+    },
+    "full_model_quality_accepted": false,
+    "serving_performance_accepted": false
+  },
+  "full_model_quality": {
+    "status": "GPUq34running",
+    "accepted": false
+  },
+  "serving_performance": {
+    "accepted": false
+  },
+  "initial_failed_graph_gate": {
+    "gpuq_job_id": 31,
+    "passed_per_rank": 49,
+    "failed_per_rank": 6,
+    "cause": "Pageable host constant copy during functional graph capture; one-line GPU arange fix, original evidence retained."
+  }
+}

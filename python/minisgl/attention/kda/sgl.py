@@ -18,6 +18,38 @@ def _kernels():
     return chunk_kda, fused_recurrent_kda_packed_decode, use_torch_stream
 
 
+@cache
+def _safe_decode_kernel():
+    from sglang.kernels.ops.attention.fla.fused_sigmoid_gating_recurrent import (
+        fused_sigmoid_gating_delta_rule_update,
+    )
+
+    return fused_sigmoid_gating_delta_rule_update
+
+
+def _safe_decode(mixed, forget, beta, a_log, dt_bias, state, indices, cu_seqlens, lower_bound):
+    """Pass raw gates and indexed V,K state to the official safe-gate operator."""
+    heads, values, keys = state.shape[-3:]
+    q, k, v = mixed.split((heads * keys, heads * keys, heads * values), dim=-1)
+    return _safe_decode_kernel()(
+        q=q.unflatten(-1, (heads, keys)).unsqueeze(0),
+        k=k.unflatten(-1, (heads, keys)).unsqueeze(0),
+        v=v.unflatten(-1, (heads, values)).unsqueeze(0),
+        a=forget,
+        b=beta.unsqueeze(0),
+        A_log=a_log,
+        dt_bias=dt_bias,
+        initial_state_source=state,
+        initial_state_indices=indices,
+        cu_seqlens=cu_seqlens,
+        use_qk_l2norm_in_kernel=True,
+        softplus_beta=1.0,
+        softplus_threshold=20.0,
+        is_kda=True,
+        lower_bound=lower_bound,
+    )
+
+
 def recurrent_kda(q, k, v, forget, beta, a_log, dt_bias, state, lower_bound):
     tokens, heads, keys = q.shape
     values = v.shape[-1]
@@ -33,7 +65,19 @@ def recurrent_kda(q, k, v, forget, beta, a_log, dt_bias, state, lower_bound):
     chunk, decode, stream = _kernels()
     indices = torch.zeros(1, device=q.device, dtype=torch.int32)
     with stream():
-        if tokens == 1:
+        if tokens == 1 and lower_bound is not None:
+            output = _safe_decode(
+                torch.cat((q.flatten(1), k.flatten(1), v.flatten(1)), dim=-1),
+                forget.reshape(1, -1).contiguous(),
+                beta.reshape(1, heads).contiguous(),
+                a_log.reshape(-1).contiguous(),
+                dt_bias.reshape(-1).contiguous(),
+                pool,
+                indices,
+                torch.arange(2, device=q.device, dtype=torch.int32),
+                lower_bound,
+            )
+        elif tokens == 1:
             output = v.new_empty((1, 1, heads, values))
             decode(
                 mixed_qkv=torch.cat((q.flatten(1), k.flatten(1), v.flatten(1)), dim=-1),
@@ -208,7 +252,7 @@ def decode(layer, x, state):
     return KDADecodeResult(output[0], KDAState(history, recurrent), normed=True)
 
 
-def indexed_decode(layer, x, pool, layer_id, indices):
+def indexed_decode(layer, x, pool, layer_id, indices, metadata):
     """Update BF16 working rows with official convolution and KDA kernels.
 
     FP32 state retains the existing full-fusion path. Immutable checkpoints are
@@ -225,6 +269,10 @@ def indexed_decode(layer, x, pool, layer_id, indices):
         or layer._dim != 128
     ):
         return None
+    bound = layer._config.gate_lower_bound
+    if bound is not None:
+        # Resolve the optional operator before convolution mutates working rows.
+        _safe_decode_kernel()
     conv, recurrent = pool.indexed_kda_state(layer_id)
     weights = layer.prepare_kernel(
         "sgl_indexed_conv",
@@ -243,18 +291,31 @@ def indexed_decode(layer, x, pool, layer_id, indices):
             conv_state_indices=indices,
             activation="silu",
         )
-        output = x.new_empty((len(x), 1, layer._heads, layer._dim))
-        update_kda(
-            mixed_qkv=mixed,
-            a=forget.reshape(len(x), -1),
-            b=beta.reshape(len(x), layer._heads),
-            A_log=layer.A_log,
-            dt_bias=layer.dt_bias,
-            scale=layer._dim**-0.5,
-            initial_state=recurrent,
-            out=output,
-            ssm_state_indices=indices,
-            use_qk_l2norm_in_kernel=True,
-            lower_bound=layer._config.gate_lower_bound,
-        )
-    return KDADecodeResult(output=output[:, 0])
+        if bound is not None:
+            output = _safe_decode(
+                mixed,
+                forget.reshape(len(x), -1),
+                beta.reshape(len(x), layer._heads),
+                layer.A_log,
+                layer.dt_bias,
+                recurrent,
+                indices,
+                metadata.cu_seqlens_q,
+                bound,
+            )[0]
+        else:
+            packed = x.new_empty((len(x), 1, layer._heads, layer._dim))
+            update_kda(
+                mixed_qkv=mixed,
+                a=forget.reshape(len(x), -1),
+                b=beta.reshape(len(x), layer._heads),
+                A_log=layer.A_log,
+                dt_bias=layer.dt_bias,
+                scale=layer._dim**-0.5,
+                initial_state=recurrent,
+                out=packed,
+                ssm_state_indices=indices,
+                use_qk_l2norm_in_kernel=True,
+            )
+            output = packed[:, 0]
+    return KDADecodeResult(output=output)

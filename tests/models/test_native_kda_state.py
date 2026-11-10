@@ -76,11 +76,13 @@ def test_chunk_continuation_keeps_native_state_dtype(state_dtype, tokens):
         torch.testing.assert_close(pool[slot], original[slot], rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("batch", [1, 7, 48])
+@pytest.mark.parametrize("batch", [1, 8, 48])
 @pytest.mark.parametrize("state_dtype", [torch.bfloat16, torch.float32])
 def test_decode_graph_matches_indexed_native_pool(batch, state_dtype, request):
     from minisgl.attention.kda.sgl import recurrent_kda
-    from sglang.kernels.ops.attention.fla.fused_recurrent import fused_recurrent_kda_packed_decode
+    from sglang.kernels.ops.attention.fla.fused_sigmoid_gating_recurrent import (
+        fused_sigmoid_gating_delta_rule_update,
+    )
     from tvm_ffi import use_torch_stream
 
     torch.manual_seed(500 + batch)
@@ -103,39 +105,44 @@ def test_decode_graph_matches_indexed_native_pool(batch, state_dtype, request):
         saved = state.clone()
         untouched = pool[::2].clone()
         q, k, v, forget, beta = args
-        mixed = torch.cat([part.reshape(batch, -1) for part in (q, k, v)], -1)
-        expected = v.new_empty((batch, 1, heads, 128))
         # Compare graph replay exactly with the same native launch geometry.
         # The independently indexed B,H pool below also checks request isolation.
         canonical_pool = saved.transpose(-1, -2).contiguous().unsqueeze(0)
-        canonical_output = v.new_empty((1, 1, batch * heads, 128))
         with use_torch_stream():
-            fused_recurrent_kda_packed_decode(
-                mixed_qkv=torch.cat([part.flatten(1) for part in (q, k, v)], -1),
+            canonical_output = fused_sigmoid_gating_delta_rule_update(
+                q=q.unsqueeze(0),
+                k=k.unsqueeze(0),
+                v=v.unsqueeze(0),
                 a=forget.reshape(1, -1),
-                b=beta.reshape(1, -1),
+                b=beta.unsqueeze(0),
                 A_log=repeated[0],
                 dt_bias=repeated[1],
-                scale=128**-0.5,
-                initial_state=canonical_pool,
-                out=canonical_output,
-                ssm_state_indices=torch.zeros(1, device="cuda", dtype=torch.int32),
+                initial_state_source=canonical_pool,
+                initial_state_indices=torch.zeros(1, device="cuda", dtype=torch.int32),
+                cu_seqlens=torch.tensor([0, 1], device="cuda", dtype=torch.int32),
                 use_qk_l2norm_in_kernel=True,
+                softplus_beta=1.0,
+                softplus_threshold=20.0,
+                is_kda=True,
                 lower_bound=-5.0,
             )
-            fused_recurrent_kda_packed_decode(
-                mixed_qkv=mixed,
+            expected = fused_sigmoid_gating_delta_rule_update(
+                q=q.reshape(1, batch, heads, 128),
+                k=k.reshape(1, batch, heads, 128),
+                v=v.reshape(1, batch, heads, 128),
                 a=forget.reshape(batch, -1),
-                b=beta.reshape(batch, heads),
+                b=beta.reshape(1, batch, heads),
                 A_log=a,
                 dt_bias=dt,
-                scale=128**-0.5,
-                initial_state=pool,
-                out=expected,
-                ssm_state_indices=indices,
+                initial_state_source=pool,
+                initial_state_indices=indices,
+                cu_seqlens=torch.arange(batch + 1, device="cuda", dtype=torch.int32),
                 use_qk_l2norm_in_kernel=True,
+                softplus_beta=1.0,
+                softplus_threshold=20.0,
+                is_kda=True,
                 lower_bound=-5.0,
-            )
+            ).transpose(0, 1)
         graph.replay()
         assert final.dtype == state_dtype
         canonical_state = canonical_pool[0].transpose(-1, -2)
