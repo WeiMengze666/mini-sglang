@@ -1,0 +1,183 @@
+{
+  "source_commit": "a3f3341f451ce660a0316d87beefd05a05a20c11",
+  "SDK_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+  "execution_contract": {
+    "model_dtype": "bfloat16",
+    "moe_activation_precision": "mxfp8",
+    "kv_cache_dtype": "fp8_e4m3",
+    "recurrent_state_dtype": "bfloat16",
+    "conv_state_dtype": "bfloat16",
+    "bf16_precision": "default",
+    "tp_size": 8,
+    "dcp_size": 8,
+    "ep_size": 1,
+    "page_size": 64
+  },
+  "results": {
+    "candidate": {
+      "correct": 1284,
+      "expected": 1319,
+      "accuracy": 0.9734647460197119,
+      "invalid_ids": [
+        93,
+        754
+      ],
+      "truncated_ids": [
+        754
+      ],
+      "generated_lengths": {
+        "count": 1319,
+        "sum": 141168,
+        "min": 44,
+        "max": 1024,
+        "mean": 107.02653525398028,
+        "median": 96,
+        "p90": 156.0,
+        "p95": 183.0999999999999,
+        "p99": 257.0,
+        "quantile_method": "linear interpolation at(n-1)*p"
+      },
+      "length_cap_ids": [
+        754
+      ],
+      "terminal_token_histogram": {
+        "163586": 1318,
+        "382": 1
+      },
+      "terminal_in_shared_stop_ids": 1318,
+      "evaluation_seconds": 822.2718202020042,
+      "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading",
+      "workload_boundary": "offline numerical/task-quality evaluation in fixed-size request groups; prefix caching is disabled; this is not the canonical online serving benchmark"
+    },
+    "reference": {
+      "correct": 1284,
+      "expected": 1319,
+      "accuracy": 0.9734647460197119,
+      "invalid_ids": [],
+      "truncated_ids": [],
+      "generated_lengths": {
+        "count": 1319,
+        "sum": 141626,
+        "min": 44,
+        "max": 734,
+        "mean": 107.3737680060652,
+        "median": 96,
+        "p90": 162.0,
+        "p95": 184.0999999999999,
+        "p99": 269.9199999999996,
+        "quantile_method": "linear interpolation at(n-1)*p"
+      },
+      "length_cap_ids": [],
+      "terminal_token_histogram": {
+        "163586": 1319
+      },
+      "terminal_in_shared_stop_ids": 1319,
+      "evaluation_seconds": 618.5742266590023,
+      "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading",
+      "workload_boundary": "offline numerical/task-quality evaluation in fixed-size request groups; prefix caching is disabled; this is not the canonical online serving benchmark"
+    },
+    "mini_baseline": {
+      "correct": 1281,
+      "expected": 1319,
+      "accuracy": 0.9711902956785443,
+      "invalid_ids": [
+        423,
+        1176
+      ],
+      "truncated_ids": [
+        423,
+        1176
+      ],
+      "generated_lengths": {
+        "count": 1319,
+        "sum": 143860,
+        "min": 44,
+        "max": 1024,
+        "mean": 109.0674753601213,
+        "median": 97,
+        "p90": 161.0,
+        "p95": 191.0999999999999,
+        "p99": 273.6399999999999,
+        "quantile_method": "linear interpolation at(n-1)*p"
+      },
+      "length_cap_ids": [
+        423,
+        1176
+      ],
+      "terminal_token_histogram": {
+        "163586": 1317,
+        "25": 1,
+        "13": 1
+      },
+      "terminal_in_shared_stop_ids": 1317,
+      "evaluation_seconds": 917.0944635039996,
+      "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading",
+      "workload_boundary": "offline numerical/task-quality evaluation in fixed-size request groups; prefix caching is disabled; this is not the canonical online serving benchmark"
+    }
+  },
+  "reference_comparison": {
+    "examples": 1319,
+    "both_correct": 1280,
+    "both_wrong": 31,
+    "left_only_correct": [
+      12,
+      187,
+      796,
+      1038
+    ],
+    "right_only_correct": [
+      37,
+      234,
+      552,
+      754
+    ],
+    "same_valid_answer": 1309,
+    "identical_token_ids": 678,
+    "left_invalid": 2,
+    "right_invalid": 0,
+    "left_truncated": 1,
+    "right_truncated": 0
+  },
+  "review_sha256": "f458fa70062abc5bbf5bd2fefcfe936bfa2d0f09b52e20b1bda9374c0ca37768",
+  "root_review_sha256": "c07a8e69c9d5d7cfdbee8a6c0458f3731fd24117d84c93bbdd91a9a1b0ce1580",
+  "component_review_sha256": "ca87e28d611bfeff9aad89a2e79fc91cc40f8852786bd90f9c41e1798821cd3f",
+  "acceptance": {
+    "generated_utc": "2026-11-10T21:39:02.858418+00:00",
+    "gpuq_job_id": 34,
+    "accepted_change": "Use the official public bounded safe-gate KDA decode entry; retain generic attention/backend separation.",
+    "accepted_for_current_baseline": true,
+    "basis": [
+      "GPU32 real440 component cases passed without skips/failures, using the actual official entry and checking persistent state.",
+      "Unchanged full1319 cases/scorer and declared precision/layout;1284 correct matches reference aggregate and improves prior Mini1281.",
+      "All15 answer-discordant cases reviewed; invalid/truncated adverse evidence retained; no scorer changes.",
+      "All published runtime Python bytes match the quality-tested frozen candidate."
+    ],
+    "component_review_sha256": "ca87e28d611bfeff9aad89a2e79fc91cc40f8852786bd90f9c41e1798821cd3f",
+    "full_quality_review_sha256": "f458fa70062abc5bbf5bd2fefcfe936bfa2d0f09b52e20b1bda9374c0ca37768",
+    "runtime_python_files_compared": 140,
+    "scope": "One full greedy offline GSM8K cohort plus native KDA adapter/state components. Does not establish general model-quality equality, all-layer numeric identity, long-context cache policy or serving performance.",
+    "reference_only_correct": [
+      37,
+      234,
+      552,
+      754
+    ],
+    "candidate_only_correct": [
+      12,
+      187,
+      796,
+      1038
+    ],
+    "candidate_invalid": [
+      93,
+      754
+    ],
+    "candidate_truncated": [
+      754
+    ],
+    "strict_token_equality_required": false,
+    "performance_accepted": false,
+    "further_optimization_may_proceed": true
+  }
+}
