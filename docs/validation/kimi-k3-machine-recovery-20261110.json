@@ -313,5 +313,713 @@
     "gpuq_job": 6,
     "reason": "Official import chain lacked torchvision. All 44 failures/setup errors per rank were ModuleNotFoundError; fixed with compatible torchvision0.29.1+cu130 and rerun in job8.",
     "artifacts_preserved": true
+  },
+  "latest": {
+    "recorded_utc": "2026-11-10T15:58:57.676167+00:00",
+    "scope": "Fresh replacement-host offline full-model quality baseline and component evidence. Final model correctness/quality and canonical serving performance remain unaccepted.",
+    "historical_snapshot": "All top-level fields except this latest field retain the original 2026-11-10T13:41:31 snapshot. Its pending entries are historical; latest supersedes their status.",
+    "documentation_base_commit": "b88babb8b3798850f2f012fc98a27a7c874a6288",
+    "production_runtime_promotion": false,
+    "source_identity": {
+      "mini": {
+        "revision": "de99c88fe531f1b84289d247e441c29ae77d2bf4",
+        "source_root": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/source",
+        "source_files_hash_verified": 148,
+        "tracked_changes_at_run": ""
+      },
+      "reference": {
+        "revision": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+        "source_root": "/home/axis/mengze/mini-sglang/deps/sglang-baa9bef",
+        "source_files_hash_verified": 4781,
+        "tracked_changes_at_run": ""
+      },
+      "phase_candidate_files_hash_verified": 9,
+      "checkpoint_metadata_files_hash_verified": 13
+    },
+    "full_model_quality": {
+      "gpuq_jobs": {
+        "reference": 10,
+        "mini": 12
+      },
+      "status": "completed_with_unresolved_adverse_mini_cases",
+      "examples": 1319,
+      "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+      "mini": {
+        "correct": 1281,
+        "accuracy": 0.9711902956785443,
+        "invalid_answers": 2,
+        "truncated": 2,
+        "generated_tokens": 143860,
+        "evaluation_seconds": 917.0944635039996
+      },
+      "reference": {
+        "correct": 1284,
+        "accuracy": 0.9734647460197119,
+        "invalid_answers": 0,
+        "truncated": 0,
+        "generated_tokens": 141626,
+        "evaluation_seconds": 618.5742266590023
+      },
+      "accuracy_delta_percentage_points": -0.22744503411675512,
+      "same_valid_answer": 1311,
+      "identical_token_ids": 667,
+      "both_correct": 1279,
+      "both_wrong": 33,
+      "mini_only_correct": [
+        796,
+        1038
+      ],
+      "reference_only_correct": [
+        37,
+        322,
+        423,
+        1003,
+        1183
+      ],
+      "declared_execution_contract_matches": true,
+      "kernel_precision_path_verified": null,
+      "execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "bf16_precision": "default",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 1,
+        "page_size": 64
+      },
+      "precision_limit": "Compares declared dtypes and layout only; kernel input/output rounding, accumulators and fused-path coverage require separate runtime evidence.",
+      "acceptance": false,
+      "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading",
+      "workload_boundary": "offline numerical/task-quality evaluation in fixed-size request groups; prefix caching is disabled; this is not the canonical online serving benchmark",
+      "timing_interpretation": "917.094 s Mini and 618.574 s official are fixed-group offline evaluation durations with prefix caching disabled, not serving output throughput, TTFT/ITL, or a fair canonical serving ratio.",
+      "unresolved": "Two Mini invalid answers and two Mini truncations versus zero/zero official require localization; token identity is a diagnostic and no implementation-error or floating-point-only attribution is established."
+    },
+    "phase_and_communication_components": {
+      "gpuq_job": 13,
+      "status": "completed",
+      "phase_candidate_scope": "Phase-specific KDA component and native communication matrix only; not full-model correctness/quality/performance",
+      "candidate_source": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/kda-prefill-phase-candidate",
+      "candidate_patch_sha256": "2e4129d1ec9598cd18114863fe8e6d3b2b4031949c982e31cfcf362d81a4c48b",
+      "candidate_source_hashes_verified": 9,
+      "per_rank_component_tests": 70,
+      "ranks": 8,
+      "total_component_executions": 560,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "communication": {
+        "per_rank_cases": 72,
+        "total_rank_case_executions": 576,
+        "widths": [
+          3584,
+          7168,
+          10752
+        ],
+        "dtypes": [
+          "bfloat16",
+          "float32"
+        ],
+        "batches": [
+          1,
+          8,
+          48
+        ],
+        "per_rank_native_calls": 288,
+        "per_rank_graph_replays": 216,
+        "default_and_side_streams": true,
+        "all_arithmetic_exact": true,
+        "no_torch_fallback": true,
+        "sdk_world_uninitialized": true,
+        "cleanup_verified": true,
+        "observed_algorithms": [
+          {
+            "algorithm": "AllReduceAlgo.ONE_SHOT_PUSH",
+            "multicast": false,
+            "calls": 232
+          },
+          {
+            "algorithm": "AllReduceAlgo.TWO_SHOT_PULL",
+            "multicast": false,
+            "calls": 20
+          },
+          {
+            "algorithm": "AllReduceAlgo.TWO_SHOT_PULL",
+            "multicast": true,
+            "calls": 36
+          }
+        ],
+        "precision_limit": "These inputs are BF16-representable. The FP32-sensitive matrix is a separate queued gate15; do not claim hidden FP32 cast detection here.",
+        "scope": "Native component dispatch, exact dyadic sums, graphs and owned-resource cleanup; these BF16-representable inputs do not prove internal FP32 precision, full-model transport equivalence, model quality or performance."
+      }
+    },
+    "native_prefill_and_fp32_sensitive_gate": {
+      "gpuq_job": 15,
+      "status_at_snapshot": {
+        "execution": "gpuq",
+        "status": "completed_requires_component_review",
+        "started_utc": "2026-11-10T15:42:31.315271+00:00",
+        "scope": "Native KDA prefill same-ABI component parity and FP32-sensitive communication only; not model/performance",
+        "stage": "prefill",
+        "communication_precision_returncode": 0,
+        "prefill_returncode": 1,
+        "returncode": 1,
+        "finished_utc": "2026-11-10T15:44:04.547573+00:00"
+      },
+      "accepted": false,
+      "scope": "Completed split outcome: FP32-sensitive native communication passed; native KDA prefill same-ABI component gate failed. No model/performance qualification or production promotion.",
+      "candidate_publication": {
+        "branch": "kimi-k3-native-prefill-20261110",
+        "commit": "974a60a4adddd624531e1883a373b54ca9e5331b",
+        "bundle_sha256": "bcc9ccbe5b3a3bb177f0cd9c41b0d8fef6dc0a14d9a8eefd7c71cea64b3ee850",
+        "runtime_matches_gpu_frozen_candidate": true,
+        "gpu_diagnostic_matches_queued_v2": true,
+        "production_commit": "b88babb8b3798850f2f012fc98a27a7c874a6288",
+        "publication_status": "Published isolated candidate; GPU gate15 incomplete and failed; no production promotion."
+      },
+      "prior_observation": {
+        "recorded_utc": "2026-11-10T15:46:30.725015+00:00",
+        "status": {
+          "execution": "gpuq",
+          "status": "completed_requires_component_review",
+          "started_utc": "2026-11-10T15:42:31.315271+00:00",
+          "scope": "Native KDA prefill same-ABI component parity and FP32-sensitive communication only; not model/performance",
+          "stage": "prefill",
+          "communication_precision_returncode": 0,
+          "prefill_returncode": 1,
+          "returncode": 1,
+          "finished_utc": "2026-11-10T15:44:04.547573+00:00"
+        },
+        "status_artifact": {
+          "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/status.json",
+          "sha256": "d79be0363ad3272016614c8bd9fa3e6795d121efffe7d4fe9ccfbe0e3974204b",
+          "bytes": 415
+        },
+        "scope": "Historical review snapshot retained; original job inputs and source metadata are unchanged."
+      },
+      "communication_precision": {
+        "returncode": 0,
+        "status": "passed_bounded_component_gate",
+        "precision_control": "FP32 inputs use rank/2**20 and step/2**18 terms that are not BF16-representable; exact analytic sums distinguish a hidden wholesale BF16 input cast for these covered cases. This does not reconstruct every internal accumulator/reduction tree or establish full-model quality.",
+        "scope": "3584/7168/10752 widths, BF16/FP32, B1/8/48, four layouts, eager/side streams and three graph replays; cleanup and SDK World noninitialization verified.",
+        "ranks_passed": 8,
+        "cases_per_rank": 72,
+        "native_calls_per_rank": 288,
+        "graph_replays_per_rank": 216,
+        "cleanup_verified": true,
+        "report_artifacts": [
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-0.json",
+            "sha256": "86a3d1bf84a46c2c2d9bdfe3f7fc977446be43f2ebd7723eb2a8d4c7547e5bb0",
+            "bytes": 750017
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-1.json",
+            "sha256": "c8bcd5448443c5e8ebae5c44844bf697ade8de5cb2a30e189afe11ba5ec1c977",
+            "bytes": 749911
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-2.json",
+            "sha256": "49968ff0df26e5ce410019ce2ea459734af2587c3b7dd61a3af9d7a774802319",
+            "bytes": 750201
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-3.json",
+            "sha256": "74bfbf1ae973bc994c66c3837598815e85b909ac31956f4ea1acc90cd2c20770",
+            "bytes": 750379
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-4.json",
+            "sha256": "ddb0d72687253e697062a5e6e984834c36bcb5628c48fc5ccb5059ca0562d065",
+            "bytes": 750246
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-5.json",
+            "sha256": "7a8a6e42a1346dcf474dd3636748141b853b1b27e82c6ae417337b71bac9ba59",
+            "bytes": 750225
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-6.json",
+            "sha256": "d778d71591bf1f3b4730114c81371e9be3d0ed0e337f807f4a3f14fbdf0d6038",
+            "bytes": 750354
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-precision-v2/runs/20261110T154231Z/rank-7.json",
+            "sha256": "9ce0b2f4413da4569175eff63f9d1ac7bb88cab08750c3f647ae08cf26989144",
+            "bytes": 750246
+          }
+        ]
+      },
+      "native_prefill": {
+        "returncode": 1,
+        "status": "failed_direct_official_all_t1_abi",
+        "failed_case": "state-bfloat16-case1-cold-unifiedFalse",
+        "packed_lengths": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "first_route": "direct_official",
+        "error": "RuntimeError('Expected strides[leading_dim] == 1, but got 128.')",
+        "diagnosis": "Mini KDALayer.dt_bias and the official model parameter are both one-dimensional. The pinned SDK FlashInferKDAPrefillKernel.extend itself reshapes dt_bias into [heads,128], giving stride0=128. The all-T1 grouped decode route subsequently calls dyn(dt_bias,0), which requires vector stride0=1. Flattening the caller parameter cannot avoid this internal reshape. The failure occurs in the direct official call before a complete same-ABI adapter qualification.",
+        "diagnosis_scope": "Log stack and pinned source establish this ABI boundary; no successful repair, candidate acceptance or full-model impact is established. A separate new ABI candidate is under investigation.",
+        "source_pointers": [
+          {
+            "path": "/home/axis/mengze/mini-sglang/deps/sglang-baa9bef/python/sglang/srt/layers/attention/linear/kernels/kda_flashinfer_prefill.py",
+            "line": 124,
+            "sha256": "3389269a5ac0c87b17f7700921fc832aba7b3999d84184cdfd757bf856da13c7"
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/.venv/lib/python3.12/site-packages/flashinfer/kda_kernels/recurrent_kda.py",
+            "line": 1009,
+            "sha256": "710136da7c8c67432ecb429c70ad706732f9af9366d18970d3ca72923c28f811"
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/mini-sglang/python/minisgl/layers/kda.py",
+            "line": 50,
+            "sha256": "b49ed71e9605432fee67a051cb11c72f3e52bd70e6296c6945634e10764d7f9f"
+          },
+          {
+            "path": "/home/axis/mengze/mini-sglang/deps/sglang-baa9bef/python/sglang/srt/models/kimi_k3.py",
+            "line": 1709,
+            "sha256": "06fc992598e7a35918590360b65fb81d0566addc3b58278ac1819aad9055da4b"
+          }
+        ],
+        "ranks_with_retained_error": 8,
+        "error_artifact_keys": [
+          "native-prefill-gpu-gate/prefill-results/rank0/state-bfloat16-case1-cold-unifiedFalse.error.json",
+          "native-prefill-gpu-gate/prefill-results/rank1/state-bfloat16-case1-cold-unifiedFalse.error.json",
+          "native-prefill-gpu-gate/prefill-results/rank2/state-bfloat16-case1-cold-unifiedFalse.error.json",
+          "native-prefill-gpu-gate/prefill-results/rank3/state-bfloat16-case1-cold-unifiedFalse.error.json",
+          "native-prefill-gpu-gate/prefill-results/rank4/state-bfloat16-case1-cold-unifiedFalse.error.json",
+          "native-prefill-gpu-gate/prefill-results/rank5/state-bfloat16-case1-cold-unifiedFalse.error.json",
+          "native-prefill-gpu-gate/prefill-results/rank6/state-bfloat16-case1-cold-unifiedFalse.error.json",
+          "native-prefill-gpu-gate/prefill-results/rank7/state-bfloat16-case1-cold-unifiedFalse.error.json"
+        ],
+        "next_candidate": "The approved minimal candidate checks the all-T1 capability before convolution or state writes and routes that case to the existing mature SGL indexed_prefill; other covered shapes retain the official FI class. SDK source is unchanged, wrapper code is not copied, and the new candidate/V3 is not qualified."
+      }
+    },
+    "canonical_serving": {
+      "gpuq_job": 17,
+      "status": "failed_reference_aiperf_tokenizer_configuration",
+      "last_reported_queue_state": "failed",
+      "queue_state_source": "Final controller status.json and run-reference/run.json; no queue operation by documentation audit.",
+      "status_artifact_present": true,
+      "purpose": "baseline_characterization_only_not_quality_acceptance",
+      "quality_acceptance": false,
+      "near_sglang_serving_performance": false,
+      "benchmark_duration_seconds": 900,
+      "dataset_entries": 393,
+      "concurrency": 48,
+      "random_seed": 42,
+      "benchmark_argv_unchanged": true,
+      "mini_source": "de99c88fe531f1b84289d247e441c29ae77d2bf4",
+      "official_source": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+      "candidate_used": false,
+      "readiness_timeout_seconds": 7200,
+      "benchmark_timeout_seconds": 3600,
+      "first_model_load_in_performance_metrics": false,
+      "release_purpose": "baseline_characterization_only_not_quality_acceptance",
+      "quality_review": {
+        "mini_correct": 1281,
+        "reference_correct": 1284,
+        "examples": 1319,
+        "mini_invalid": 2,
+        "mini_truncated": 2,
+        "reference_invalid": 0,
+        "reference_truncated": 0,
+        "interpretation": "Baseline has unresolved adverse quality cases; this performance run quantifies existing production without promoting any candidate or accepting final correctness."
+      },
+      "prepared_status_note": "prepared.json and inputs.json retain pre-release wording; submission.json plus release-approval.json are the later release evidence.",
+      "workload_jsonl_sha256": "29b6a19e751ff5230771519aab755f80a0f43a4ba9cf96b72d3a6a437ec99276",
+      "dataset_revision": "23f152f6f0f9399a85901b89a6458def0ef16729",
+      "live_resolved_workload_export": "Pending serving execution; CPU configuration resolution is not a measured workload export.",
+      "evidence_limits": [
+        "Checkpoint metadata SHA and96 shard byte sizes are checked;1.56TB checkpoint content is not fully hashed by this preparation",
+        "Fresh server establishes empty model-cache start; persistent disk JIT/autotune/OS page-cache history is not erased",
+        "Mini /get_server_info absent: preserve real404 error and startup capacity/graph/backend logs; do not invent missing state/peak-memory measurements",
+        "Canonical original precision/cache/parallel policy retained; actual backend fallback and loaded capacities remain pending",
+        "Negative task quality evidence stays intact; a baseline performance run does not qualify model quality",
+        "AIPerf900s profile still has3600s external benchmark timeout; slow drain/failedrequests may make a stage fail rather than a valid performance result"
+      ],
+      "prior_observation": {
+        "recorded_utc": "2026-11-10T15:49:40.378430+00:00",
+        "status": "submitted_pending_results",
+        "last_reported_queue_state": "queued",
+        "scope": "Historical pre-execution queue observation; no completed benchmark was claimed."
+      },
+      "reference_server_ready_utc": "2026-11-10T15:51:53.571914+00:00",
+      "reference_actual_tree_core_classes": [
+        "RustUnifiedTreeCore"
+      ],
+      "aiperf_returncode": 1,
+      "controller_returncode": 1,
+      "benchmark_duration_completed": false,
+      "mini_started": false,
+      "serving_metrics_accepted": false,
+      "failure": {
+        "phase": "AIPerf dataset configure, tokenizer loading",
+        "error": "HFValidationError: absolute local tokenizer path /data/models/Kimi-K3 was passed to snapshot_download as a Hub repo ID in AIPerf offline loading.",
+        "retained_environment": {
+          "HF_HUB_OFFLINE": "1",
+          "HF_DATASETS_OFFLINE": "1"
+        },
+        "evidence": "aiperf.log:164-182; aiperf/common/tokenizer.py:655,686-690; frozen run.sh:4 enables offline flags.",
+        "scope": "Reference model service reached ready; the original 900-second workload did not run and Mini never started. This failure is not evidence of model OOM, numerical error, quality or serving throughput.",
+        "cleanup": "Coordinator confirmed controller cleaned its own reference service process group; no unrelated service cleanup was requested or performed by this documentation task.",
+        "retry": "A separate environment-preparation retry is under investigation without changing canonical argv or mature library source. No correction or retry success is yet verified.",
+        "aiperf_tokenizer_source": {
+          "path": "/home/axis/mengze/mini-sglang/.venv/lib/python3.12/site-packages/aiperf/common/tokenizer.py",
+          "sha256": "f0fe2f8fa992e5b66df9775eeeae0e321fe62f68cddc4d47ef76a1b62195d822",
+          "lines": [
+            655,
+            686
+          ]
+        }
+      },
+      "controller_final_summary": {
+        "status": "failed",
+        "execution": "gpuq",
+        "started_utc": "2026-11-10T15:47:08.161682+00:00",
+        "stage": "reference",
+        "returncode": 1,
+        "error": "RuntimeError: AIPerf exited with 1; see aiperf.log",
+        "finished_utc": "2026-11-10T15:52:09.924941+00:00"
+      },
+      "reference_run_summary": {
+        "status": "failed",
+        "server_key": "reference",
+        "started_utc": "2026-11-10T15:47:14.136259+00:00",
+        "ready_utc": "2026-11-10T15:51:53.571914+00:00",
+        "benchmark_returncode": 1,
+        "error": "RuntimeError: AIPerf exited with 1; see aiperf.log",
+        "finished_utc": "2026-11-10T15:52:09.921077+00:00"
+      }
+    },
+    "checkpoint_identity": {
+      "path": "/data/models/Kimi-K3",
+      "shard_count": 96,
+      "total_shard_bytes": 1560936091448,
+      "metadata_sha256": {
+        "config.json": "9710e121a58d03ac92c8d6da287a19541994319afbbe6d6202af001ffd379213",
+        "configuration_kimi_k3.py": "735eb9ebe593e17d231e08e1df7f7be9b5ee0e079f511aa201f9572077b416ae",
+        "encoding_k3.py": "49ff03305fdc4be26867972788d36150b67f8a9e852e62bb7959d87482223676",
+        "generation_config.json": "c6648c25e9705af7fba8847e243840d21b5cc63ddeb6297f750a7ddbb6a02836",
+        "kimi_k3_vision_processing.py": "d122b30bfd3a51a6f05d4bfcfda1e657827322b1353f7caefeebc2835d7736b5",
+        "media_utils.py": "78403540328f9847d6b7ebc5c44eb2e6a752863de0afb7d0710728bb161dc60d",
+        "kimi_k3_processor.py": "ec9f7e86d2ab0eee07a8e7e7c037046e77ac3c25a710ad1298ec13be3b585b54",
+        "model.safetensors.index.json": "a1c5210650ce71d2d3ae9ec5a101ac4afd3cf4b10091be589853437eb967febd",
+        "modeling_kimi_k3.py": "b9171c96726eda55234c92ac8dfae7e24c512fda68968ae8f2c3782b42665ea2",
+        "tokenizer_config.json": "5d0803c94db9cd78763499e0956c95fd5a225c14a727e5a6cf5db3f96f010a6e",
+        "modeling_kimi_linear.py": "9e3564c70ac21854ce5a090cc946c5dc76b70d1050ef50840449181a20fff44a",
+        "tokenization_kimi.py": "f28ea66e2d862a2a5814970b2ce40c2f7d8296ff09aed90a7e7def689b906944",
+        "preprocessor_config.json": "4be333605990c53a816e586dee9d5dd545afb7a59947c17f8f7ef26b4782668e"
+      },
+      "hash_scope": "Source files, configuration/tokenizer/Python/index metadata and individual shard sizes; the 1.56 TB weight contents have not been fully hashed."
+    },
+    "historical_performance_limit": "Old-machine canonical and ResidualBank results remain historical snapshots, not replacement-host acceptance. No fresh near-SGLang serving result is available.",
+    "artifacts": {
+      "environment-manifest.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/environment-manifest.json",
+        "sha256": "9fe04ba16174bec960668da7f080b344b86759ec0b3cbf0fd0b15c646c04162d",
+        "bytes": 16853
+      },
+      "quality-reference/inputs.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-reference/inputs.json",
+        "sha256": "3c28d7a1c3c2c8dfe223a13ea0d89c531a468b4809b7e50bf9831d9f271d9c2d",
+        "bytes": 1580
+      },
+      "quality-reference/status.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-reference/status.json",
+        "sha256": "cf2e05fa0a85f076ad420e8f14b57f7121bf541978746bce94eef9e6d793730f",
+        "bytes": 842
+      },
+      "quality-reference/result/report.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-reference/result/report.json",
+        "sha256": "08c87c950a61a04998b44cdc77407b32b439a9fb1881f78dd44835a05a0c8f5d",
+        "bytes": 2001
+      },
+      "quality-reference/result/responses.jsonl": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-reference/result/responses.jsonl",
+        "sha256": "dd5b32f432201f3abc2320318a84e9622e29785b2c2416593f5c99734c527c3d",
+        "bytes": 1423470
+      },
+      "quality-reference/result/provenance.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-reference/result/provenance.json",
+        "sha256": "139530576f473bd811791c62b3def77d8a3524866dbb8f468f5cb2665cc296d7",
+        "bytes": 578827
+      },
+      "quality-mini-baseline/inputs.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/inputs.json",
+        "sha256": "2d1478080bdec1ebd0c6df9008f63875bc890f58075f096383b85ce1a7c606fe",
+        "bytes": 1571
+      },
+      "quality-mini-baseline/status.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/status.json",
+        "sha256": "3c5c44c184c63048b7a7c54dd8b8ecf28e8faa094d65cce31b210ee9f8732b99",
+        "bytes": 850
+      },
+      "quality-mini-baseline/result/report.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/result/report.json",
+        "sha256": "b21bcd6eed843b68f28fb0cf78b2bdb56b763970c074056824d371ac419e4c4b",
+        "bytes": 2023
+      },
+      "quality-mini-baseline/result/responses.jsonl": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/result/responses.jsonl",
+        "sha256": "e1761780a7223b8015926a27f9636487c1e52b0cc27732258aa56209b7cc8d53",
+        "bytes": 1461273
+      },
+      "quality-mini-baseline/result/provenance.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/result/provenance.json",
+        "sha256": "531b90dd2924465e390b0437385c3ccaf2edb2265f52d9cf25cb3c2447fe031e",
+        "bytes": 14392
+      },
+      "quality-mini-baseline/review/paired-comparison.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/review/paired-comparison.json",
+        "sha256": "0e59bb8d97ffb34e492daf9add020125348f96ab67f47be8be54cd5ef91f3cf9",
+        "bytes": 1342
+      },
+      "phase-comm-gate/inputs.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/inputs.json",
+        "sha256": "7be39d507ca844c0e57dd370b5aa11821d89de76e5d0f9cf66931642dc972a81",
+        "bytes": 1976
+      },
+      "phase-comm-gate/status.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/status.json",
+        "sha256": "3f8e1a963f54eff14c4d9b02c8d5da949215d774c3b3c5ff59ad6c4691fbb629",
+        "bytes": 323
+      },
+      "phase-comm-gate/component-review.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/component-review.json",
+        "sha256": "cdb0dc6d9de02ae5bcbf03a8f1a315b6cd28ad2ecaf618c19c08ea63ff340976",
+        "bytes": 8158
+      },
+      "native-prefill-gpu-gate/inputs.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/inputs.json",
+        "sha256": "70728edd73e058aae99c34797dcb0c0088cb621eb37b019c0bcf0b26daeb2597",
+        "bytes": 16164
+      },
+      "native-prefill-gpu-gate/status.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/status.json",
+        "sha256": "d79be0363ad3272016614c8bd9fa3e6795d121efffe7d4fe9ccfbe0e3974204b",
+        "bytes": 415
+      },
+      "native-prefill-candidate-publication.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-candidate-publication.json",
+        "sha256": "b82331fbdad7c19589f7badad88903a7fed7d6277a3a81810784fc8400d6624a",
+        "bytes": 380
+      },
+      "serving-baseline-prepared/prepared.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/prepared.json",
+        "sha256": "9b9fc6fed47663a9fad442dd16c8cb6e276f7ada811025e518f1e76a8230c110",
+        "bytes": 1125
+      },
+      "serving-baseline-prepared/inputs.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/inputs.json",
+        "sha256": "b36645642512ac46ddc710b52de85e2ab1376884f8c7a536231bba0d006b79a2",
+        "bytes": 1556511
+      },
+      "serving-baseline-prepared/profile.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/profile.json",
+        "sha256": "2f6587b32e92e4c31b6fb5ca709769d77e27485d81e9b7c3a7f920bc8bf1a499",
+        "bytes": 53215
+      },
+      "serving-baseline-prepared/submission.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/submission.json",
+        "sha256": "92a5a9d822097f64a822c7781f6a428f9168349e9bdb9c6463ec114c7623560a",
+        "bytes": 463
+      },
+      "serving-baseline-prepared/release-approval.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/release-approval.json",
+        "sha256": "099b8ae131b7d1826eab779c5881ab5be33ac22f7435cc5bde622271a5bf375a",
+        "bytes": 1183
+      },
+      "phase-comm-gate/rank0.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank0.xml",
+        "sha256": "69e64717151113f3d31e31f58848d78154a41d34691b4303be4f7b0390b1c213",
+        "bytes": 12575
+      },
+      "phase-comm-gate/rank1.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank1.xml",
+        "sha256": "4b467d57f576ad6181e78a9ea63ea669360bba0f9f66d14384422555073e8b78",
+        "bytes": 12575
+      },
+      "phase-comm-gate/rank2.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank2.xml",
+        "sha256": "bc01b7da603eabe454764b0d9581ac2354a57bf867d1d5c65954822c2592c4e4",
+        "bytes": 12575
+      },
+      "phase-comm-gate/rank3.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank3.xml",
+        "sha256": "aa9b60f4e3d0a51c68e7f608a9e980bb151c4ed676dfc60a40c319ecdaf08436",
+        "bytes": 12575
+      },
+      "phase-comm-gate/rank4.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank4.xml",
+        "sha256": "0d3af6ca4229dc04dbdb855024eded5dc4d277872135cab83c899b411700653d",
+        "bytes": 12575
+      },
+      "phase-comm-gate/rank5.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank5.xml",
+        "sha256": "c07abe67584e7ae846c5c62500aec562cb0aeaec10aa47eec259046bfaf86691",
+        "bytes": 12575
+      },
+      "phase-comm-gate/rank6.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank6.xml",
+        "sha256": "9100d333c0fb73a52d9d4f34227ed92f6d8a9936b73e079b04d1a1e0fb3ccc6f",
+        "bytes": 12575
+      },
+      "phase-comm-gate/rank7.xml": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/phase-comm-gate/rank7.xml",
+        "sha256": "a43613aed89b3887805a58a9efe34ba8b46cf4667181e441c4268d521bc49c76",
+        "bytes": 12575
+      },
+      "native-prefill-gpu-gate/communication_precision.log": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/communication_precision.log",
+        "sha256": "958b7c6868a7457c49d219af2c928bef3f35e411d89822ec785df49d483fa299",
+        "bytes": 3416
+      },
+      "native-prefill-gpu-gate/prefill.log": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill.log",
+        "sha256": "50ff62cf5b91a2e617daaeaafec6b078a62003cac6e0f62d5267e06eae11e3e9",
+        "bytes": 34709
+      },
+      "native-prefill-gpu-gate/prefill-results/rank0/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank0/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "117ee96c8744802054890f147a1b0e1a59cb62873cdc61cfa089a3a5a73dad17",
+        "bytes": 3323
+      },
+      "native-prefill-gpu-gate/prefill-results/rank1/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank1/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "4480c57d050adce47785a088348a1b615ece7be6e7de41fc04972665d6262bf8",
+        "bytes": 3323
+      },
+      "native-prefill-gpu-gate/prefill-results/rank2/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank2/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "14d4b3bd759007d8f79fe3bdc56c3728fbc2cac6ce702be71b27b2d8e50b94cb",
+        "bytes": 3325
+      },
+      "native-prefill-gpu-gate/prefill-results/rank3/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank3/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "46b3d93a6c3cf98a60ad1c52fa9c444496c2d2cac6828b5f144d86dcddce2d60",
+        "bytes": 3323
+      },
+      "native-prefill-gpu-gate/prefill-results/rank4/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank4/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "efb399daa4ecec3d5a98fa7f3e82fe068515aa0762e09e519ffab64be59c7c5b",
+        "bytes": 3323
+      },
+      "native-prefill-gpu-gate/prefill-results/rank5/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank5/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "7ffc6794547055b416139401793e737e2fef2751c193c9296199c5e6f67ed04c",
+        "bytes": 3325
+      },
+      "native-prefill-gpu-gate/prefill-results/rank6/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank6/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "7c833cbead61ccc55d0baf039cb25596f3feb7bdfffe96b58b2832a945951603",
+        "bytes": 3323
+      },
+      "native-prefill-gpu-gate/prefill-results/rank7/state-bfloat16-case1-cold-unifiedFalse.error.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-prefill-gpu-gate/prefill-results/rank7/state-bfloat16-case1-cold-unifiedFalse.error.json",
+        "sha256": "dda40fc8ef38a2d25671643969ad6349df5df2c242b534a1d84a59358a7796b8",
+        "bytes": 3325
+      },
+      "serving-baseline-prepared/status.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/status.json",
+        "sha256": "0d6b5459cd3d80b767028a1b1205947391f5ab17b74e4190589115bd25b41a2c",
+        "bytes": 8075
+      },
+      "serving-baseline-prepared/run.sh": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run.sh",
+        "sha256": "ac4c6e1cc738ef826c4221ec2551f34e7e97ee1dab0b887960b70b8342a4830a",
+        "bytes": 480
+      },
+      "serving-baseline-prepared/controller.py": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/controller.py",
+        "sha256": "3d2178d571833ccf3670098f7b74bc6e635588c2a663a71385a2079f2dfff0a6",
+        "bytes": 12943
+      },
+      "serving-baseline-prepared/run-reference/run.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/run.json",
+        "sha256": "30ad5e29ae6bbcae709a34baad0f32945e1ed3534fe6b9eac0cecd10d3fd243a",
+        "bytes": 2864
+      },
+      "serving-baseline-prepared/run-reference/aiperf.log": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/aiperf.log",
+        "sha256": "ffbdddd5e8c903ee64fe7561cef16cb064cd59da888f02ea6698f98f662df25d",
+        "bytes": 26286
+      },
+      "serving-baseline-prepared/run-reference/server.log": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/server.log",
+        "sha256": "96d3a211d28cca9437e0d72d1d8c2e7ef2a191b3fc30d20c46d7d9741f0c59a1",
+        "bytes": 89737
+      },
+      "serving-baseline-prepared/run-reference/server-info.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/server-info.json",
+        "sha256": "c785381315a153db4f2e73a28cbafabbf8e24dd79a257948e43b2260aaded278",
+        "bytes": 36568
+      },
+      "serving-baseline-prepared/run-reference/runtime-evidence.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/runtime-evidence.json",
+        "sha256": "af63c792813d8e7103ae62e8e87810581c2cb5592ced4052f6eddfff13b0ab53",
+        "bytes": 6476
+      },
+      "serving-baseline-prepared/run-reference/models.json": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/models.json",
+        "sha256": "11f81e2d058139ef4aafff37093c61aca6c150e519fbabe5960ad4050ea0339a",
+        "bytes": 178
+      },
+      "serving-baseline-prepared/run-reference/metrics-before.txt": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/metrics-before.txt",
+        "sha256": "6fb24897d019458a774e414401c622bde636f1c3a8c4f179befd2540b00214be",
+        "bytes": 103620
+      },
+      "serving-baseline-prepared/run-reference/metrics-after.txt": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-prepared/run-reference/metrics-after.txt",
+        "sha256": "1508c2121e991723bc2138667717c72ffd67ddf1982e54273d3ae460f3e4db3a",
+        "bytes": 203970
+      }
+    },
+    "communication_matrix_reports": [
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-0.json",
+        "sha256": "5d902d45afeddcb1d1a978776edd3fe3f4dc61180e780f7236dec04540df4fbd"
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-1.json",
+        "sha256": "49d5424b915738bb1e986582f5ae8fa859be82f187fec081fdff156d6db959f8"
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-2.json",
+        "sha256": "b184729059cc0ab6daab577fc182c611a1e76bc55ea51607c6c6cf2ea73a11a5"
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-3.json",
+        "sha256": "8f46dcc1906b41383f7f7176d80f5a8703a50e42d0ebeece596bb12494d17c4f"
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-4.json",
+        "sha256": "491abb53fc84854396b67f88f63a6134677b2c86a1fd41d074e5a76c9cfe7a2d"
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-5.json",
+        "sha256": "c1bd60dc17d5e5c67d6580e2643184cd8022044cf466128486118251a39a50fb"
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-6.json",
+        "sha256": "13dbd9b71f27eb3ea4694125490d523f1b9821412a068f661e20f8ad43d79415"
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-comm-matrix/runs/20261110T153550Z/rank-7.json",
+        "sha256": "f6446db2ffed289845bfff6b6460dba41bf5159ccdfe0c5bb67c160709b9a8f4"
+      }
+    ]
   }
 }

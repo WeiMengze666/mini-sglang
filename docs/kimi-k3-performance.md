@@ -785,7 +785,19 @@ The [replacement-server record](validation/kimi-k3-machine-recovery-20261110.jso
 separates recovery from final acceptance: 1077 CPU/Gloo tests passed (798 skipped),
 1368 native component tests passed across eight devices, and native multicast
 communication passed eager/graph lifecycle checks. The machine and driver changed;
-retained serving ratios do not establish performance on this host. Fresh complete
-quality runs and the canonical paired AIPerf workload remain pending. The record
-also bounds the isolated KDA phase/prefill work and a pre-existing legacy Gloo
-precision assertion, without relaxing its threshold or claiming model parity.
+retained serving ratios do not establish performance on this host. Fresh full-model
+quality runs completed at **1281/1319 Mini versus 1284/1319 official** (delta
+-0.227445 percentage points), with two Mini invalid/truncated answers versus zero
+official; 1311 valid answers and 667 token sequences match. Declared BF16 model and
+conv/SSM, MXFP8 MoE, FP8 KV and TP8/DCP8/EP1 contracts match, but kernel precision
+paths remain unproven. Offline evaluation durations of 917.094 s and 618.574 s are
+not serving metrics. The record's `latest` field preserves hashes and adverse
+cases: isolated gate13 passed 70 component tests and 72 exact native communication
+cases per rank, including graphs/cleanup; BF16-representable inputs do not prove
+hidden FP32 precision. Gate15's FP32-sensitive communication passed, but its
+prefill stage failed when the fixed SDK internally reshaped `dt_bias` before an
+all-T1 vector ABI; the new fallback candidate remains unqualified. Job17's official
+server reached ready with RustUnifiedTreeCore, but AIPerf failed during tokenizer
+configuration: its offline branch treated the local path as a Hub repo ID. The
+900-second load never ran, Mini never started, and an environment retry remains
+unverified. Candidates remain isolated and final acceptance remains false.
