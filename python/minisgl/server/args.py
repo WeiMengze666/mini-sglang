@@ -161,13 +161,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     state_budget.add_argument(
         "--max-cached-states",
         type=int,
-        default=ServerArgs.max_cached_states,
+        default=argparse.SUPPRESS,
         help="Maximum sparse recurrent checkpoints retained by the hybrid prefix cache.",
     )
     state_budget.add_argument(
         "--state-memory-ratio",
         type=float,
-        default=ServerArgs.state_memory_ratio,
+        default=argparse.SUPPRESS,
         help="Recurrent state bytes / KV bytes; derive checkpoint capacity from the post-load budget.",
     )
     parser.add_argument(

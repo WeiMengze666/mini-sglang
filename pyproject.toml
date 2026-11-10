@@ -27,7 +27,7 @@ dependencies = [
     "tiktoken>=0.9,<1",
     "modelscope",
     "torch<2.15.0",
-    "transformers>=4.56.0,<=4.57.3",
+    "transformers>=4.56.0,<6",
     "flashinfer-python>=0.5.3",
     "pyzmq",
     "uvicorn",

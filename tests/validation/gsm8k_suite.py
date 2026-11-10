@@ -133,6 +133,7 @@ def save_progress(args, rows, total, started):
         "generated_tokens": sum(len(row["token_ids"]) for row in rows),
         "evaluation_seconds": time.monotonic() - started,
         "timing_boundary": "task evaluation including prefill, decode, CPU transfer and state reset; excludes model loading",
+        "workload_boundary": "offline numerical/task-quality evaluation in fixed-size request groups; prefix caching is disabled; this is not the canonical online serving benchmark",
     }
     temporary = args.output / "report.tmp"
     temporary.write_text(json.dumps(report, indent=2) + "\n")
@@ -249,6 +250,8 @@ def run_mini(args, cases, stop_ids):
             DistributedInfo(rank, world),
             torch.bfloat16,
             attention_backend=args.attention_backend,
+            distributed_backend=args.distributed_backend,
+            distributed_provider=args.distributed_provider,
             mxfp4_backend=args.mxfp4_backend,
             moe_backend=args.moe_backend,
             mxfp4_activation_precision=args.activation_precision,
@@ -259,13 +262,14 @@ def run_mini(args, cases, stop_ids):
             bf16_precision=args.bf16_precision,
             dcp_size=args.dcp_size,
             ep_size=args.ep_size,
-            max_running_req=args.batch_size,
+            max_running_req=args.max_running_requests,
             max_cached_states=0,
             max_seq_len_override=args.max_context,
             page_size=64,
             num_page_override=(args.batch_size * args.max_context + 64 * args.dcp_size - 1)
             // (64 * args.dcp_size),
-            cuda_graph_bs=list(range(1, args.batch_size + 1)) if args.cuda_graph else [],
+            cuda_graph_bs=None if args.cuda_graph else [],
+            cuda_graph_max_bs=args.cuda_graph_max_bs,
             distributed_timeout=1800,
         )
     )
@@ -407,10 +411,10 @@ def run_sglang(args, cases, stop_ids):
         trust_remote_code=True,
         context_length=args.max_context,
         mem_fraction_static=0.9,
-        max_running_requests=args.batch_size,
+        max_running_requests=args.max_running_requests,
         disable_radix_cache=True,
         disable_cuda_graph=not args.cuda_graph,
-        cuda_graph_max_bs_decode=args.batch_size,
+        cuda_graph_max_bs_decode=args.cuda_graph_max_bs,
         mamba_ssm_dtype=args.recurrent_state_dtype,
         kv_cache_dtype=args.kv_cache_dtype,
         moe_runner_backend=args.moe_backend,
@@ -483,12 +487,19 @@ def main():
     parser.add_argument("--engine", choices=["mini", "sglang"], default="mini")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument(
+        "--max-running-requests", type=int, help="Engine capacity; defaults to --batch-size."
+    )
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--max-context", type=int, default=4096)
     parser.add_argument("--tp-size", type=int, default=8)
     parser.add_argument("--dcp-size", type=int, default=2)
     parser.add_argument("--ep-size", type=int, default=8)
     parser.add_argument("--attention-backend", default="auto")
+    parser.add_argument(
+        "--distributed-backend", choices=["auto", "torch", "pynccl", "mnnvl"], default="auto"
+    )
+    parser.add_argument("--distributed-provider", help="Mini communication provider module.")
     parser.add_argument("--moe-backend", choices=["auto", "marlin"], default="marlin")
     parser.add_argument("--mxfp4-backend", choices=["torch", "flashinfer"], default="torch")
     parser.add_argument("--activation-precision", choices=["bf16", "mxfp8"], default="bf16")
@@ -500,6 +511,11 @@ def main():
     for stage in ("", "prefill-", "decode-"):
         parser.add_argument(f"--sglang-{stage}attention-backend")
     parser.add_argument("--cuda-graph", action="store_true")
+    parser.add_argument(
+        "--cuda-graph-max-bs",
+        type=int,
+        help="Capture capacity; requires --cuda-graph and defaults to --batch-size.",
+    )
     parser.add_argument("--flashinfer-autotune-skip-ops", nargs="*", default=[])
     args = parser.parse_args()
     if args.moe_backend == "marlin" and args.activation_precision != "bf16":
@@ -520,6 +536,22 @@ def main():
         or args.limit < 0
     ):
         parser.error("Inference requires an output directory and positive capacities")
+    if args.max_running_requests is None:
+        args.max_running_requests = args.batch_size
+    if args.max_running_requests < args.batch_size:
+        parser.error("--max-running-requests must be at least --batch-size")
+    if args.cuda_graph_max_bs is not None and not args.cuda_graph:
+        parser.error("--cuda-graph-max-bs requires --cuda-graph")
+    if args.cuda_graph_max_bs is None:
+        args.cuda_graph_max_bs = args.batch_size if args.cuda_graph else 0
+    if args.cuda_graph and not 1 <= args.cuda_graph_max_bs <= args.max_running_requests:
+        parser.error("Graph capacity must be positive and no larger than --max-running-requests")
+    if args.distributed_backend == "mnnvl" and not args.distributed_provider:
+        parser.error("The mnnvl backend requires --distributed-provider")
+    if args.engine != "mini" and (
+        args.distributed_backend != "auto" or args.distributed_provider is not None
+    ):
+        parser.error("Communication backend/provider options apply only to --engine mini")
     if (
         (args.output / "report.json").exists()
         or (args.output / "responses.jsonl").exists()

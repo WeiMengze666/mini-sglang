@@ -112,8 +112,20 @@ def test_cli_selects_automatic_or_explicit_checkpoint_budget():
     base = ["--model", "unused", "--dtype", "bfloat16"]
     config, _ = parse_args([*base, "--state-memory-ratio", "0.31"])
     assert config.state_memory_ratio == 0.31
+    config, _ = parse_args([*base, "--max-cached-states", "8"])
+    assert config.max_cached_states == 8 and config.state_memory_ratio is None
+
+
+@pytest.mark.parametrize("limit", [0, 8, 9])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_cli_rejects_explicit_state_budget_options_even_at_default(limit, reverse):
+    from minisgl.server.args import parse_args
+
+    base = ["--model", "unused", "--dtype", "bfloat16"]
+    ratio, explicit = ["--state-memory-ratio", "0.31"], ["--max-cached-states", str(limit)]
+    options = [*explicit, *ratio] if reverse else [*ratio, *explicit]
     with pytest.raises(SystemExit):
-        parse_args([*base, "--state-memory-ratio", "0.31", "--max-cached-states", "8"])
+        parse_args([*base, *options])
 
 
 def test_state_footprints_can_differ_between_ranks(monkeypatch):
