@@ -37,10 +37,16 @@ percentiles retain AIPerf measurement boundaries rather than dividing by900.
 The separate complete GSM8K baseline is Mini1281/1319 versus official1284/1319;
 Mini has two invalid/truncated responses, official has none. This is not final
 quality acceptance. The opt-in native FlashInfer KDA prefill candidate has
-576 exact component controls across eight ranks, but its complete task run
-is still in progress; neither its quality nor its serving performance is
-claimed here. No candidate backend or checkpoint policy is enabled by this
-documentation update.
+576 exact component controls across eight ranks. Its [complete task result](validation/native-fi-prefill-quality-20261111.json)
+is1279/1319 with one invalid answer and no truncations, below Mini1281 and
+native1284. All responses remain retained; the candidate is not promoted.
+Its offline evaluation time is not serving throughput. Source/CPU review also
+identifies an unresolved safe-gate decode dispatch difference: the native
+Triton portfolio selects its public unpacked operator, while this Mini candidate
+still selects the packed operator. This is not yet an established arithmetic
+bug, and the complete precision-path gate remains open. A thin official-entry
+adapter is under separate component validation. No candidate backend or
+checkpoint policy is enabled by this documentation update.
 
 CPU review matches all379 Mini completed requests, including51warmup,
 with official requests after removing their differing cache-bust markers.

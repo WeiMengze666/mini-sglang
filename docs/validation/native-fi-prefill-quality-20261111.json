@@ -1,0 +1,155 @@
+{
+  "scope": "Complete fixed-protocol offline task quality for opt-in fi,sgl; not cached serving or final acceptance",
+  "gpuq_job": 25,
+  "candidate_commit_published": "13d538c044efb68ea4a2f3bcdfab630a59cc2bff",
+  "candidate_runtime": "Frozen native-prefill-abi-candidate HEAD974+tracked patch exactly pinned by inputs.json; Python runtime bytes match published13d.",
+  "inputs": {
+    "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-native-prefill-v3/inputs.json",
+    "sha256": "b32b777150ad542b245b176025a249da330ce4b6a2df21b044ee19b84354f3e1"
+  },
+  "report": {
+    "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-native-prefill-v3/result/report.json",
+    "sha256": "c2ef9f733ab1c71af56e3909e1e56830a7fe724e74a7e2c7829e2111ad15d4cb"
+  },
+  "responses": {
+    "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-native-prefill-v3/result/responses.jsonl",
+    "sha256": "1026a59debb91b62577b8afeb11388d892cc472b2069bc64e89dc119ff48e2a1"
+  },
+  "comparisons_review": {
+    "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-native-prefill-v3/review/review.json",
+    "sha256": "8663ba9cf66b758ddc3dbd3344721c098a38cf26f6df8c99eb40e6570a0b30b3"
+  },
+  "candidate": {
+    "correct": 1279,
+    "completed": 1319,
+    "invalid_answers": 1,
+    "invalid_ids": [
+      93
+    ],
+    "truncated": 0,
+    "generated_tokens": 141328,
+    "offline_evaluation_seconds": 660.9631008649885
+  },
+  "execution_contract": {
+    "model_dtype": "bfloat16",
+    "moe_activation_precision": "mxfp8",
+    "kv_cache_dtype": "fp8_e4m3",
+    "recurrent_state_dtype": "bfloat16",
+    "conv_state_dtype": "bfloat16",
+    "bf16_precision": "default",
+    "tp_size": 8,
+    "dcp_size": 8,
+    "ep_size": 1,
+    "page_size": 64
+  },
+  "comparisons": {
+    "reference": {
+      "left": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-reference/result",
+      "right": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-native-prefill-v3/result",
+      "examples": 1319,
+      "declared_execution_contract_matches": true,
+      "kernel_precision_path_verified": null,
+      "contract_scope": "Compares declared dtypes and layout only; kernel input/output rounding, accumulators and fused-path coverage require separate runtime evidence.",
+      "execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "bf16_precision": "default",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 1,
+        "page_size": 64
+      },
+      "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+      "left_accuracy": 0.9734647460197119,
+      "right_accuracy": 0.9696739954510993,
+      "accuracy_delta_percentage_points": 0.37907505686125853,
+      "both_correct": 1275,
+      "both_wrong": 31,
+      "left_only_correct": [
+        37,
+        267,
+        306,
+        322,
+        423,
+        425,
+        754,
+        951,
+        1003
+      ],
+      "right_only_correct": [
+        12,
+        187,
+        1038,
+        1288
+      ],
+      "same_valid_answer": 1303,
+      "identical_token_ids": 676,
+      "left_invalid": 0,
+      "right_invalid": 1,
+      "left_truncated": 0,
+      "right_truncated": 0
+    },
+    "mini_baseline": {
+      "left": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-mini-baseline/result",
+      "right": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-native-prefill-v3/result",
+      "examples": 1319,
+      "declared_execution_contract_matches": true,
+      "kernel_precision_path_verified": null,
+      "contract_scope": "Compares declared dtypes and layout only; kernel input/output rounding, accumulators and fused-path coverage require separate runtime evidence.",
+      "execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "bf16_precision": "default",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 1,
+        "page_size": 64
+      },
+      "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+      "left_accuracy": 0.9711902956785443,
+      "right_accuracy": 0.9696739954510993,
+      "accuracy_delta_percentage_points": 0.1516300227445034,
+      "both_correct": 1275,
+      "both_wrong": 34,
+      "left_only_correct": [
+        267,
+        306,
+        425,
+        754,
+        796,
+        951
+      ],
+      "right_only_correct": [
+        12,
+        187,
+        1183,
+        1288
+      ],
+      "same_valid_answer": 1305,
+      "identical_token_ids": 686,
+      "left_invalid": 2,
+      "right_invalid": 1,
+      "left_truncated": 2,
+      "right_truncated": 0
+    }
+  },
+  "invalid_case_note": "Case93 ends with 400/11, rejected by the frozen answer parser; both baseline/reference also answer incorrectly. Original scoring is preserved; no parser or score change.",
+  "decode_branch_audit": {
+    "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-kda-decode-path-audit/audit.json",
+    "sha256": "2a2b664bc21ea2a48f81e43dbfd6d5cffb11197ca61486e7eb428910ab20ede4"
+  },
+  "unresolved_decode": "Pinned official Triton dispatcher requires supports_packed_decode_safe_gate for bounded gates; current Mini candidate/main directly use packed decode. Source/CPU audit identifies different actual entry points, not an established arithmetic defect. A thin official-entry candidate is being validated separately.",
+  "acceptance": {
+    "default_promotion": false,
+    "full_precision_path_parity": false,
+    "final_model_quality": false,
+    "serving_performance": false
+  },
+  "retained": "Every response, discordant answer, invalid response and failed earlier ABI attempt is preserved. Component576 exact same-operator checks are distinct from this full-model score."
+}
