@@ -1,6 +1,48 @@
 # Kimi-K3 serving performance target
 
-## Current checked scope (2026-11-05 CST)
+## Replacement-machine baseline (2026-11-11 CST)
+
+The [fresh canonical pair](validation/kimi-k3-replacement-baseline-20261110.json)
+completes the original 393-entry, concurrency-48, 900-second AIPerf scenario
+on the replacement eight-B300 server, through GPUq job23. Both fresh servers
+finish with valid, complete AIPerf exports and zero request errors.
+Mini source is `de99c88`; official source remains `baa9bef`.
+
+| AIPerf metric | Mini | Official SGLang |
+| --- | ---: | ---: |
+| Output tokens/s | 220.63 | 364.20 |
+| TTFT P50 / P95, ms | 2300.28 / 9439.95 | 1163.41 / 5114.00 |
+| ITL P50 / P95, ms | 63.34 / 110.22 | 29.73 / 52.63 |
+| Request latency P95, ms | 161732.53 | 83396.91 |
+| Completed / request errors / deadline cancellations | 328 / 0 / 6 | 493 / 0 / 3 |
+| Cache-read fraction of model prompt tokens | 88.73% | 93.72% |
+| Mean effective concurrency | 15.65 | 12.43 |
+
+Mini reaches **60.6%** of this official throughput point. The target remains
+unmet. Hardware/software changed: do not interpret these values against old
+395.42/276.90 results as a controlled speed regression. Both new runs preserve
+the original command, precision settings and resolved workload; warmup and
+model loading are outside the exported measurement. AIPerf receives online
+access permission for local-tokenizer resolution in both runs; cached public
+dataset bytes are unchanged. The failed first attempt is retained separately.
+
+The scenario progresses through different requests as completion speeds differ.
+The ratio is a serving test point, not a uniform kernel slowdown or an SLO curve.
+Cache policies still differ; matching the 0.31 budget ratio does not establish
+matching capacities or checkpoint reuse. Native prompt accounting omits three
+assistant-stub tokens; the cache fraction above includes the documented offset.
+Deadline cancellations remain separate from request errors. All rates and
+percentiles retain AIPerf measurement boundaries rather than dividing by900.
+
+The separate complete GSM8K baseline is Mini1281/1319 versus official1284/1319;
+Mini has two invalid/truncated responses, official has none. This is not final
+quality acceptance. The opt-in native FlashInfer KDA prefill candidate has
+576 exact component controls across eight ranks, but its complete task run
+is still in progress; neither its quality nor its serving performance is
+claimed here. No candidate backend or checkpoint policy is enabled by this
+documentation update.
+
+## Historical checked scope (2026-11-05 CST)
 
 The latest qualified runtime `51420e6` completes the requested canonical profile
 at **276.90 output tokens/s**, 70.0% of the retained official 395.42 tokens/s point. The
@@ -254,9 +296,8 @@ listed operator contracts, rather than a full serving workload.
 
 ## Measurement boundary
 
-Run both servers on the same hardware through gpuq. During the current queue
-outage the user explicitly permits direct GPU execution; retain the same
-process ownership and serialization. Keep development and CPU validation remote. Record the model/tokenizer revision, both source commits and
+Run both servers on the same hardware through gpuq. The replacement-machine
+work uses the restored queue; preserve process ownership and serialization. Keep development and CPU validation remote. Record the model/tokenizer revision, both source commits and
 dirty diff hashes, CUDA/NCCL/Torch/FlashInfer versions, resolved startup
 configuration, and fallback warnings.
 
