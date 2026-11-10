@@ -189,6 +189,9 @@ def test_overlap_keeps_completed_lengths_and_drains_exact_output_budget(
             break
     assert len(scheduler.replies) == max_tokens
     assert [reply.finished for reply in scheduler.replies] == [False] * (max_tokens - 1) + [True]
+    assert [reply.finish_reason for reply in scheduler.replies] == [None] * (max_tokens - 1) + [
+        "length"
+    ]
     assert len(scheduler.released) == 1
     assert_idle(scheduler)
 
@@ -233,6 +236,7 @@ def test_invalid_and_zero_output_requests_are_terminal_without_allocations(
     assert len(scheduler.replies) == 1
     reply = scheduler.replies[0]
     assert reply.finished and reply.next_token is None
+    assert reply.finish_reason == ("length" if error is None else None)
     assert (reply.error is None) if error is None else error in reply.error
     assert scheduler.released == []
     assert_idle(scheduler)
@@ -415,7 +419,8 @@ def test_frontend_streams_terminal_errors_without_hanging(method):
     asyncio.run(run())
 
 
-def test_valid_stream_preserves_each_increment_and_finishes_once():
+@pytest.mark.parametrize("reason", [None, "stop", "length"])
+def test_valid_stream_preserves_each_increment_and_finishes_once(reason):
     async def run():
         state = frontend()
         uid = state.new_user()
@@ -424,7 +429,7 @@ def test_valid_stream_preserves_each_increment_and_finishes_once():
             uid,
             UserReply(uid, "hello", False),
             UserReply(uid, " world", False),
-            UserReply(uid, "", True),
+            UserReply(uid, "", True, finish_reason=reason),
         )
         chunks = [chunk async for chunk in state.stream_chat_completions(uid)]
         assert chunks[-1] == b"data: [DONE]\n\n"
@@ -432,7 +437,9 @@ def test_valid_stream_preserves_each_increment_and_finishes_once():
         choices = [payload["choices"][0] for payload in payloads]
         assert "".join(choice["delta"].get("content", "") for choice in choices) == "hello world"
         assert choices[0]["delta"]["role"] == "assistant"
-        assert [choice["finish_reason"] for choice in choices].count("stop") == 1
+        reasons = [choice["finish_reason"] for choice in choices]
+        assert reasons[-1] == (reason or "stop")
+        assert all(item is None for item in reasons[:-1])
         assert state.ack_map == state.event_map == {}
         assert not state.sent
 

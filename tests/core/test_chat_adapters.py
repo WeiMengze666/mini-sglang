@@ -70,7 +70,7 @@ def test_default_completion_parser_is_plain_text():
     assert parser.parse_chunk("hello") == {"content": "hello"}
     assert parser.parse_chunk("") == {}
     assert parser.parse_non_stream("hello") == {"content": "hello"}
-    assert parser.finish() == {} and parser.finish_reason == "stop"
+    assert parser.finish() == {} and parser.finish_reason() == "stop"
 
 
 def test_served_name_is_api_metadata(monkeypatch):

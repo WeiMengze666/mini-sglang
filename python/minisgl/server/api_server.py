@@ -267,6 +267,7 @@ class FrontendManager:
     async def stream_chat_completions(self, uid: int, *, include_usage: bool = False, parser=None):
         parser = parser or CompletionParser()
         first_chunk = True
+        finish_reason = None
         usage = UserReply(uid, "", False).usage
         async with aclosing(self.wait_for_ack(uid)) as replies:
             async for ack in replies:
@@ -283,6 +284,7 @@ class FrontendManager:
                     yield f"data: {json.dumps(error)}\n\n".encode()
                     yield b"data: [DONE]\n\n"
                     return
+                finish_reason = ack.finish_reason
                 delta = parser.parse_chunk(ack.incremental_output)
                 if first_chunk:
                     delta["role"] = "assistant"
@@ -291,7 +293,9 @@ class FrontendManager:
         tail = parser.finish()
         if tail:
             yield _chat_event(uid, self.model_name, delta=tail)
-        yield _chat_event(uid, self.model_name, delta={}, finish_reason=parser.finish_reason)
+        yield _chat_event(
+            uid, self.model_name, delta={}, finish_reason=parser.finish_reason(finish_reason)
+        )
         if include_usage:
             yield _chat_event(uid, self.model_name, usage=usage)
         yield b"data: [DONE]\n\n"
@@ -409,6 +413,7 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
 
     # Non-streaming: collect all chunks and return a single JSON response
     full_content = ""
+    finish_reason = None
     usage = UserReply(uid, "", False).usage
     async with aclosing(state.wait_for_ack(uid)) as replies:
         async for ack in replies:
@@ -416,6 +421,7 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
                 raise HTTPException(503 if ack.error == state.backend_error else 400, ack.error)
             full_content += ack.incremental_output
             usage = ack.usage
+            finish_reason = ack.finish_reason
 
     return {
         "id": f"chatcmpl-{uid}",
@@ -429,7 +435,7 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
                     "role": "assistant",
                     **completion_parser.parse_non_stream(full_content),
                 },
-                "finish_reason": completion_parser.finish_reason,
+                "finish_reason": completion_parser.finish_reason(finish_reason),
             }
         ],
         "usage": usage,

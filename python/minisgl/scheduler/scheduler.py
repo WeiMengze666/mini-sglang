@@ -206,15 +206,19 @@ class Scheduler(SchedulerIOMixin):
                 next_token = next_tokens_cpu[i]
                 req.append_host(next_token.unsqueeze(0))
                 next_token = int(next_token.item())
-                finished = length + 1 >= req.max_device_len
-                if not req.sampling_params.ignore_eos:
-                    finished |= next_token in self.stop_token_ids
+                finish_reason = None
+                if length + 1 >= req.max_device_len:
+                    finish_reason = "length"
+                elif not req.sampling_params.ignore_eos and next_token in self.stop_token_ids:
+                    finish_reason = "stop"
+                finished = finish_reason is not None
                 reply.append(
                     DetokenizeMsg(
                         uid=req.uid,
                         next_token=next_token,
                         finished=finished,
                         cached_tokens=req.cached_prompt_tokens,
+                        finish_reason=finish_reason,
                     )
                 )
 
@@ -268,7 +272,7 @@ class Scheduler(SchedulerIOMixin):
                 self.send_result([DetokenizeMsg(msg.uid, None, True, error=error)])
                 return
             if msg.sampling_params.max_tokens == 0:
-                self.send_result([DetokenizeMsg(msg.uid, None, True)])
+                self.send_result([DetokenizeMsg(msg.uid, None, True, finish_reason="length")])
                 return
             # SamplingParams may be shared by several offline requests. Clipping
             # one prompt must not change another request's generation budget.

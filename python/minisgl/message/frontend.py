@@ -31,6 +31,7 @@ class UserReply(BaseFrontendMsg):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cached_tokens: int | None = None
+    finish_reason: str | None = None
 
     @property
     def usage(self) -> dict:

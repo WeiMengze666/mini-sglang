@@ -86,6 +86,7 @@ def tokenize_worker(
                             msg.error,
                             *counts,
                             cached_tokens=msg.cached_tokens,
+                            finish_reason=msg.finish_reason,
                         )
                     )
                     if msg.finished:

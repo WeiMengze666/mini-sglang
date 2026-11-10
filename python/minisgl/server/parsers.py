@@ -68,9 +68,10 @@ class CompletionParser:
                 tool_choice=native_request.tool_choice,
             )
 
-    @property
-    def finish_reason(self):
-        return "tool_calls" if self.call_ids else "stop"
+    def finish_reason(self, reason=None):
+        if reason in (None, "stop"):
+            return "tool_calls" if self.call_ids else "stop"
+        return reason
 
     def _content(self, reasoning, text, *, streaming):
         calls = []

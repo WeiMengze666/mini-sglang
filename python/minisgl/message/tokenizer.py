@@ -31,6 +31,7 @@ class DetokenizeMsg(BaseTokenizerMsg):
     finished: bool
     error: str | None = None
     cached_tokens: int | None = None
+    finish_reason: str | None = None
 
 
 @dataclass

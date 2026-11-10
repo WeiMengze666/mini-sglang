@@ -83,7 +83,7 @@ def test_native_tool_stream_and_complete(name, text, chunk):
     assert sum("id" in c for c in calls) == 1
     assert "".join(c["function"].get("name", "") for c in calls) == "lookup"
     assert json.loads("".join(c["function"]["arguments"] for c in calls)) == {"q": "a & b"}
-    assert parser.finish_reason == "tool_calls"
+    assert parser.finish_reason() == "tool_calls"
     assert not torch.cuda.is_initialized()
 
 
@@ -97,7 +97,7 @@ def test_reasoning_and_tool_states_are_per_request():
     a.update(first.parse_chunk(K3_RESPONSE + K3_CALL))
     b.update(second.parse_chunk(K3_RESPONSE))
     assert a.get("tool_calls") and not b.get("tool_calls")
-    assert first.finish_reason == "tool_calls" and second.finish_reason == "stop"
+    assert first.finish_reason() == "tool_calls" and second.finish_reason() == "stop"
     assert first.reasoning is not second.reasoning
 
 
@@ -145,7 +145,10 @@ def test_trusted_chat_tokenizer_matches_native_and_generation_eos(thinking):
 
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("limit_field", ["max_tokens", "max_completion_tokens"])
-def test_chat_api_composes_native_parsers_and_preserves_usage(monkeypatch, stream, limit_field):
+@pytest.mark.parametrize("reason", [None, "stop", "length"])
+def test_chat_api_composes_native_parsers_and_preserves_usage(
+    monkeypatch, stream, limit_field, reason
+):
     from types import SimpleNamespace
 
     import minisgl.server.api_server as api
@@ -167,7 +170,9 @@ def test_chat_api_composes_native_parsers_and_preserves_usage(monkeypatch, strea
         seen.append(msg)
         state.ack_map[msg.uid] = [
             UserReply(msg.uid, "work" + K3_RESPONSE, False, prompt_tokens=7, completion_tokens=1),
-            UserReply(msg.uid, K3_CALL, True, prompt_tokens=7, completion_tokens=2),
+            UserReply(
+                msg.uid, K3_CALL, True, prompt_tokens=7, completion_tokens=2, finish_reason=reason
+            ),
         ]
         state.event_map[msg.uid].set()
 
@@ -187,6 +192,7 @@ def test_chat_api_composes_native_parsers_and_preserves_usage(monkeypatch, strea
     assert response.status_code == 200, response.text
     assert seen[0].chat_template_kwargs["tools"] == TOOLS
     assert seen[0].sampling_params.max_tokens == 2048
+    expected_reason = "length" if reason == "length" else "tool_calls"
     if stream:
         chunks = [
             json.loads(line[6:])
@@ -197,12 +203,12 @@ def test_chat_api_composes_native_parsers_and_preserves_usage(monkeypatch, strea
         deltas = [c["choices"][0]["delta"] for c in chunks if c["choices"]]
         assert "".join(d.get("reasoning_content", "") for d in deltas) == "work"
         assert "".join(d.get("content") or "" for d in deltas) == "done"
-        assert chunks[-2]["choices"][0]["finish_reason"] == "tool_calls"
+        assert chunks[-2]["choices"][0]["finish_reason"] == expected_reason
         usage = chunks[-1]["usage"]
     else:
         result = response.json()
         assert result["choices"][0]["message"]["reasoning_content"] == "work"
         assert result["choices"][0]["message"]["content"] == "done"
-        assert result["choices"][0]["finish_reason"] == "tool_calls"
+        assert result["choices"][0]["finish_reason"] == expected_reason
         usage = result["usage"]
     assert usage == {"prompt_tokens": 7, "completion_tokens": 2, "total_tokens": 9}

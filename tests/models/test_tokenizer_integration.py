@@ -34,8 +34,11 @@ def test_generation_stops_are_distinct_from_tokenizer_identity():
     assert get_stop_token_ids(SimpleNamespace(eos_token_id=[2, 3])) == {2, 3}
 
 
-@pytest.mark.parametrize("ignore_eos", [False, True])
-def test_scheduler_obeys_generation_stop_ids(ignore_eos):
+@pytest.mark.parametrize(
+    "ignore_eos,output_len,reason",
+    [(False, 5, "stop"), (True, 5, None), (False, 1, "length"), (True, 1, "length")],
+)
+def test_scheduler_obeys_generation_stop_ids(ignore_eos, output_len, reason):
     scheduler = object.__new__(Scheduler)
     scheduler.stop_token_ids = get_stop_token_ids(tokenizer())
     scheduler.eos_token_id = 163585
@@ -48,7 +51,7 @@ def test_scheduler_obeys_generation_stop_ids(ignore_eos):
     scheduler.decode_manager = SimpleNamespace(remove_req=removed.append)
     scheduler._free_req_resources = freed.append
     scheduler.send_result = replies.extend
-    req = Req(torch.tensor([1]), 0, 0, 5, 7, SamplingParams(ignore_eos=ignore_eos), None)
+    req = Req(torch.tensor([1]), 0, 0, output_len, 7, SamplingParams(ignore_eos=ignore_eos), None)
     req.complete_one()  # The engine has processed this forward.
     batch = Batch([req], "decode")
     data = (
@@ -56,8 +59,9 @@ def test_scheduler_obeys_generation_stop_ids(ignore_eos):
         (None, torch.tensor([163586]), SimpleNamespace(synchronize=lambda: None)),
     )
     scheduler._process_last_data(data)
-    assert replies[0].finished is not ignore_eos
-    assert len(freed) == len(removed) == (0 if ignore_eos else 1)
+    assert replies[0].finish_reason == reason
+    assert replies[0].finished is (reason is not None)
+    assert len(freed) == len(removed) == int(reason is not None)
 
 
 def test_detokenizer_suppresses_generation_terminal_marker():
@@ -175,3 +179,54 @@ def test_kimi_loader_uses_only_pinned_data_files(tmp_path, monkeypatch, remote):
         ]
     else:
         assert not downloads
+
+
+@pytest.mark.parametrize("reason", ["stop", "length"])
+def test_tokenizer_worker_preserves_terminal_reason_and_usage(monkeypatch, reason):
+    import minisgl.tokenizer.server as worker
+    from minisgl.message import BaseFrontendMsg, TokenizeMsg
+
+    tok = tokenizer()
+    tok.encode = lambda *args, **kwargs: torch.tensor([[1]])
+    terminal_token = 163586 if reason == "stop" else 1
+    pending = iter(
+        [
+            TokenizeMsg(7, "prompt", SamplingParams(max_tokens=2)),
+            DetokenizeMsg(7, 1, False),
+            DetokenizeMsg(7, terminal_token, True, finish_reason=reason),
+        ]
+    )
+    outputs = []
+
+    def receive():
+        try:
+            return next(pending)
+        except StopIteration:
+            raise KeyboardInterrupt from None
+
+    def push(addr, **kwargs):
+        def put(message):
+            if addr == "frontend":
+                outputs.append(BaseFrontendMsg.decoder(BaseFrontendMsg.encoder(message)))
+
+        return SimpleNamespace(put=put)
+
+    monkeypatch.setattr(worker, "ZmqPushQueue", push)
+    monkeypatch.setattr(worker, "ZmqPullQueue", lambda *a, **k: SimpleNamespace(get=receive))
+    monkeypatch.setattr(worker, "load_tokenizer", lambda *a, **k: tok)
+    worker.tokenize_worker(
+        tokenizer_path="fixture",
+        addr="listen",
+        create=False,
+        backend_addr="backend",
+        frontend_addr="frontend",
+        local_bs=1,
+    )
+    assert [reply.finish_reason for reply in outputs] == [None, reason]
+    assert [reply.finished for reply in outputs] == [False, True]
+    assert outputs[-1].usage == {
+        "prompt_tokens": 1,
+        "completion_tokens": 2,
+        "total_tokens": 3,
+    }
+    assert not torch.cuda.is_initialized()

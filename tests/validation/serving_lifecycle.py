@@ -220,7 +220,7 @@ def run(model, output, unified, args):
                 assert (
                     sum(event["choices"][0]["finish_reason"] is None for event in events) == budget
                 )
-                assert events[-1]["choices"][0]["finish_reason"] == "stop"
+                assert events[-1]["choices"][0]["finish_reason"] == "length"
             bad = httpx.post(
                 url + "/v1/chat/completions",
                 json={"model": str(model), "prompt": "hi", "max_tokens": -1},
