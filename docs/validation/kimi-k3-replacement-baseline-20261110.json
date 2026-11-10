@@ -514,5 +514,40 @@
       "error_summary": []
     }
   },
-  "output_throughput_ratio_mini_over_official": 0.6058050198926949
+  "output_throughput_ratio_mini_over_official": 0.6058050198926949,
+  "matched_request_cpu_review": {
+    "artifact": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-gap-review/review-v2.json",
+      "sha256": "2404dfc290fb0244ba1ee125654aebd70fe9a63ca6d9e042d3d59a316ada72d4"
+    },
+    "token_accounting_artifact": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-baseline-token-accounting/report.json",
+      "sha256": "4cf8a8aa27165887fe7fa5b96da260dfc748cb58f7be660a35fdfa8f09386d90"
+    },
+    "capacity_artifact": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-cache-budget-audit/job23-actual-capacity.json",
+      "sha256": "8e2199645ccee7ddfb20f51e0778d4ba393381590272ddf5cbf919cbe091d19e"
+    },
+    "matched_completed_requests_including_warmup": 379,
+    "matched_profiling_requests": 328,
+    "same_payload_after_removing_marker": 379,
+    "same_requested_and_actual_output_lengths": 379,
+    "reference_cached_tokens_on_shared_profiling": 34884096,
+    "mini_cached_tokens_on_shared_profiling": 33096704,
+    "mini_fewer_cached_tokens": 1787392,
+    "shared_requests_cache_less_equal_more": [
+      259,
+      64,
+      5
+    ],
+    "per_request_itl_ratio_median_mini_over_reference": 1.960533,
+    "same_original_payload_token_id_pairs": 24,
+    "full_token_id_sample_count": 12,
+    "all_shared_usage_deltas_explained_by_marker_plus_official_stub": 379,
+    "token_ids_cross_original_runs": "Different cache-bust markers; not asserted equal. Twelve controlled-marker samples equal.",
+    "allocation_warning": "Observed on all ranks during warmup only; none logged during formal profiling. No demonstrated graph fallback or HTTP failure.",
+    "finish_reason": "All completed Mini raw SSE packets report stop despite exact requested output lengths; fixed generically after this frozen baseline in af603eb, with105 CPU passes.",
+    "runtime_graph_coverage": "Official784 formal decode log samples graph=True; its scraped gauge says0. Mini actual replay coverage not recorded. Source/startup capture is not a runtime trace.",
+    "attribution": "No individual kernel, eviction rule, checkpoint rule, or arithmetic defect is established by these serving artifacts."
+  }
 }

@@ -42,6 +42,24 @@ is still in progress; neither its quality nor its serving performance is
 claimed here. No candidate backend or checkpoint policy is enabled by this
 documentation update.
 
+CPU review matches all379 Mini completed requests, including51warmup,
+with official requests after removing their differing cache-bust markers.
+Actual output lengths match every requested limit. On the328 shared profiling
+requests, Mini reads1,787,392 fewer cached tokens; the median per-request ITL
+ratio is1.96. Five requests instead have more Mini cache hits, so the total
+cannot be attributed to one checkpoint/eviction rule without further evidence.
+
+Twenty-four same-payload encoder comparisons across12 selected requests have
+identical official/Mini token IDs. All379 reported usage differences are
+explained by differing marker lengths plus the official three-token exclusion;
+this is not full token-ID comparison of379 requests. Native+3 remains a
+normalization of its own reported usage. An independent protocol defect made
+Mini report`stop` for length-limited completions; commit`af603eb` now preserves
+scheduler termination reasons through IPC and streaming/non-streaming replies.
+Its105 CPU checks include native K3/Qwen parsers, EOS at the length cap,
+zero output, usage and tool-call priority. This fix has no numerical/cache
+changes, and is not attributed performance or quality gains from the old run.
+
 ## Historical checked scope (2026-11-05 CST)
 
 The latest qualified runtime `51420e6` completes the requested canonical profile
