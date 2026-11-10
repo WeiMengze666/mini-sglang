@@ -103,6 +103,8 @@ class TensorTrace:
                 "stride": list(value.stride()),
                 "device": str(value.device),
                 "storage_offset": value.storage_offset(),
+                "data_ptr": value.data_ptr(),
+                "nbytes": value.numel() * value.element_size(),
                 "alias": self.alias(value),
             }
             if role is not None:
@@ -115,14 +117,20 @@ class TensorTrace:
             key = (id(value), None if rows is None else tuple(rows))
             if key in memo:
                 return dict(meta, payload=memo[key])
+            if rows is not None:
+                if value.ndim == 0:
+                    raise IndexError("Cannot select rows from a scalar tensor")
+                if any(not -value.shape[0] <= index < value.shape[0] for index in rows):
+                    raise IndexError("Tensor trace row index is out of bounds")
             elements = value.numel() if rows is None else len(rows) * math.prod(value.shape[1:])
             size = elements * value.element_size()
             if self.bytes + size > self.max_bytes:
                 raise RuntimeError("Tensor trace byte budget exceeded; trace is incomplete")
             payload = f"tensors/{self.payloads:08d}.pt"
-            # A compact copy avoids serializing an unrelated underlying pool.
-            saved = value.detach().to(device="cpu", copy=True)
-            saved = saved.contiguous() if rows is None else saved[rows].contiguous()
+            # Select on the source device so transfer/temporary memory follows
+            # the selected-byte budget rather than the size of an entire pool.
+            saved = value.detach() if rows is None else value.detach()[rows]
+            saved = saved.to(device="cpu", copy=True).contiguous()
             torch.save(saved, self.output / payload)
             memo[key] = payload
             self.bytes += size

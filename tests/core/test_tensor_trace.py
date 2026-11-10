@@ -135,3 +135,127 @@ def test_workspace_and_static_lookup_metadata_do_not_dump_uninitialized_storage(
     assert result["cos_sin_cache"]["role"] == "lookup_table"
     assert trace.payloads == trace.bytes == 0
     trace.close()
+
+
+@pytest.mark.parametrize("indices", [[7, 1], [-1, 1, 1], []])
+def test_selected_rows_are_selected_before_host_transfer(monkeypatch, tmp_path, indices):
+    pool = torch.arange(9 * 3 * 4 * 8).reshape(9, 3, 4, 8)[..., ::2]
+    expected = pool[indices].clone()
+    selected_bytes = expected.numel() * expected.element_size()
+    trace = TensorTrace(tmp_path / "trace", prefixes=[], max_bytes=selected_bytes)
+    transfers = []
+    original = torch.Tensor.to
+
+    def observed_to(value, *args, **kwargs):
+        transfers.append((tuple(value.shape), str(value.device), kwargs.get("device")))
+        return original(value, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(torch.Tensor, "to", observed_to)
+        captured = trace.snapshot(pool, rows=indices)
+    assert transfers == [(tuple(expected.shape), "cpu", "cpu")]
+    assert captured["shape"] == list(pool.shape)
+    assert captured["stride"] == list(pool.stride())
+    assert captured["data_ptr"] == pool.data_ptr()
+    assert captured["storage_offset"] == pool.storage_offset()
+    assert captured["nbytes"] == pool.numel() * pool.element_size()
+    assert captured["selection"] == {"axis": 0, "stored_indices": indices}
+    saved = torch.load(trace.output / captured["payload"], weights_only=True)
+    torch.testing.assert_close(saved, expected, rtol=0, atol=0)
+    assert saved.is_contiguous() and saved.untyped_storage().nbytes() == selected_bytes
+    assert trace.bytes == selected_bytes
+    trace.close()
+
+
+@pytest.mark.parametrize("indices", [[9], [-10]])
+def test_direct_out_of_bounds_rows_fail_before_source_indexing(monkeypatch, tmp_path, indices):
+    trace = TensorTrace(tmp_path / "trace", prefixes=[])
+    pool = torch.zeros(9, 3, 4, 4)
+
+    def unexpected_transfer(*args, **kwargs):
+        pytest.fail("An invalid selection must not transfer any pool values")
+
+    def unexpected_index(*args, **kwargs):
+        pytest.fail("An invalid selection must fail before source-device indexing")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(torch.Tensor, "to", unexpected_transfer)
+        patch.setattr(torch.Tensor, "__getitem__", unexpected_index)
+        with pytest.raises(IndexError):
+            trace.snapshot(pool, rows=indices)
+    assert trace.bytes == trace.payloads == 0
+    trace.close(complete=False)
+
+
+def test_container_pool_selection_keeps_filtering_contract(monkeypatch, tmp_path):
+    trace = TensorTrace(tmp_path / "trace", prefixes=[])
+    pool = torch.arange(9 * 3 * 4 * 4).reshape(9, 3, 4, 4)
+    transfers = []
+    original = torch.Tensor.to
+
+    def observed_to(value, *args, **kwargs):
+        transfers.append(tuple(value.shape))
+        return original(value, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(torch.Tensor, "to", observed_to)
+        captured = trace.snapshot(
+            {"initial_state": pool, "initial_state_indices": torch.tensor([-1, 7, 7, 1, 9])}
+        )["items"]["initial_state"]
+    assert tuple(pool.shape) not in transfers
+    assert (2, 3, 4, 4) in transfers
+    assert captured["selection"] == {"axis": 0, "stored_indices": [1, 7]}
+    saved = torch.load(trace.output / captured["payload"], weights_only=True)
+    torch.testing.assert_close(saved, pool[[1, 7]], rtol=0, atol=0)
+    trace.close()
+
+
+def test_selected_byte_budget_rejects_before_host_transfer(monkeypatch, tmp_path):
+    pool = torch.zeros(9, 3, 4, 4)
+    selected_bytes = 2 * pool[0].numel() * pool.element_size()
+    trace = TensorTrace(tmp_path / "trace", prefixes=[], max_bytes=selected_bytes - 1)
+
+    def unexpected_transfer(*args, **kwargs):
+        pytest.fail("A rejected selection must not transfer any pool values")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(torch.Tensor, "to", unexpected_transfer)
+        with pytest.raises(RuntimeError, match="incomplete"):
+            trace.snapshot(pool, rows=[1, 7])
+    assert trace.bytes == trace.payloads == 0
+    trace.close(complete=False)
+
+
+@pytest.mark.parametrize("indices", [[], [0]])
+def test_scalar_rows_raise_index_error_before_source_indexing(monkeypatch, tmp_path, indices):
+    trace = TensorTrace(tmp_path / "trace", prefixes=[])
+    scalar = torch.tensor(1.0)
+
+    def unexpected_operation(*args, **kwargs):
+        pytest.fail("A scalar row selection must fail before indexing or transfer")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(torch.Tensor, "to", unexpected_operation)
+        patch.setattr(torch.Tensor, "__getitem__", unexpected_operation)
+        with pytest.raises(IndexError, match="scalar"):
+            trace.snapshot(scalar, rows=indices)
+    assert trace.bytes == trace.payloads == 0
+    trace.close(complete=False)
+
+
+def test_metadata_only_rows_do_not_validate_or_index(monkeypatch, tmp_path):
+    trace = TensorTrace(tmp_path / "trace", prefixes=[], max_bytes=1)
+    parameter = torch.ones(2, 3)
+    trace.register_model(SimpleNamespace(weight=parameter))
+    scalar = torch.tensor(1.0)
+
+    def unexpected_operation(*args, **kwargs):
+        pytest.fail("Metadata-only snapshots must not index or transfer")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(torch.Tensor, "to", unexpected_operation)
+        patch.setattr(torch.Tensor, "__getitem__", unexpected_operation)
+        assert trace.snapshot(parameter, rows=[99])["role"] == "parameter"
+        assert trace.snapshot(scalar, rows=[99], role="workspace")["role"] == "workspace"
+    assert trace.bytes == trace.payloads == 0
+    trace.close()
