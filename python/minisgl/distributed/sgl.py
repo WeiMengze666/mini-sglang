@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import importlib
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -68,6 +69,59 @@ def prepare(*, tp_info: DistributedInfo, device: torch.device) -> None:
                 os.environ["SGLANG_CACHE_DIR"] = previous
 
 
+class SGLangAllReduceProvider(MNNVLAllReduceProvider):
+    """Optional native epilogues bound to this communicator, never SDK globals."""
+
+    def __init__(self, comm, *, device, norm_module=None, **kwargs):
+        super().__init__(comm, **kwargs)
+        self._device = device
+        self._norm_module = (
+            norm_module
+            if not getattr(comm, "disabled", False) and getattr(comm, "has_multicast", False)
+            else None
+        )
+        if self._norm_module is not None:
+            # The SDK allocates the actual PushPlane counter/slots from these
+            # finalized fields in CustomAllReduceV2._init_workspace.
+            self._norm_push_blocks = comm.config.num_push_blocks
+            self._norm_push_bytes = min(512 * 1024, comm.max_push_size)
+
+    def try_all_reduce_norm(
+        self, x: torch.Tensor, weight: torch.Tensor, eps: float
+    ) -> torch.Tensor | None:
+        # Fixed width and cluster geometry belong to this compiled kernel,
+        # not to model or MoE abstractions. Pointer/stride differences normalize
+        # locally; they must never choose a different collective on peer ranks.
+        if (
+            self._norm_module is None
+            or getattr(self.comm, "disabled", False)
+            or x.device != self._device
+            or weight.device != x.device
+            or x.dtype != torch.bfloat16
+            or weight.dtype != x.dtype
+            or x.ndim != 2
+            or x.shape[1] != 3584
+            or weight.shape != (3584,)
+            or not 0 < x.shape[0]
+            or x.numel() * x.element_size() > self._norm_push_bytes
+            or min(x.shape[0], 96) >= self._norm_push_blocks
+            or not math.isfinite(eps)
+            or eps < 0
+        ):
+            return None
+        if not x.is_contiguous() or x.data_ptr() % self.input_alignment:
+            x = x.clone(memory_format=torch.contiguous_format)
+        if not weight.is_contiguous() or weight.data_ptr() % self.input_alignment:
+            weight = weight.clone(memory_format=torch.contiguous_format)
+        with self.execution_context():
+            self._norm_module.push_norm(self.comm.obj, x.view(-1), weight, eps, x.shape[0])
+        return x
+
+    def close(self):
+        super().close()
+        self._norm_module = None
+
+
 def create_provider(*, tp_info, cpu_group, device_group, device, max_bytes):
     """Adapt native collectives to the regular provider, with Torch fallback."""
     for group in (cpu_group, device_group):
@@ -75,17 +129,35 @@ def create_provider(*, tp_info, cpu_group, device_group, device, max_bytes):
             raise ValueError("MNNVL process group differs from tensor-parallel coordinates")
     if dist.get_process_group_ranks(cpu_group) != dist.get_process_group_ranks(device_group):
         raise ValueError("MNNVL bootstrap and device groups must have the same ordered ranks")
-    TorchDistributedImpl(device_group).warmup(device)
     native = importlib.import_module(
         "sglang.srt.distributed.device_communicators.custom_all_reduce_v2"
     )
+    capability = torch.cuda.get_device_capability(device)
+    norm_module = None
+    if (
+        tp_info.size > 1
+        and capability in ((10, 0), (10, 3))
+        and tp_info.size in native.get_supported_world_sizes()
+    ):
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("Native communication kernels must be prepared before capture")
+        module = importlib.import_module("sglang.kernels.ops.communication.all_reduce_residual")
+        # Compile before creating the native communicator: a failed JIT must not
+        # leave one rank holding resources whose close needs a group barrier.
+        norm_module = module._jit_module(tp_info.size)
+    TorchDistributedImpl(device_group).warmup(device)
     from tvm_ffi import use_torch_stream
 
     with use_torch_stream():
         comm = native.CustomAllReduceV2(cpu_group, device, max_size=max_bytes)
     # The SDK's PDL staging copy uses wider vectors than its 16-byte entry
     # check on Blackwell. Views must meet the copy's alignment on every rank.
-    alignment = 32 if torch.cuda.get_device_capability(device)[0] >= 10 else 16
-    return MNNVLAllReduceProvider(
-        comm, group=device_group, execution_context=use_torch_stream, input_alignment=alignment
+    alignment = 32 if capability[0] >= 10 else 16
+    return SGLangAllReduceProvider(
+        comm,
+        device=device,
+        norm_module=norm_module,
+        group=device_group,
+        execution_context=use_torch_stream,
+        input_alignment=alignment,
     )

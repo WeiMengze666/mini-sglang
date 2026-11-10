@@ -105,6 +105,12 @@ class MNNVLDistributedImpl(DistributedImpl):
             return super().all_reduce_residual(x, residual, norm=norm)
         return self.provider.all_reduce_residual(x, residual, norm=norm)
 
+    def try_all_reduce_norm(
+        self, x: torch.Tensor, weight: torch.Tensor, eps: float
+    ) -> torch.Tensor | None:
+        method = getattr(self.provider, "try_all_reduce_norm", None)
+        return method(x, weight, eps) if method is not None else None
+
     def capture(self):
         capture = getattr(self.provider, "capture", None)
         return capture() if capture is not None else nullcontext()

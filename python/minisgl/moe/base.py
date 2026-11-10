@@ -22,6 +22,12 @@ class BaseMoeBackend(ABC):
 
         return create_expert_executor(experts, **options)
 
+    def prepare(self, model, context):
+        """Optional startup session; unsupported backends do not import FI."""
+
+    def prepare_local(self, executor, routing_builder, context, *, dry_run=False):
+        return None
+
     def forward_experts(self, executor, x, routing):
         """Let an executor fuse routing with compute, then use ordinary routes."""
         fused = getattr(executor, "try_forward_routed", None)
@@ -43,6 +49,24 @@ class BaseMoeBackend(ABC):
         return tuple(
             part.view(original.shape) for part, original in zip(reduced.split(sizes), outputs)
         )
+
+    def try_reduce_norm_outputs(
+        self,
+        parallel,
+        mixed: torch.Tensor,
+        shared: torch.Tensor | None,
+        *,
+        weight: torch.Tensor,
+        eps: float,
+    ) -> tuple[torch.Tensor, torch.Tensor | None] | None:
+        """Normalize the latent reduction first; decline before reducing shared."""
+        normalized = parallel.try_all_reduce_norm(mixed, weight, eps)
+        if normalized is None:
+            return None
+        if shared is not None:
+            # Match the local cast used by the ordinary packed reduction.
+            shared = parallel.all_reduce(shared.to(mixed.dtype))
+        return normalized, shared
 
     @abstractmethod
     def forward(

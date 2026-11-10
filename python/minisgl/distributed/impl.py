@@ -54,6 +54,12 @@ class DistributedImpl(ABC):
             result = result + residual
         return norm(result) if norm is not None else result
 
+    def try_all_reduce_norm(
+        self, x: torch.Tensor, weight: torch.Tensor, eps: float
+    ) -> torch.Tensor | None:
+        """Reduce and RMS-normalize each row, or decline without writes/collectives."""
+        return None
+
     def capture(self):
         """Register communication resources around a complete CUDA graph capture.
 
@@ -118,6 +124,19 @@ class FallbackDistributedImpl(DistributedImpl):
         # Keep capability-based routing for the reduction and compose the rest.
         return super().all_reduce_residual(x, residual, norm=norm)
 
+    def try_all_reduce_norm(
+        self, x: torch.Tensor, weight: torch.Tensor, eps: float
+    ) -> torch.Tensor | None:
+        backends = (
+            (self.primary,) if self.primary is self.fallback else (self.primary, self.fallback)
+        )
+        for backend in backends:
+            method = getattr(backend, "try_all_reduce_norm", None)
+            result = method(x, weight, eps) if method is not None else None
+            if result is not None:
+                return result
+        return None
+
     @contextmanager
     def capture(self):
         # Either backend may serve tensors in the same graph. Both must register
@@ -139,6 +158,16 @@ class FallbackDistributedImpl(DistributedImpl):
 @dataclass
 class TorchDistributedImpl(DistributedImpl):
     group: dist.ProcessGroup | None = None
+    owns_group: bool = False
+
+    def __post_init__(self):
+        if self.owns_group and self.group is None:
+            raise ValueError("An owned process group must be explicit; None denotes WORLD")
+
+    def close(self) -> None:
+        if self.owns_group:
+            self.owns_group = False
+            dist.destroy_process_group(self.group)
 
     def warmup(self, device: torch.device) -> None:
         """Allocate NCCL collective resources before measuring cache capacity."""
@@ -241,6 +270,12 @@ class DistributedCommunicator:
 
     def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
         return self._backend().all_reduce_residual(x, residual, norm=norm)
+
+    def try_all_reduce_norm(
+        self, x: torch.Tensor, weight: torch.Tensor, eps: float
+    ) -> torch.Tensor | None:
+        method = getattr(self._backend(), "try_all_reduce_norm", None)
+        return method(x, weight, eps) if method is not None else None
 
     @contextmanager
     def capture(self):

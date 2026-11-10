@@ -198,6 +198,11 @@ class LatentMoE(BaseOP):
             routing_policy=RoutingPolicy.from_config(self._config),
         )
 
+    def prepare_runtime(self, context, *, dry_run=False):
+        return self._backend.prepare_local(
+            self._expert_executor, self.gate.routing, context, dry_run=dry_run
+        )
+
     def validate_cuda_graph(self):
         if not self._expert_executor.supports_cuda_graph:
             raise ValueError("CUDA graphs require a device-side grouped expert executor")
@@ -244,13 +249,24 @@ class LatentMoE(BaseOP):
             )
         # Reduce partials before nonlinear latent normalization/up-projection.
         # Strict BF16 rounds each local mixture before the collective.
-        if shared is not None:
-            mixed, shared = self._backend.reduce_outputs(self._tp, mixed, shared)
+        norm = self.routed_expert_norm
+        fused = (
+            self._backend.try_reduce_norm_outputs(
+                self._tp, mixed, shared, weight=norm.weight, eps=norm.eps
+            )
+            if norm is not None and mixed.dtype == x.dtype
+            else None
+        )
+        if fused is None:
+            if shared is not None:
+                mixed, shared = self._backend.reduce_outputs(self._tp, mixed, shared)
+            else:
+                (mixed,) = self._backend.reduce_outputs(self._tp, mixed)
+            output = mixed.to(x.dtype)
+            if norm is not None:
+                output = norm.forward(output)
         else:
-            (mixed,) = self._backend.reduce_outputs(self._tp, mixed)
-        output = mixed.to(x.dtype)
-        if self.routed_expert_norm is not None:
-            output = self.routed_expert_norm.forward(output)
+            output, shared = fused
         if self.routed_expert_up_proj is not None:
             output = self.routed_expert_up_proj.forward(output)
         if shared is not None:

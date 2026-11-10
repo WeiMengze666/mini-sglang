@@ -166,7 +166,7 @@ class FlashInferMXFP4Experts:
         if x.dtype not in allowed or not x.is_cuda:
             raise ValueError(f"FlashInfer FP4 requires CUDA inputs with dtype in {allowed}")
 
-    def try_forward_routed(self, x, routing):
+    def _prepare_routed_inputs(self, x, routing):
         if self._precision != "mxfp8":
             return None
         self._validate_input(x)
@@ -177,9 +177,9 @@ class FlashInferMXFP4Experts:
             return None
         _, _, packed_routes, x_input, x_scale = prepared
         x_scale = x_scale.view(torch.float8_e4m3fn).reshape(x.shape[0], -1)
-        return self._run(x_input, x_scale, packed_routes, routing.topk)
+        return x_input, x_scale, packed_routes, routing.topk
 
-    def forward(self, x: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+    def _prepare_inputs(self, x, weights, ids):
         self._validate_input(x)
         if ids.ndim != 2 or weights.shape != ids.shape:
             raise ValueError(
@@ -195,12 +195,25 @@ class FlashInferMXFP4Experts:
             x_scale = x_scale.view(torch.float8_e4m3fn).reshape(x.shape[0], -1)
         else:
             x_input, x_scale = x, None
-        return self._run(
+        return (
             x_input,
             x_scale,
             (ids.to(torch.int32).contiguous(), weights.contiguous()),
             ids.shape[1],
         )
+
+    def prepare_inputs(self, backend, x, routing):
+        prepared = self._prepare_routed_inputs(x, routing)
+        return (
+            prepared if prepared is not None else self._prepare_inputs(x, *routing.select(backend))
+        )
+
+    def try_forward_routed(self, x, routing):
+        prepared = self._prepare_routed_inputs(x, routing)
+        return None if prepared is None else self._run(*prepared)
+
+    def forward(self, x: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+        return self._run(*self._prepare_inputs(x, weights, ids))
 
     def _run(self, x_input, x_scale, routes, topk):
         from flashinfer import trtllm_fp4_block_scale_routed_moe

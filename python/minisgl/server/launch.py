@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
+import os
 import sys
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from queue import Empty
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 from minisgl.distributed import DistributedInfo
 from minisgl.utils import init_logger
@@ -44,12 +45,24 @@ def _stop_workers(workers):
             worker.join(timeout=5)
 
 
+def _abort_startup(error: BaseException) -> NoReturn:
+    """Exit this owned worker; the startup parent detects it and stops peers."""
+    init_logger(__name__).error(
+        "Runtime preparation failed; terminating the owned startup worker",
+        exc_info=(type(error), error, error.__traceback__),
+    )
+    os._exit(1)
+
+
 def _run_scheduler(args: ServerArgs, ack_queue: mp.Queue[str]) -> None:
     import torch
+    from minisgl.engine.engine import StartupOwner
     from minisgl.scheduler import Scheduler
 
     with torch.inference_mode():
-        scheduler = Scheduler(args)
+        # This entry runs in the fresh spawn process owned by launch_server.
+        owner = StartupOwner(fresh_worker=True, abort=_abort_startup)
+        scheduler = Scheduler(args, startup_owner=owner)
         scheduler.sync_all_ranks()
 
         if args.tp_info.is_primary():

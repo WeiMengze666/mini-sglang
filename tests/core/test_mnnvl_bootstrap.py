@@ -185,9 +185,13 @@ def test_native_factory_delegates_collectives_capture_and_close(
     )
     original = importlib.import_module
 
+    monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: False)
+
     def vendor(name, *a, **kw):
         if name.endswith("custom_all_reduce_v2"):
-            return SimpleNamespace(CustomAllReduceV2=Native)
+            return SimpleNamespace(CustomAllReduceV2=Native, get_supported_world_sizes=lambda: (2,))
+        if name.endswith("all_reduce_residual"):
+            return SimpleNamespace(_jit_module=lambda world: object())
         return original(name, *a, **kw)
 
     monkeypatch.setattr(importlib, "import_module", vendor)
