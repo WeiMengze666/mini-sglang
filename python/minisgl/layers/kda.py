@@ -114,7 +114,14 @@ class KDALayer(BaseOP):
         previous = None if state is None else state.recurrent.reshape(-1, self._dim, self._dim)
         kernel = get_kda_kernel("torch") if kernel is None else kernel
         output, recurrent = kernel.recurrence(
-            *values, forget, beta, a, dt, previous, self._config.gate_lower_bound
+            *values,
+            forget,
+            beta,
+            a,
+            dt,
+            previous,
+            self._config.gate_lower_bound,
+            is_decode=is_decode,
         )
         if batched:
             output = output.reshape(tokens, batch, self._heads, self._dim).transpose(0, 1)

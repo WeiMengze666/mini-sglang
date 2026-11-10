@@ -1,0 +1,48 @@
+{
+  "status": "CPU-qualified isolated candidate; GPU component, stream, full-model quality and performance pending",
+  "base": "b88babb8b3798850f2f012fc98a27a7c874a6288",
+  "official_sdk": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "branch": "kimi-k3-native-prefill-20261110",
+  "selection": "Existing attention-backend fi,sgl; auto/sgl keep functional prefill. No new model-specific option.",
+  "kernels": "Official varlen causal_conv1d_fn plus FlashInferKDAPrefillKernel on original indexed BF16/FP32 V,K pools; SGL phase-correct chunk fallback. No new numerical CUDA kernel.",
+  "changes": [
+    "Explicit keyword-only prefill/decode recurrence phase",
+    "FI-only optional indexed prefill hook before all-T1 shortcut",
+    "Shared varlen convolution and storage preparation",
+    "Adapter-owned Torch/TVM FFI stream context",
+    "No fallback retry after state mutation"
+  ],
+  "cpu_full": {
+    "passed": 1124,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 800
+  },
+  "cpu_scope": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "MINISGL_RUN_CUDA_TESTS": "0",
+    "MINISGL_RUN_GLOO_TESTS": "1",
+    "KIMI_RUN_GLOO_TESTS": "unset"
+  },
+  "broader_legacy_gloo": "One pre-existing numerical assertion fails identically in clean base and phase candidate across three repeats each; threshold unchanged, documented in the machine recovery record.",
+  "gpu": {
+    "phase_job": 13,
+    "prefill_component_job": 15,
+    "state_dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "diagnostic_sha256": "0f6e04ce879be4601327142aa76ca46df9e75229f5b819f56f824790b9c3b5b8",
+    "executed": false,
+    "same_abi_scope": "Adapter/storage/stream/lifecycle parity, not independent arithmetic, full-model or performance acceptance"
+  },
+  "full_prefill_cuda_graph": "Not supported by native FI prefill; existing SGL decode graph path unchanged.",
+  "frozen_source_sha256": {
+    "python/minisgl/attention/kda/backend.py": "7c893185cba704a5feed0741fb192baa6e1ba44f685c48666a5a32b63dcadfa1",
+    "python/minisgl/attention/kda/flashinfer.py": "e5ad9d8a400199d45b86d4f6a8939f79fcfc54d150a9ca9f6df5d8b98940ce31",
+    "python/minisgl/attention/kda/prefill.py": "c66eed0aaf09405c3e8a2824b7bb1bb3695a77d412de962be5d93cbfec158a17",
+    "python/minisgl/attention/kda/registry.py": "6f0bda3cdc0d5a48aa49f7017c5bab85bba0f989eceee88ce59bcfea0439138a",
+    "python/minisgl/attention/kda/sgl.py": "f40495619b613dd5e41c500c1483af2b767928d5436af8c1148af0749725c69c",
+    "python/minisgl/layers/kda.py": "c79d45674bebedfe2f41bcdbab1dda3297ff9f4790e58047e50a362f3d7dae52"
+  }
+}

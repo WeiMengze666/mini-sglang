@@ -81,11 +81,14 @@ def test_batched_native_decode_keeps_request_states_separate(batch, bound):
         torch.randn(batch, 2, 128, 128, device="cuda") * 0.02,
     )
     saved = KDAState(*(part.clone() for part in initial))
-    output, final = layer.update(*projected, initial, kernel=get_kda_kernel("flashinfer"))
+    output, final = layer.update(
+        *projected, initial, kernel=get_kda_kernel("flashinfer"), is_decode=True
+    )
     for index in range(batch):
         expected, state = layer.update(
             *(part[index] for part in projected),
             KDAState(*(part[index] for part in initial)),
+            is_decode=True,
         )
         torch.testing.assert_close(output[index], expected, rtol=0.035, atol=0.001)
         torch.testing.assert_close(final.conv[index], state.conv, rtol=0, atol=0)

@@ -1,6 +1,6 @@
 """Request-local KDA execution, independent of MLA and model layer schedules."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from minisgl.core import get_global_ctx
@@ -12,6 +12,9 @@ from .registry import KDAKernelSpec, get_kda_kernel
 @dataclass
 class KDAMetadata(SequenceAttnMetadata):
     state_indices: torch.Tensor | None = None
+    lengths: tuple[int, ...] = ()
+    has_initial_states: tuple[bool, ...] = ()
+    kernel_data: dict = field(default_factory=dict)
 
 
 class KDAAttentionBackend(BaseAttnBackend):
@@ -27,11 +30,26 @@ class KDAAttentionBackend(BaseAttnBackend):
 
     def prepare_metadata(self, batch):
         batch.attn_metadata = KDAMetadata.from_batch(batch, self.kvcache.device)
+        if self.kernel.indexed_prefill is not None and not getattr(batch, "is_decode", False):
+            batch.attn_metadata.lengths = tuple(req.extend_len for req in batch.reqs)
+            batch.attn_metadata.has_initial_states = tuple(req.cached_len > 0 for req in batch.reqs)
 
     def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
         metadata = batch.attn_metadata
         is_decode = getattr(batch, "is_decode", False)
         single_step = all(req.extend_len == 1 for req in batch.reqs)
+        # Packed prefill dispatch precedes the one-token-per-row shortcut.
+        # All-T1 batches with more than one total token are still prefill.
+        if not is_decode and self.kernel.indexed_prefill is not None:
+            if metadata.state_indices is None:
+                metadata.state_indices = cache.recurrent.batch_indices(
+                    [req.table_idx for req in batch.reqs]
+                )
+            output = self.kernel.indexed_prefill(
+                layer, x, cache.recurrent, layer_id, metadata.state_indices, metadata
+            )
+            if output is not None:
+                return layer.finish(x, output)
         if single_step:
             indices = metadata.state_indices
             if indices is None:
@@ -65,7 +83,10 @@ class KDAAttentionBackend(BaseAttnBackend):
             rows = slice(offset, offset + req.extend_len)
             state = cache.get_kda_state(layer_id, req.table_idx)
             output, state = layer.update(
-                *(part[rows] for part in projected), state, kernel=self.kernel
+                *(part[rows] for part in projected),
+                state,
+                kernel=self.kernel,
+                is_decode=is_decode,
             )
             cache.set_kda_state(layer_id, req.table_idx, state)
             outputs.append(output)

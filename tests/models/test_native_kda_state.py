@@ -51,7 +51,7 @@ def native_chunk(args, pool, indices, a, dt):
 
 
 @pytest.mark.parametrize("state_dtype", [torch.bfloat16, torch.float32])
-@pytest.mark.parametrize("tokens", [7, 64, 143])
+@pytest.mark.parametrize("tokens", [1, 7, 64, 143])
 def test_chunk_continuation_keeps_native_state_dtype(state_dtype, tokens):
     from minisgl.attention.kda.sgl import recurrent_kda
 
@@ -92,10 +92,10 @@ def test_decode_graph_matches_indexed_native_pool(batch, state_dtype, request):
     a, dt = torch.randn(heads, device="cuda"), torch.randn(heads * 128, device="cuda")
     repeated = a.repeat(batch), dt.repeat(batch)
     for _ in range(3):
-        recurrent_kda(*args, *repeated, state, -5.0)
+        recurrent_kda(*args, *repeated, state, -5.0, is_decode=True)
     graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(graph):
-        actual, final = recurrent_kda(*args, *repeated, state, -5.0)
+        actual, final = recurrent_kda(*args, *repeated, state, -5.0, is_decode=True)
     for step in range(3):
         for part in args:
             part.mul_(1.015625)

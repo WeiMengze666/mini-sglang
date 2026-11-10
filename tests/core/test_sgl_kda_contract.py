@@ -7,11 +7,11 @@ import torch
 from minisgl.attention.kda import sgl
 
 
-@pytest.mark.parametrize("tokens", [1, 7, 65])
+@pytest.mark.parametrize("tokens,is_decode", [(1, False), (1, True), (7, False), (65, False)])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 @pytest.mark.parametrize("has_state", [False, True])
 def test_native_inplace_pool_does_not_mutate_framework_inputs(
-    monkeypatch, tokens, dtype, has_state
+    monkeypatch, tokens, is_decode, dtype, has_state
 ):
     generator = torch.Generator().manual_seed(73)
     heads, keys, values = 2, 3, 5
@@ -32,6 +32,7 @@ def test_native_inplace_pool_does_not_mutate_framework_inputs(
         seen.append(pool)
 
     def chunk(**kwargs):
+        assert not is_decode
         update(kwargs["initial_state"])
         assert kwargs["beta_is_raw"] and kwargs["use_qk_l2norm_in_kernel"]
         torch.testing.assert_close(kwargs["beta"][0], beta, rtol=0, atol=0)
@@ -43,6 +44,7 @@ def test_native_inplace_pool_does_not_mutate_framework_inputs(
         return kwargs["v"]
 
     def decode(**kwargs):
+        assert is_decode
         update(kwargs["initial_state"])
         assert kwargs["use_qk_l2norm_in_kernel"]
         torch.testing.assert_close(kwargs["b"], beta, rtol=0, atol=0)
@@ -50,7 +52,7 @@ def test_native_inplace_pool_does_not_mutate_framework_inputs(
 
     monkeypatch.setattr(sgl, "_kernels", lambda: (chunk, decode, nullcontext))
     output, final = sgl.recurrent_kda(
-        q, k, v, forget, beta, a, dt, state if has_state else None, -5.0
+        q, k, v, forget, beta, a, dt, state if has_state else None, -5.0, is_decode=is_decode
     )
     assert len(seen) == 1 and output.shape == v.shape
     torch.testing.assert_close(output, torch.full_like(v, 9), rtol=0, atol=0)
