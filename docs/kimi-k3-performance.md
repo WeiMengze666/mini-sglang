@@ -777,3 +777,15 @@ retains the earlier fixture failure and its independent corrected replay.
 This functional result does not establish task quality, serving performance,
 or native shared-pool memory-policy equivalence. Native-communication full
 GSM8K evaluation and the exact canonical AIPerf comparison are the next gates.
+
+
+## Replacement-server recovery (2026-11-10)
+
+The [replacement-server record](validation/kimi-k3-machine-recovery-20261110.json)
+separates recovery from final acceptance: 1077 CPU/Gloo tests passed (798 skipped),
+1368 native component tests passed across eight devices, and native multicast
+communication passed eager/graph lifecycle checks. The machine and driver changed;
+retained serving ratios do not establish performance on this host. Fresh complete
+quality runs and the canonical paired AIPerf workload remain pending. The record
+also bounds the isolated KDA phase/prefill work and a pre-existing legacy Gloo
+precision assertion, without relaxing its threshold or claiming model parity.

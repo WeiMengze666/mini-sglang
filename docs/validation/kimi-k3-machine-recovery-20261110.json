@@ -1,0 +1,317 @@
+{
+  "recorded_utc": "2026-11-10T13:41:31.150948+00:00",
+  "scope": "Replacement-server runtime recovery and component qualification only. Full-model quality and canonical serving performance are not accepted by this record.",
+  "sources": {
+    "mini": "de99c88fe531f1b84289d247e441c29ae77d2bf4",
+    "official": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "numerical_runtime_change": "Only generic CLI parsing and dependency compatibility changed in production; phase/prefill numerical candidates remain isolated."
+  },
+  "remote_root": "/home/axis/mengze/mini-sglang",
+  "artifact_root": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110",
+  "hardware": {
+    "hostname": "axis-20c441a78ebc",
+    "gpus": 8,
+    "model": "NVIDIA B300 SXM6 AC",
+    "capability": [
+      10,
+      3
+    ],
+    "driver": "595.112.07",
+    "historical_driver": "580.126.16",
+    "gpu_execution": "gpuq only"
+  },
+  "packages": {
+    "aiperf": "0.13.0",
+    "apache-tvm-ffi": "0.1.11",
+    "cuda-tile": "1.6.0rc5",
+    "flashinfer-python": "0.7.1",
+    "nvidia-cutlass-dsl": "4.8.0",
+    "quack-kernels": "0.6.5",
+    "sglang-kernel": "0.4.9",
+    "torch": "2.14.1+cu130",
+    "torchvision": "0.29.1+cu130",
+    "transformers": "5.19.0",
+    "triton": "3.8.0"
+  },
+  "environment_manifest_sha256": "9fe04ba16174bec960668da7f080b344b86759ec0b3cbf0fd0b15c646c04162d",
+  "model": {
+    "path": "/data/models/Kimi-K3",
+    "shard_count": 96,
+    "total_shard_bytes": 1560936091448,
+    "hash_scope": "Config/tokenizer/Python/index hashes and shard sizes saved; not a full weight-content checksum."
+  },
+  "cpu": {
+    "passed": 1077,
+    "skipped": 798,
+    "failed": 0,
+    "errors": 0,
+    "MINISGL_RUN_GLOO_TESTS": "1",
+    "KIMI_RUN_GLOO_TESTS": "unset",
+    "junit_sha256": "583a0f8de4f8630f74fb420d799e7f4635f22339a74786508fea9ea3410d2294",
+    "cold_imports_and_real_rust_graph_checks": 14,
+    "cuda_initialized": false
+  },
+  "rust_tree": {
+    "toolchain": "1.92.0",
+    "sdk_source_build": true,
+    "selected_core": "RustUnifiedTreeCore",
+    "shared_object_sha256": "5d4656808ae99f31f44661d52df662f979a862e6471fb6c4e6addf7ef770c688"
+  },
+  "gpu_components": {
+    "gpuq_job": 8,
+    "components_returncode": 0,
+    "per_rank": [
+      {
+        "rank": 0,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "797b1590c02d4673feefee8cfbd40c0355977bccfa4219de8d71e1a96f12b978"
+      },
+      {
+        "rank": 1,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "8a96e653c537af1d9204b1930010a24e6a5dbe933e4af0b36dae4046c2557a08"
+      },
+      {
+        "rank": 2,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "0e93ecdb2483303a262d879dc9886f5430c6499c72b928e0d6ff52f32cb6bbac"
+      },
+      {
+        "rank": 3,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "18795de4e2839c924e05960c68fc285be89dbe88364cdab2c3815467234f215c"
+      },
+      {
+        "rank": 4,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "23e3d9bc8559d470edc8cc332687f3f299d26d34ba0ff3f25611bbdcb84319a8"
+      },
+      {
+        "rank": 5,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "6f8d6a8891412d46334544f02bfe821ec04a6bf90889ac7188ca93f7f648eca7"
+      },
+      {
+        "rank": 6,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "c0b21f62b9bf54873f8d6a403d11a0a6da5a186253707cb4400186a94e22cd3b"
+      },
+      {
+        "rank": 7,
+        "counts": {
+          "passed": 171
+        },
+        "xml_sha256": "3efb088ecb49e6457c89558650d220523dba0ca6b053f6b0a84bb04ed79b5ac2"
+      }
+    ],
+    "total_passed": 1368,
+    "scope": "Six existing component modules, independently on each device. DCP merge arithmetic is not a full eight-rank model DCP test. Native FlashInfer indexed KDA prefill is not covered."
+  },
+  "native_communication": {
+    "gpuq_job": 8,
+    "communication_returncode": 0,
+    "provider": "minisgl.distributed.sgl",
+    "native": "CustomAllReduceV2",
+    "width": 10752,
+    "dtype": "bfloat16",
+    "batches": [
+      1,
+      8,
+      48
+    ],
+    "layouts": [
+      "contiguous",
+      "16-byte offset",
+      "strided",
+      "rank-mixed"
+    ],
+    "checks": "Exact dyadic analytic sums, default/side eager, three graph replays per case, no Torch fallback, SDK World remains uninitialized.",
+    "per_rank": [
+      {
+        "rank": 0,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "add777770065ea279e83ba8eebe8afc01d3e0ce05bf4cf7b35a3ab54136ee85c"
+      },
+      {
+        "rank": 1,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "0de22c3c71d2380ec6d5c8cd0b5015f284b7415698c22e0b764a6954ab2eeec2"
+      },
+      {
+        "rank": 2,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "9524b0f6e675b02fe5509fbe0f29d7c0073291c942149a7d96208288243a6638"
+      },
+      {
+        "rank": 3,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "5c3b0b511eab98d6f06d43d18159318a404bf0924fa2e13303c7b430bb0bd0a6"
+      },
+      {
+        "rank": 4,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "823701faf8db1027eba1254432ad8f70d74059a7c3cbab89c4fc40cc80408a1f"
+      },
+      {
+        "rank": 5,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "266f2da6c9f521c8f67021ac68e29f148224ff17e91a2f26981f4955b0315064"
+      },
+      {
+        "rank": 6,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "6ec4a40ca53b4bee899c98a51c4077d1ebe0f1ba0a89bf20987e46e49b94fafd"
+      },
+      {
+        "rank": 7,
+        "cases": 12,
+        "native_dispatches": 48,
+        "graph_lifecycle": {
+          "created": 12,
+          "deleted": 12
+        },
+        "has_multicast": true,
+        "cleanup": {
+          "graphs_retired_before_provider_close": true,
+          "provider_closed": true,
+          "owned_nccl_group_destroyed": true,
+          "owned_gloo_group_destroyed": true
+        },
+        "json_sha256": "3bff601b645cf4adb11947dc8b3f5cef912ecf127febccc3f6adc620453cfcc9"
+      }
+    ],
+    "scope": "Component transport correctness only; not full-model numerical or performance acceptance."
+  },
+  "data": {
+    "gsm8k_cases": 1319,
+    "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+    "aiperf_entries": 393,
+    "aiperf_dataset_revision": "23f152f6f0f9399a85901b89a6458def0ef16729",
+    "aiperf_jsonl_sha256": "29b6a19e751ff5230771519aab755f80a0f43a4ba9cf96b72d3a6a437ec99276",
+    "comparison_boundary": "New Mini/reference serving runs must share these immutable bytes; historical AIPerf exports are not new-machine acceptance."
+  },
+  "known_baseline_test": {
+    "node": "test_four_rank_collectives_full_model_chunks_and_private_prefix",
+    "coverage": "Skipped in the CPU production gate above; enabled by legacy KIMI_RUN_GLOO_TESTS=1.",
+    "paired_repeats": {
+      "clean_base": 3,
+      "isolated_phase_candidate": 3
+    },
+    "all_40_assertion_metrics_equal": true,
+    "metrics_sha256": "2acd6f368eb4691bc53e43fa4b33365aed83218cab0eb77f8dbad78398f5fae6",
+    "max_abs": 4.190206527709961e-05,
+    "relative_l2": 1.1473066637100797e-05,
+    "thresholds_changed": false
+  },
+  "pending": {
+    "official_full_quality_gpuq_job": 10,
+    "frozen_mini_full_quality_gpuq_job": 12,
+    "isolated_phase_and_comm_matrix_gpuq_job": 13,
+    "phase_scope": "Explicit prefill/decode contract fixes the selected SGL/Triton adapter. Canonical auto may select FlashInfer; runtime selection and precision remain separately reviewed.",
+    "prefill_scope": "Native BF16 indexed FlashInfer/packed prefill remains an isolated, unqualified optimization.",
+    "canonical_aiperf": "Not run on this replacement server; no near-SGLang performance claim."
+  },
+  "retained_initial_failure": {
+    "gpuq_job": 6,
+    "reason": "Official import chain lacked torchvision. All 44 failures/setup errors per rank were ModuleNotFoundError; fixed with compatible torchvision0.29.1+cu130 and rerun in job8.",
+    "artifacts_preserved": true
+  }
+}
