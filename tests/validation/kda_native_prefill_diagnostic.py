@@ -1,6 +1,8 @@
 """Native indexed FlashInfer adapter parity, not independent arithmetic acceptance.
 
-Run only inside an authorized gpuq job. Both routes call the same pinned official
+Run only inside an authorized gpuq job. Both routes call the same mature native kernel. All-T1 uses the independent
+official TritonKDAKernel and mature chunk entry because the pinned FI facade
+reshapes bias to an unsupported grouped-decode ABI; other cases use the pinned
 FlashInfer class from identical raw projections, original BF16/FP32 indexed SSM
 pools, BF16 convolution state, and post-convolution inputs. This probes adapter/storage/lifecycle correctness;
 it does not qualify model quality, performance, decode or prefill CUDA Graphs.
@@ -49,7 +51,9 @@ def checkpoint_values(pool, checkpoint):
 
 
 class NativeTrace:
-    """Observe the original-pool ABI before the official class mutates state."""
+    """Observe actual FI facade or mature chunk entry before state mutation."""
+
+    backend = "flashinfer"
 
     def __init__(self, kernel_class, *, state_dtype, expected_stream=None):
         self.kernel_class = kernel_class
@@ -58,46 +62,52 @@ class NativeTrace:
         self.calls = []
         self.mode = "direct_official"
 
+    def record(self, q, k, v, g, beta, kwargs, invoke):
+        import tvm_ffi
+
+        state = kwargs["ssm_states"]
+        torch_stream = int(torch.cuda.current_stream(q.device).cuda_stream)
+        ffi_stream = int(tvm_ffi.get_raw_stream(tvm_ffi.device(str(q.device))))
+        if self.expected_stream is not None:
+            assert torch_stream == self.expected_stream, "Native call left explicit side stream"
+            assert ffi_stream == self.expected_stream, "Native call lacks its own FFI context"
+        row = {
+            "route": self.mode,
+            "native_backend": self.backend,
+            "torch_stream": torch_stream,
+            "ffi_stream": ffi_stream,
+            "tensors": {
+                name: describe(value)
+                for name, value in zip(("q", "k", "v", "g", "beta"), (q, k, v, g, beta))
+            },
+            "state": describe(state),
+            "cache_indices": describe(kwargs["cache_indices"]),
+            "query_start_loc": describe(kwargs["query_start_loc"]),
+            "A_log": describe(kwargs["A_log"]),
+            "dt_bias": describe(kwargs["dt_bias"]),
+            "indices": kwargs["cache_indices"].tolist(),
+            "cu_seqlens": kwargs["query_start_loc"].tolist(),
+            "lower_bound": kwargs["lower_bound"],
+            "return_intermediate_states": kwargs.get("return_intermediate_states", False),
+            "chunk_indices": kwargs["chunk_indices"].tolist()
+            if "chunk_indices" in kwargs
+            else None,
+            "values": [
+                value.clone()
+                for value in (q, k, v, g, beta, state, kwargs["A_log"], kwargs["dt_bias"])
+            ],
+        }
+        self.calls.append(row)
+        with torch.profiler.record_function("native_kda_" + self.mode):
+            return invoke()
+
     def __enter__(self):
-        self.original = self.kernel_class.extend
-        tracer = self
+        original = self.kernel_class.extend
 
         def observe(instance, q, k, v, g, beta, **kwargs):
-            import tvm_ffi
-
-            state = kwargs["ssm_states"]
-            torch_stream = int(torch.cuda.current_stream(q.device).cuda_stream)
-            ffi_stream = int(tvm_ffi.get_raw_stream(tvm_ffi.device(str(q.device))))
-            if tracer.expected_stream is not None:
-                assert torch_stream == tracer.expected_stream, (
-                    "Native call left the explicit side stream"
-                )
-                assert ffi_stream == tracer.expected_stream, (
-                    "Native call lacks its own TVM FFI stream context"
-                )
-            row = {
-                "route": tracer.mode,
-                "torch_stream": torch_stream,
-                "ffi_stream": ffi_stream,
-                "tensors": {
-                    name: describe(value)
-                    for name, value in zip(("q", "k", "v", "g", "beta"), (q, k, v, g, beta))
-                },
-                "state": describe(state),
-                "cache_indices": describe(kwargs["cache_indices"]),
-                "query_start_loc": describe(kwargs["query_start_loc"]),
-                "indices": kwargs["cache_indices"].tolist(),
-                "cu_seqlens": kwargs["query_start_loc"].tolist(),
-                "lower_bound": kwargs["lower_bound"],
-                "return_intermediate_states": kwargs.get("return_intermediate_states", False),
-                "values": [
-                    value.clone()
-                    for value in (q, k, v, g, beta, state, kwargs["A_log"], kwargs["dt_bias"])
-                ],
-            }
-            tracer.calls.append(row)
-            with torch.profiler.record_function("native_kda_" + tracer.mode):
-                return tracer.original(instance, q, k, v, g, beta, **kwargs)
+            return self.record(
+                q, k, v, g, beta, kwargs, lambda: original(instance, q, k, v, g, beta, **kwargs)
+            )
 
         self.guard = patch.object(self.kernel_class, "extend", observe)
         self.guard.start()
@@ -107,10 +117,11 @@ class NativeTrace:
         self.guard.stop()
 
     def compare(self):
-        assert len(self.calls) == 2, "Expected one official call on each route"
+        assert len(self.calls) == 2, "Expected one observed native entry on each route"
         direct, mini = self.calls
         assert direct["route"] == "direct_official" and mini["route"] == "mini_adapter"
         for key in (
+            "native_backend",
             "state",
             "indices",
             "cu_seqlens",
@@ -118,6 +129,7 @@ class NativeTrace:
             "return_intermediate_states",
             "torch_stream",
             "ffi_stream",
+            "chunk_indices",
         ):
             assert direct[key] == mini[key], f"Native ABI differs: {key}"
         for row in self.calls:
@@ -126,6 +138,8 @@ class NativeTrace:
             assert row["query_start_loc"]["dtype"] == "torch.int32"
             assert row["state"]["pointer"] % 16 == 0
             assert row["state"]["stride"][-3:] == [128 * 128, 128, 1]
+            if self.backend == "sgl_chunk":
+                assert len(row["dt_bias"]["shape"]) == 1 and row["dt_bias"]["stride"] == [1]
         for name, observed, expected in zip(
             ("q", "k", "v", "raw_gate", "raw_beta", "original_recurrent_state", "A_log", "dt_bias"),
             mini["values"],
@@ -133,6 +147,47 @@ class NativeTrace:
         ):
             assert_exact(observed, expected, name)
         return [{key: value for key, value in row.items() if key != "values"} for row in self.calls]
+
+
+class ChunkTrace(NativeTrace):
+    """Observe the real chunk callable used by the independent SDK class and Mini."""
+
+    backend = "sgl_chunk"
+
+    def __enter__(self):
+        import importlib
+        from contextlib import ExitStack
+
+        from minisgl.attention.kda import sgl
+
+        native = importlib.import_module("sglang.srt.layers.attention.linear.kernels.kda_triton")
+        original = native.chunk_kda
+        chunk, decode, stream = sgl._kernels()
+        assert chunk is original, "Reference and adapter must use the same mature chunk entry"
+
+        def observe(**kw):
+            assert kw["beta_is_raw"] and kw["use_qk_l2norm_in_kernel"]
+            canonical = {
+                "ssm_states": kw["initial_state"],
+                "cache_indices": kw["initial_state_indices"],
+                "query_start_loc": kw["cu_seqlens"],
+                "A_log": kw["A_log"],
+                "dt_bias": kw["dt_bias"],
+                "lower_bound": kw["lower_bound"],
+                "return_intermediate_states": kw.get("output_intermediate_states", False),
+                "chunk_indices": kw["chunk_indices"],
+            }
+            return self.record(
+                kw["q"], kw["k"], kw["v"], kw["g"], kw["beta"], canonical, lambda: original(**kw)
+            )
+
+        self.guard = ExitStack()
+        self.guard.enter_context(patch.object(native, "chunk_kda", observe))
+        self.guard.enter_context(patch.object(sgl, "_kernels", lambda: (observe, decode, stream)))
+        return self
+
+    def __exit__(self, *args):
+        self.guard.close()
 
 
 def initialize(layer, pool, tables, warm, seed):
@@ -184,9 +239,18 @@ def launch_metadata(path):
 
 def run_forward(layer, pool, tables, lengths, warm, output, *, state_dtype, profile=False):
     from minisgl.attention.kda import flashinfer, prefill
-    from sglang.srt.layers.attention.linear.kernels.kda_flashinfer_prefill import (
-        FlashInferKDAPrefillKernel,
-    )
+
+    all_t1 = all(length == 1 for length in lengths)
+    if all_t1:
+        from sglang.srt.layers.attention.linear.kernels.kda_triton import TritonKDAKernel
+
+        kernel_class, trace_class = TritonKDAKernel, ChunkTrace
+    else:
+        from sglang.srt.layers.attention.linear.kernels.kda_flashinfer_prefill import (
+            FlashInferKDAPrefillKernel,
+        )
+
+        kernel_class, trace_class = FlashInferKDAPrefillKernel, NativeTrace
 
     assert sum(lengths) > 1, "Single total-token prefill belongs to phase-correct SGL fallback"
     indices = pool.batch_indices(tables).to(torch.int32)
@@ -210,7 +274,7 @@ def run_forward(layer, pool, tables, lengths, warm, output, *, state_dtype, prof
     initial_storage = [value.clone() for value in storage]
     x = torch.randn(sum(lengths), layer._config.hidden_size, device="cuda", dtype=torch.bfloat16)
     x.mul_(0.1)
-    direct_kernel = FlashInferKDAPrefillKernel()
+    direct_kernel = kernel_class()
     profiler = (
         torch.profiler.profile(
             activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
@@ -225,8 +289,8 @@ def run_forward(layer, pool, tables, lengths, warm, output, *, state_dtype, prof
     side_stream = torch.cuda.Stream(device=x.device)
     assert side_stream.cuda_stream != torch.cuda.default_stream(x.device).cuda_stream
     side_stream.wait_stream(parent_stream)
-    tracer = NativeTrace(
-        FlashInferKDAPrefillKernel,
+    tracer = trace_class(
+        kernel_class,
         state_dtype=state_dtype,
         expected_stream=int(side_stream.cuda_stream),
     )
@@ -240,6 +304,18 @@ def run_forward(layer, pool, tables, lengths, warm, output, *, state_dtype, prof
             assert data is not None
             q, k, v, gate, beta, original_state, plan, physical_indices = data
             assert original_state.data_ptr() == native_state.data_ptr()
+            # Independent SDK reference, never Mini's indexed adapter. The
+            # pinned FI facade is not called for its unsupported all-T1 ABI.
+            reference_options = {}
+            if all_t1:
+                reference_options = {
+                    "beta_is_raw": True,
+                    "chunk_indices": torch.tensor(
+                        [(seq, 0) for seq in range(len(lengths))],
+                        device=x.device,
+                        dtype=torch.int32,
+                    ),
+                }
             with use_torch_stream():
                 direct = direct_kernel.extend(
                     q,
@@ -251,9 +327,10 @@ def run_forward(layer, pool, tables, lengths, warm, output, *, state_dtype, prof
                     cache_indices=physical_indices,
                     query_start_loc=plan["cu_seqlens"],
                     A_log=layer.A_log,
-                    dt_bias=layer.dt_bias,
+                    dt_bias=layer.dt_bias.reshape(-1),
                     lower_bound=layer._config.gate_lower_bound,
                     return_intermediate_states=False,
+                    **reference_options,
                 )[0].clone()
             expected_storage = [value.clone() for value in storage]
             for value, initial in zip(storage, initial_storage):
@@ -285,6 +362,7 @@ def run_forward(layer, pool, tables, lengths, warm, output, *, state_dtype, prof
             launches = launch_metadata(path)
         return {
             "lengths": list(lengths),
+            "native_backend": tracer.backend,
             "has_initial_states": list(warm),
             "indices": indices.tolist(),
             "native_pool": describe(native_state),
@@ -429,6 +507,13 @@ def run_case(lengths, mode, unified, output, *, state_dtype, profile=False):
         assert pool.is_idle
 
 
+def case_matrix(large=False):
+    cases = [(3,), tuple([1] * 8), (1, 2, 13, 65, 127, 128, 129, 257), tuple([1] * 48)]
+    if large:
+        cases += [(1, 65, 2048, 32768), tuple([1, 2, 13, 64, 65, 127] * 8)]
+    return cases
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -446,9 +531,7 @@ def main():
         parser.error("Native FlashInfer KDA requires SM100 or SM103")
     output = args.output / ("rank" + os.environ.get("RANK", "0"))
     output.mkdir(parents=True, exist_ok=False)
-    cases = [(3,), tuple([1] * 8), (1, 2, 13, 65, 127, 128, 129, 257), tuple([1] * 48)]
-    if args.large:
-        cases += [(1, 65, 2048, 32768), tuple([1, 2, 13, 64, 65, 127] * 8)]
+    cases = case_matrix(args.large)
     reports = []
     with (
         torch.inference_mode(),
@@ -488,7 +571,7 @@ def main():
         "sdk_commit": SDK_COMMIT,
         "cases": reports,
         "state_dtypes": [str(dtype) for dtype in STATE_DTYPES],
-        "status": "native-adapter-component-parity-passed",
+        "status": "native-adapter-component-parity-passed-with-all-T1-chunk-fallback",
         "independent_arithmetic_qualified": False,
         "full_model_qualified": False,
         "performance_qualified": False,

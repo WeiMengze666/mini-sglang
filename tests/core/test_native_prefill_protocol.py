@@ -265,8 +265,8 @@ def test_contract_failure_precedes_any_state_mutation(monkeypatch, fault):
     assert not events
 
 
-@pytest.mark.parametrize("lengths", [(1, 1), (2, 5)])
-def test_all_t1_and_ragged_batches_use_native_with_original_padded_pool(monkeypatch, lengths):
+@pytest.mark.parametrize("lengths", [(2, 5)])
+def test_ragged_batches_use_native_with_original_padded_pool(monkeypatch, lengths):
     layer, x, pool, indices, metadata, events, checkpoint = _fixture(monkeypatch, lengths=lengths)
     conv = pool.indexed_kda_state(7)[0]
     backing = torch.zeros(5 * 16400 + 64, dtype=torch.bfloat16)
@@ -373,3 +373,62 @@ def test_fi_native_call_owns_ffi_stream_context_after_shared_conv(monkeypatch):
     flashinfer.indexed_prefill(layer, x, pool, 7, indices, metadata)
     assert entries == ["enter", "exit", "enter", "exit"]
     assert depth == 0
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+def test_all_t1_fallback_precedes_prepare_and_bad_fi_facade(monkeypatch, dtype):
+    layer, x, pool, indices, metadata, events, _ = _fixture(
+        monkeypatch, lengths=(1, 1), dtype=dtype
+    )
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("All-T1 touched FI facade or prepare before capability fallback")
+
+    monkeypatch.setattr(prefill, "prepare", forbidden)
+    monkeypatch.setattr(flashinfer, "_prefill_kernel", forbidden)
+
+    def fallback(*args):
+        assert not events
+        assert args == (layer, x, pool, 7, indices, metadata)
+        return "mature-chunk"
+
+    monkeypatch.setattr(sgl, "indexed_prefill", fallback)
+    assert flashinfer.indexed_prefill(layer, x, pool, 7, indices, metadata) == "mature-chunk"
+    assert not events and not torch.cuda.is_initialized()
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+def test_all_t1_executes_real_sgl_adapter_with_flat_alias_bias_and_original_pool(
+    monkeypatch, dtype
+):
+    layer, x, pool, indices, metadata, events, _ = _fixture(
+        monkeypatch, lengths=(1, 1), dtype=dtype
+    )
+    layer.dt_bias = torch.arange(128, dtype=torch.float32).reshape(1, 128)
+    original_bias = layer.dt_bias.clone()
+    original_state = pool.indexed_kda_state(7)[1]
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("All-T1 attempted the incompatible FI facade")
+
+    monkeypatch.setattr(flashinfer, "_prefill_kernel", forbidden)
+
+    def chunk(**kw):
+        events.append(("chunk", kw))
+        assert kw["dt_bias"].shape == (128,) and kw["dt_bias"].stride() == (1,)
+        assert kw["dt_bias"].data_ptr() == layer.dt_bias.data_ptr()
+        torch.testing.assert_close(kw["dt_bias"], original_bias.flatten(), rtol=0, atol=0)
+        assert kw["initial_state"].data_ptr() == original_state.data_ptr()
+        assert kw["initial_state"].dtype == dtype
+        assert kw["initial_state_indices"].tolist() == [1, 4]
+        assert kw["cu_seqlens"].tolist() == [0, 1, 2]
+        assert kw["chunk_indices"].tolist() == [[0, 0], [1, 0]]
+        assert kw["beta_is_raw"] and kw["use_qk_l2norm_in_kernel"]
+        return kw["v"]
+
+    monkeypatch.setattr(sgl, "_kernels", lambda: (chunk, None, nullcontext))
+    result = flashinfer.indexed_prefill(layer, x, pool, 7, indices, metadata)
+    assert result.shape == (2, 1, 128)
+    assert [event[0] for event in events] == ["conv", "chunk"]
+    torch.testing.assert_close(layer.dt_bias, original_bias, rtol=0, atol=0)
+    assert not torch.cuda.is_initialized()

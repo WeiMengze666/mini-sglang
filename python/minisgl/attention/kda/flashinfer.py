@@ -74,10 +74,13 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
     if not supports(layer, x, pool):
         return None
     lower_bound = layer._config.gate_lower_bound
-    # The official portfolio falls back only for TOTAL packed tokens <= 1.
+    # This pinned SDK facade reshapes gate bias to [H,D], but FI's grouped
+    # all-T1 portfolio requires a flat bias. Use mature chunk prefill before
+    # any convolution/state write; this is an ABI capability limit, not arithmetic.
     # Capability rejection precedes every convolution/state write.
     if (
         len(x) <= 1
+        or (metadata.lengths and all(length == 1 for length in metadata.lengths))
         or lower_bound is None
         or not math.isfinite(lower_bound)
         or lower_bound >= 0
