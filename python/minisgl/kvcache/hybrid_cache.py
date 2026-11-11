@@ -18,7 +18,8 @@ class HybridCacheHandle(RadixCacheHandle):
 
 
 class HybridPrefixCache(RadixPrefixCache):
-    checkpoint_interval = 64
+    # Decode boundaries remain request-private until the completed turn is published.
+    checkpoint_interval = None
 
     @property
     def reclaimable_state_bytes(self):
@@ -62,6 +63,12 @@ class HybridPrefixCache(RadixPrefixCache):
         # No state at a newly split node: replay from an ancestor and place one
         # at the fork, rather than pretending append-only KV restores an SSM.
         return MatchResult(HybridCacheHandle(length, node, matched if matched > length else 0))
+
+    def continue_handle(self, old_handle, new_handle, processed_len):
+        fork = getattr(old_handle, "replay_until", 0)
+        return HybridCacheHandle(
+            new_handle.cached_len, new_handle.node, fork if processed_len < fork else 0
+        )
 
     def restore_state(self, table_idx, uid, handle):
         if handle.cached_len:

@@ -94,6 +94,10 @@ class BasePrefixCache(ABC):
     ) -> None:
         """Attach a committed recurrent checkpoint to an inserted token prefix."""
 
+    def continue_handle(self, old_handle, new_handle, processed_len):
+        """Carry cache-specific replay requirements across a continuing insert."""
+        return new_handle
+
     def release_checkpoint_memory(self, required_bytes: int) -> None:
         """Give optional snapshots back to a unified byte pool under pressure."""
 

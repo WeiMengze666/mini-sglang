@@ -123,7 +123,7 @@ class HybridCache(BaseKVCachePool):
             for plan in getattr(batch, "checkpoint_plan", ()):
                 self.recurrent.seal_checkpoint(plan)
         except BaseException as error:
-            if getattr(batch, "checkpoint_plan", ()) and self.recurrent.device_abort is not None:
+            if self.recurrent.device_abort is not None:
                 self.recurrent.fail_device(error)
             for plan in getattr(batch, "checkpoint_plan", ()):
                 try:

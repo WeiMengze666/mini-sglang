@@ -153,7 +153,7 @@ class Scheduler(SchedulerIOMixin):
             live_plans = (last_data is not None and last_data.checkpoint_plan) or (
                 forward_input is not None and forward_input.batch.checkpoint_plan
             )
-            if live_plans or staged:
+            if live_plans or staged or getattr(self.cache_manager, "has_tracking", False):
                 failed_with_live_state = True
                 self.engine.kv_cache.recurrent.fail_device(error)
             raise
@@ -163,22 +163,44 @@ class Scheduler(SchedulerIOMixin):
         return ongoing_data
 
     def normal_loop(self) -> None:
-        blocking = not (self.prefill_manager.runnable or self.decode_manager.runnable)
-        for msg in self.receive_msg(blocking=blocking):
-            self._process_one_msg(msg)
-
-        forward_input = self._schedule_next_batch()
+        forward_input = None
         ongoing_data = None
-        if forward_input is not None:
-            output = self._forward(forward_input)
-            ongoing_data = ForwardData(
-                forward_input,
-                output,
-                tuple(req.cached_len for req in forward_input.batch.reqs),
-                tuple(forward_input.batch.checkpoint_plan),
+        staged = {}
+        failed_with_live_state = False
+        try:
+            blocking = not (self.prefill_manager.runnable or self.decode_manager.runnable)
+            for msg in self.receive_msg(blocking=blocking):
+                self._process_one_msg(msg)
+            forward_input = self._schedule_next_batch()
+            if forward_input is not None:
+                output = self._forward(forward_input)
+                ongoing_data = ForwardData(
+                    forward_input,
+                    output,
+                    tuple(req.cached_len for req in forward_input.batch.reqs),
+                    tuple(forward_input.batch.checkpoint_plan),
+                )
+                if not forward_input.batch.is_prefill:
+                    staged = self.cache_manager.stage_states(
+                        forward_input.batch.reqs,
+                        ongoing_data.processed_lens,
+                        is_prefill=False,
+                        excluded={req.uid for req in self.finished_reqs | self.aborted_reqs},
+                    )
+            # Serial prefill still publishes directly from its unadvanced working state.
+            self._process_last_data(
+                ongoing_data,
+                staged=staged if ongoing_data is not None and not forward_input.batch.is_prefill else None,
             )
-
-        self._process_last_data(ongoing_data)
+        except BaseException as error:
+            live_plans = forward_input is not None and forward_input.batch.checkpoint_plan
+            if live_plans or staged or getattr(self.cache_manager, "has_tracking", False):
+                failed_with_live_state = True
+                self.engine.kv_cache.recurrent.fail_device(error)
+            raise
+        finally:
+            if not failed_with_live_state:
+                self.cache_manager.release_staged(staged)
 
     @torch.inference_mode()
     def run_forever(self) -> NoReturn:
@@ -220,7 +242,7 @@ class Scheduler(SchedulerIOMixin):
         try:
             copy_done.synchronize()
         except BaseException as error:
-            if last_data.checkpoint_plan:
+            if last_data.checkpoint_plan or staged or getattr(self.cache_manager, "has_tracking", False):
                 self.engine.kv_cache.recurrent.fail_device(error)
             raise
         error = None
@@ -271,6 +293,15 @@ class Scheduler(SchedulerIOMixin):
                     # NOTE: overlap scheduling may make the request freed twice, skip second free
                     if finished and req not in self.finished_reqs:
                         self.decode_manager.remove_req(req)
+                        if not batch.is_prefill and self.cache_manager.tracks_decode:
+                            checkpoint = self.cache_manager.finished_checkpoint(req, length)
+                            cache_args = {
+                                "frontier": (
+                                    checkpoint.length if checkpoint is not None
+                                    else self.cache_manager.current_handle(req).cached_len
+                                ),
+                                "checkpoint": checkpoint,
+                            }
                         self._free_req_resources(req, **cache_args)
                         new_finished_reqs.add(req)
                     elif self.cache_manager.should_cache(batch.is_prefill, length):
@@ -342,7 +373,9 @@ class Scheduler(SchedulerIOMixin):
             # consumed. It must still be cancellable during that interval.
             req_to_free = req_to_free or self.inflight_reqs.get(msg.uid)
             if req_to_free is not None:
-                self._free_req_resources(req_to_free)
+                self.inflight_reqs.pop(req_to_free.uid, None)
+                self.cache_manager.discard_req(req_to_free)
+                self.table_manager.free(req_to_free.table_idx)
                 self.aborted_reqs.add(req_to_free)
             # This reaches the detokenizer even when tokenization is handled by
             # a separate process, after any already-sent token replies.

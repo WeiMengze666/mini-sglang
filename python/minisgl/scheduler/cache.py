@@ -37,6 +37,10 @@ class CacheManager:
         self.pool = pool
         self.arena = getattr(pool, "arena", None)
         self._handles = {}
+        self._tracking = {}
+        states = getattr(pool, "recurrent", None)
+        self.tracks_decode = states is not None and bool(states.max_staged_states)
+        self._tracking_slots = 2 if getattr(pool, "supports_overlap", False) else 1
         self._checkpoint_cpu_group = cpu_group
         self._checkpoint_quantum = checkpoint_quantum
 
@@ -57,6 +61,8 @@ class CacheManager:
         if self.arena is not None:
             self.arena._check_mutable()
         self._handles.pop((table_idx, uid), None)
+        for checkpoint in self._tracking.pop((table_idx, uid), ()):
+            self.pool.release_staged(checkpoint)
         if self.pool is not None and hasattr(self.pool, "release_request"):
             self.pool.release_request(table_idx, uid)
 
@@ -195,6 +201,22 @@ class CacheManager:
         if failure is not None:
             raise failure
 
+    @property
+    def has_tracking(self):
+        return any(self._tracking.values())
+
+    def finished_checkpoint(self, req, length):
+        """Name only the latest completed track, or its previous overlap track."""
+        tracking = self._tracking.get((req.table_idx, req.uid), ())
+        if not tracking:
+            return None
+        latest = tracking[-1]
+        if latest.length <= length:
+            return latest
+        if len(tracking) == 2 and tracking[-2].length <= length:
+            return tracking[-2]
+        return None
+
     def stage_states(self, reqs, lengths, *, is_prefill, excluded=()):
         staged = {}
         if self.pool is None:
@@ -204,17 +226,31 @@ class CacheManager:
                 if (
                     req.uid in excluded
                     or length % self.page_size
-                    or not self.should_cache(is_prefill, length)
+                    or (not is_prefill and not self.tracks_decode)
                 ):
                     continue
+                tracking = None
+                if not is_prefill:
+                    tracking = self._tracking.setdefault((req.table_idx, req.uid), [])
+                    if tracking and tracking[-1].length == length:
+                        continue
+                    # Reuse the bounded private budget before allocating its replacement.
+                    if len(tracking) == self._tracking_slots:
+                        self.pool.release_staged(tracking[0])
+                        tracking.pop(0)
                 try:
                     checkpoint = self.pool.stage_state(req.table_idx, req.uid, length)
                 except MemoryError:
                     continue  # Optional reuse must not prevent the admitted forward.
                 if checkpoint is not None:
-                    staged[req.uid] = checkpoint
-        except Exception:
-            self.release_staged(staged)
+                    if tracking is None:
+                        staged[req.uid] = checkpoint
+                    else:
+                        tracking.append(checkpoint)
+        except BaseException as error:
+            # A failed copy may still own device resources: the worker exits first.
+            if staged or self.has_tracking:
+                self.pool.recurrent.fail_device(error)
             raise
         return staged
 
@@ -309,6 +345,7 @@ class CacheManager:
             self._free(self.page_table[req.table_idx, new_handle.cached_len : req.cached_len])
             self._handles.pop((req.table_idx, req.uid), None)
         else:  # keep the tail part, update the handle
+            new_handle = self.prefix_cache.continue_handle(old_handle, new_handle, length)
             if new_handle.cached_len:
                 # Replay may join an existing radix edge. Point the continuing
                 # request at its shared KV pages before freed duplicates are reused.
@@ -336,15 +373,24 @@ class CacheManager:
             lazy_free_list.append(indices[:: self.page_size])
 
         lazy_free_list: List[torch.Tensor] = []
+        failed = False
         try:
             self._free = lazy_free
             yield
+        except BaseException as error:
+            states = getattr(self.pool, "recurrent", None)
+            if states is not None and states.device_abort is not None:
+                # An owned worker must exit before deferred resources can be recycled.
+                failed = True
+                states.fail_device(error)
+            raise
         finally:
             del self._free
-            if self.arena is not None:
-                for pages in lazy_free_list:
-                    self.arena.free_pages_by_id((pages // self.page_size).tolist())
-            self.free_slots = torch.cat([self.free_slots] + lazy_free_list)
+            if not failed:
+                if self.arena is not None:
+                    for pages in lazy_free_list:
+                        self.arena.free_pages_by_id((pages // self.page_size).tolist())
+                self.free_slots = torch.cat([self.free_slots] + lazy_free_list)
 
     def _allocate(self, needed_pages: int) -> torch.Tensor:
         if self.arena is not None:
