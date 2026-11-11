@@ -54,6 +54,16 @@ class DistributedImpl(ABC):
             result = result + residual
         return norm(result) if norm is not None else result
 
+    def try_linear_all_gather_add(
+        self, x: torch.Tensor, weight: torch.Tensor, addend: torch.Tensor
+    ) -> torch.Tensor | None:
+        """Project replicated inputs/weights, gather output columns and add locally.
+
+        ``None`` performs no writes or collective. Callers then retain their
+        ordinary projection/add path. All ranks must supply the same metadata.
+        """
+        return None
+
     def capture(self):
         """Register communication resources around a complete CUDA graph capture.
 
@@ -117,6 +127,16 @@ class FallbackDistributedImpl(DistributedImpl):
         # A backend may reduce this tensor without covering its epilogue.
         # Keep capability-based routing for the reduction and compose the rest.
         return super().all_reduce_residual(x, residual, norm=norm)
+
+    def try_linear_all_gather_add(self, x, weight, addend) -> torch.Tensor | None:
+        backends = (
+            (self.primary,) if self.primary is self.fallback else (self.primary, self.fallback)
+        )
+        for backend in backends:
+            result = backend.try_linear_all_gather_add(x, weight, addend)
+            if result is not None:
+                return result
+        return None
 
     @contextmanager
     def capture(self):
@@ -241,6 +261,9 @@ class DistributedCommunicator:
 
     def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
         return self._backend().all_reduce_residual(x, residual, norm=norm)
+
+    def try_linear_all_gather_add(self, x, weight, addend) -> torch.Tensor | None:
+        return self._backend().try_linear_all_gather_add(x, weight, addend)
 
     @contextmanager
     def capture(self):

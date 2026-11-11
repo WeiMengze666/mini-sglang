@@ -284,6 +284,33 @@ class Linear(BaseOP):
         self._backend = backend
         self._activation_precision = activation_precision
 
+    def prepare_replicated_add(self) -> None:
+        """Normalize this replicated dense weight once, after load and before graphs.
+
+        Keep one canonical tensor under the existing checkpoint name. Reloads
+        replace it normally; no private full-weight copy or hot-path packing.
+        """
+        if self.weight_format == "dense" and self.bias is None:
+            weight = self.weight
+            if (
+                not weight.is_meta
+                and weight.dtype == torch.bfloat16
+                and (not weight.is_contiguous() or weight.data_ptr() % 32)
+            ):
+                self.weight = weight.clone(memory_format=torch.contiguous_format)
+
+    def forward_replicated_add(self, x, addend, *, parallel) -> torch.Tensor:
+        """The caller owns replication and completion over ``parallel``.
+
+        Prepare weight storage after load. A native backend may compute only
+        its output-column shard; fallback preserves projection then addition.
+        """
+        if self.weight_format == "dense" and self.bias is None:
+            result = parallel.try_linear_all_gather_add(x, self.weight, addend)
+            if result is not None:
+                return result
+        return self.forward(x) + addend
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.weight_format == "dense":
             return _linear(x, self.weight, self.bias)

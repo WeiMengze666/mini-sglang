@@ -198,6 +198,9 @@ class LatentMoE(BaseOP):
             routing_policy=RoutingPolicy.from_config(self._config),
         )
 
+        if self.routed_expert_up_proj is not None and self._tp.size > 1 and not use_strict_bf16():
+            self.routed_expert_up_proj.prepare_replicated_add()
+
     def validate_cuda_graph(self):
         if not self._expert_executor.supports_cuda_graph:
             raise ValueError("CUDA graphs require a device-side grouped expert executor")
@@ -252,6 +255,11 @@ class LatentMoE(BaseOP):
         if self.routed_expert_norm is not None:
             output = self.routed_expert_norm.forward(output)
         if self.routed_expert_up_proj is not None:
+            if shared is not None and not strict_bf16:
+                output = self.routed_expert_up_proj.forward_replicated_add(
+                    output, shared.to(x.dtype), parallel=self._tp
+                )
+                return output.reshape(shape)
             output = self.routed_expert_up_proj.forward(output)
         if shared is not None:
             output = output + shared.to(x.dtype)

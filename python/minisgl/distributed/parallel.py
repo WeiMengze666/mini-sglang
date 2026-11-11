@@ -35,6 +35,11 @@ class TensorParallel:
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
         return self._comm.all_gather(x) if self.size > 1 else x
 
+    def try_linear_all_gather_add(self, x, weight, addend) -> torch.Tensor | None:
+        if self.size == 1:
+            return None
+        return self._comm.try_linear_all_gather_add(x, weight, addend)
+
     def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
         if self.size == 1:
             result = x

@@ -1,0 +1,22 @@
+{
+  "status": "independent_candidate_CPU_qualified_GPU_component_pending",
+  "publication_base_commit": "290ad026d257982aabf87484b5c8fb1c1ca0ab12",
+  "frozen_candidate_head": "290ad026d257982aabf87484b5c8fb1c1ca0ab12",
+  "frozen_complete_patch_sha256": "1e2e6dd2c1e98891e2426368108510706b5d654c869e90ca56e4b4e066d073cd",
+  "frozen_source_manifest_sha256": "7f9b3c0215365b1c0f7ad485d8acde5032e64535e77be3e45ee0c3d6fbbcef15",
+  "runtime_visible_files": 154,
+  "runtime_content_manifest_sha256": "96fa2f73d5d12eb4fdf48a2b0b964b8a80ef22dfb9f07e6cd0bd47734df4e9c4",
+  "new_tests_sha256": {
+    "tests/core/test_gemm_ag_adapter.py": "5c6670b0e831c6634ff940cddc494a3df97f82f3e1813cd40455160462c33d41"
+  },
+  "CPU_passed": 935,
+  "CPU_skipped": 44,
+  "CPU_xml_sha256": "db70e877408686dc542e70ff8638228e3b4541c9637ab34e0877f3da0cd16fd1",
+  "GPUq_component_job_queued": 43,
+  "GPU_result_included": false,
+  "GPU_component_accepted": false,
+  "full_model_quality_accepted": false,
+  "canonical_serving_performance_accepted": false,
+  "default_promotion": false,
+  "norm_candidate_included": false
+}
