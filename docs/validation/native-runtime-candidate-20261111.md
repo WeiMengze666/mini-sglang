@@ -20,6 +20,19 @@ The complete greedy GSM8K cohort scored **1279/1319**, versus **1284/1319** for 
 
 Preparation actually ran on all eight ranks: 92 expert preparation hooks per rank, followed by graph capture and observer restoration before evaluation. MoE lookups during capture hit the prepared cache; MLA default-tactic lookups are recorded separately.
 
-A full original 393-entry, concurrency-48, 900-second AIPerf run is a **diagnostic measurement only**. No performance result is claimed here. The score regression remains unresolved, prepare-only ablation is being prepared, and this branch is not approved for default promotion. The default branch remains the independently verified safe-decode baseline.
+The complete original 393-entry, concurrency-48, 900-second AIPerf workload completed as a **diagnostic measurement only**. Candidate throughput is 224.12 output tokens/s, against historical official 364.20 and old Mini 220.63. The 1.58% increase over old Mini is a cross-run observation, not a fresh paired or causal result.
+
+| Metric | Historical official | Historical Mini | Candidate |
+|---|---:|---:|---:|
+| Output tokens/s | 364.20 | 220.63 | 224.12 |
+| TTFT p95, ms | 5114.00 | 9439.95 | 9141.50 |
+| ITL p50, ms | 29.73 | 63.34 | 64.41 |
+| ITL p95, ms | 52.63 | 110.22 | 95.41 |
+| Completed requests | 493 | 328 | 334 |
+| Deadline cancellations | 3 | 6 | 5 |
+
+All three runs report zero request errors. Median ITL worsens against old Mini; the quality score regression remains unresolved. Throughput uses the explicit observation window of about 940 seconds, including drain, rather than the nominal 900-second sending duration or the separately reported benchmark_duration. All eight candidate allocation warnings occur during warmup; raw artifacts and cancellations remain preserved. No peak GPU telemetry was collected.
+
+[Machine-readable evidence](native-runtime-serving-20261111.json) retains p99 and other metrics, source/export hashes and limits. Prepare-only quality diagnosis is running; a fresh official/safe baseline pair is queued. This candidate remains unqualified for quality equality or default promotion, and the default branch remains the independently verified safe-decode baseline.
 
 Runtime files on this branch are byte-identical to the frozen GPUq38 candidate. Remote artifacts are under /home/axis/mengze/mini-sglang/experiment/recovery-20261110, including quality-moe-norm-prepared/review, moe-prepare-packed-root-review and native-reduce-norm-gate-prepared.

@@ -1,0 +1,277 @@
+{
+  "scope": "Canonical candidate-only diagnostic against historical23; not contemporaneous pair or causal attribution",
+  "recorded_utc": "2026-11-11T00:07:05.683100+00:00",
+  "source_runtime_commit": "19626969894267bad5e5713cf789bb0cd784a157",
+  "SDK_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "profile_sha256": "2f6587b32e92e4c31b6fb5ca709769d77e27485d81e9b7c3a7f920bc8bf1a499",
+  "original_workload": {
+    "dataset_entries": 393,
+    "concurrency": 48,
+    "sending_seconds": 900,
+    "seed": 42,
+    "full_original_flags": true
+  },
+  "runs": {
+    "official23": {
+      "export_sha256": "803bf5e263268d4fe6e0278fdab7b511608483ced20a84d362186fc770a154d0",
+      "metrics": {
+        "output_token_throughput": {
+          "unit": "tokens/sec",
+          "avg": 364.1971342135698
+        },
+        "time_to_first_token": {
+          "unit": "ms",
+          "avg": 1730.4659588600405,
+          "p1": 523.03733104,
+          "p5": 657.7299644,
+          "p10": 741.3443247999999,
+          "p25": 833.2306719999999,
+          "p50": 1163.411788,
+          "p75": 1709.5777309999999,
+          "p90": 2732.2927202000005,
+          "p95": 5114.004860799989,
+          "p99": 11703.751695759996,
+          "min": 456.05245499999995,
+          "max": 17186.64838,
+          "std": 2010.1742966500208,
+          "count": 493,
+          "sum": 853119.7177179999
+        },
+        "inter_token_latency": {
+          "unit": "ms",
+          "avg": 32.87639292826903,
+          "p1": 12.763442120561797,
+          "p5": 16.245901583184093,
+          "p10": 18.486295494810058,
+          "p25": 23.469453363405336,
+          "p50": 29.731145098214284,
+          "p75": 38.59381482386363,
+          "p90": 46.94485364439945,
+          "p95": 52.63321404596602,
+          "p99": 108.94647791040998,
+          "min": 0.0,
+          "max": 159.7375684,
+          "std": 15.706140133335646,
+          "count": 493,
+          "sum": 16208.06171363663
+        },
+        "request_latency": {
+          "unit": "ms",
+          "avg": 23701.513696501013,
+          "p1": 1123.52602428,
+          "p5": 2982.696934,
+          "p10": 3916.1137599999997,
+          "p25": 6172.829537,
+          "p50": 10803.263856,
+          "p75": 22111.232116,
+          "p90": 52639.540626400005,
+          "p95": 83396.91350859999,
+          "p99": 183973.54903551968,
+          "min": 646.714708,
+          "max": 500424.680059,
+          "std": 43161.68908392631,
+          "count": 493,
+          "sum": 11684846.252375
+        },
+        "request_count": {
+          "unit": "requests",
+          "avg": 493.0
+        },
+        "benchmark_duration": {
+          "unit": "sec",
+          "avg": 925.9461557760001
+        },
+        "total_output_tokens": {
+          "unit": "tokens",
+          "avg": 342346.0
+        }
+      },
+      "start_time": "2026-11-10T17:20:21.464797",
+      "end_time": "2026-11-10T17:36:01.466702",
+      "complete": true,
+      "request_errors": []
+    },
+    "mini23": {
+      "export_sha256": "db1fd2073086db04afaf42286a5095f67da04bf59bdce594c4acbafcaed6e93c",
+      "metrics": {
+        "output_token_throughput": {
+          "unit": "tokens/sec",
+          "avg": 220.63245213711414
+        },
+        "time_to_first_token": {
+          "unit": "ms",
+          "avg": 3267.462900801829,
+          "p1": 515.6117643299999,
+          "p5": 970.6763381499999,
+          "p10": 1324.2335405999997,
+          "p25": 1585.7949127499999,
+          "p50": 2300.282824,
+          "p75": 3535.3690265,
+          "p90": 5613.3700373,
+          "p95": 9439.94741024999,
+          "p99": 19592.10486681001,
+          "min": 479.224452,
+          "max": 21275.561456,
+          "std": 3225.3873444005794,
+          "count": 328,
+          "sum": 1071727.831463
+        },
+        "inter_token_latency": {
+          "unit": "ms",
+          "avg": 66.08696400829308,
+          "p1": 21.496853385833333,
+          "p5": 32.63345967957746,
+          "p10": 37.06079861952108,
+          "p25": 50.16195875906487,
+          "p50": 63.34271263331072,
+          "p75": 79.6712793644704,
+          "p90": 96.77343439492044,
+          "p95": 110.22188902556623,
+          "p99": 131.7401596177281,
+          "min": 0.0,
+          "max": 136.25761898623853,
+          "std": 23.343782906449757,
+          "count": 328,
+          "sum": 21676.52419472013
+        },
+        "request_latency": {
+          "unit": "ms",
+          "avg": 44850.07214876219,
+          "p1": 1958.9910029,
+          "p5": 6059.762208949999,
+          "p10": 8839.8774318,
+          "p25": 13530.513482499999,
+          "p50": 23395.067118,
+          "p75": 41405.0766285,
+          "p90": 102641.6886769,
+          "p95": 161732.53065184987,
+          "p99": 311645.35948963114,
+          "min": 876.1506539999999,
+          "max": 692925.317698,
+          "std": 69033.32442301954,
+          "count": 328,
+          "sum": 14710823.664794
+        },
+        "request_count": {
+          "unit": "requests",
+          "avg": 328.0
+        },
+        "benchmark_duration": {
+          "unit": "sec",
+          "avg": 925.9244700160001
+        },
+        "total_output_tokens": {
+          "unit": "tokens",
+          "avg": 207395.0
+        }
+      },
+      "start_time": "2026-11-10T18:15:39.527780",
+      "end_time": "2026-11-10T18:31:19.530023",
+      "complete": true,
+      "request_errors": []
+    },
+    "candidate40": {
+      "export_sha256": "a553c5518a3d5a3677996900a3d67ff638cbe9fe75ca3f344c434190042cb302",
+      "metrics": {
+        "output_token_throughput": {
+          "unit": "tokens/sec",
+          "avg": 224.12050633075887
+        },
+        "time_to_first_token": {
+          "unit": "ms",
+          "avg": 3266.7539232754493,
+          "p1": 522.97008386,
+          "p5": 894.7058239,
+          "p10": 1255.7084119,
+          "p25": 1436.65209575,
+          "p50": 2285.9251325,
+          "p75": 3620.66089325,
+          "p90": 6368.281424799999,
+          "p95": 9141.504323699995,
+          "p99": 17967.346677490023,
+          "min": 483.318835,
+          "max": 19171.736374,
+          "std": 3131.0177953505217,
+          "count": 334,
+          "sum": 1091095.8103739999
+        },
+        "inter_token_latency": {
+          "unit": "ms",
+          "avg": 63.04442643073305,
+          "p1": 22.0849518975,
+          "p5": 31.0454023125,
+          "p10": 35.05470999014668,
+          "p25": 48.57383524907636,
+          "p50": 64.41063039291511,
+          "p75": 74.76642792886099,
+          "p90": 87.53237954271641,
+          "p95": 95.41116123920331,
+          "p99": 122.54003178707922,
+          "min": 0.0,
+          "max": 224.48259208955224,
+          "std": 22.648375002339307,
+          "count": 334,
+          "sum": 21056.838427864837
+        },
+        "request_latency": {
+          "unit": "ms",
+          "avg": 43603.8651634012,
+          "p1": 1665.77551534,
+          "p5": 6339.474842,
+          "p10": 8035.7977474,
+          "p25": 12650.1305775,
+          "p50": 21378.191066,
+          "p75": 41536.875063499996,
+          "p90": 101865.32611079999,
+          "p95": 154899.0463699998,
+          "p99": 301530.61813930096,
+          "min": 873.588002,
+          "max": 676062.443389,
+          "std": 67249.72547889965,
+          "count": 334,
+          "sum": 14563690.964575998
+        },
+        "request_count": {
+          "unit": "requests",
+          "avg": 334.0
+        },
+        "benchmark_duration": {
+          "unit": "sec",
+          "avg": 927.0183649280001
+        },
+        "total_output_tokens": {
+          "unit": "tokens",
+          "avg": 210674.0
+        }
+      },
+      "start_time": "2026-11-10T23:42:14.430935",
+      "end_time": "2026-11-10T23:57:54.434166",
+      "complete": true,
+      "request_errors": []
+    }
+  },
+  "quality": {
+    "candidate": 1279,
+    "official": 1284,
+    "safe_mini34": 1284,
+    "cohort": 1319,
+    "candidate_invalid": 0,
+    "candidate_truncated": 0,
+    "accepted": false
+  },
+  "candidate_cancellations": 5,
+  "measurement_only": true,
+  "performance_target_accepted": false,
+  "default_promotion": false,
+  "notes": [
+    "Throughput uses explicit observation windows about940s; benchmark_duration about926/927s is a different metric.",
+    "Median ITL regresses versus oldMini despite better p95; no overall improvement claimed.",
+    "Eight allocator warnings occurred in warmup only; full benchmarkrc0 with0requesterrors.",
+    "Actual candidate capacity48working312cached0scratch perrank; no peakGPUtelemetry collected.",
+    "Larger unpacked prefill remains outside prepared decode buckets and uses mature default tactic-1.",
+    "Fresh official+safe baseline pair42 is queued. This branch stays experimental; default290unchanged."
+  ],
+  "remote_review": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-native-moe-norm-prepared/review",
+  "review_sha256": "6ef62653b027ee420ac66ed4d581ea188b267b9ee523efeb39751e31329e8263",
+  "root_measurement_review_sha256": "7ae168658fd0443ed68fea7a018933f641330791aaa65f0f6ed9a17f71d69748"
+}
