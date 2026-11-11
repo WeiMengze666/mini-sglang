@@ -139,6 +139,16 @@ class FallbackDistributedImpl(DistributedImpl):
 @dataclass
 class TorchDistributedImpl(DistributedImpl):
     group: dist.ProcessGroup | None = None
+    owns_group: bool = False
+
+    def __post_init__(self):
+        if self.owns_group and self.group is None:
+            raise ValueError("An owned process group must be explicit; None denotes WORLD")
+
+    def close(self) -> None:
+        if self.owns_group:
+            self.owns_group = False
+            dist.destroy_process_group(self.group)
 
     def warmup(self, device: torch.device) -> None:
         """Allocate NCCL collective resources before measuring cache capacity."""

@@ -31,6 +31,10 @@ class BaseOP:
     def after_load(self) -> None:
         """Rebuild optional inference metadata after all checkpoint tensors exist."""
 
+    def prepare_runtime(self, context, *, dry_run=False):
+        """Optional local startup work after weights, before memory budgeting."""
+        return None
+
     def validate_cuda_graph(self) -> None:
         """Reject an execution path that needs host decisions during replay."""
 

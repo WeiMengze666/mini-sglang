@@ -22,6 +22,12 @@ class BaseMoeBackend(ABC):
 
         return create_expert_executor(experts, **options)
 
+    def prepare(self, model, context):
+        """Optional startup session; unsupported backends do not import FI."""
+
+    def prepare_local(self, executor, routing_builder, context, *, dry_run=False):
+        return None
+
     def forward_experts(self, executor, x, routing):
         """Let an executor fuse routing with compute, then use ordinary routes."""
         fused = getattr(executor, "try_forward_routed", None)

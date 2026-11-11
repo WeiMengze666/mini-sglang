@@ -95,3 +95,34 @@ class ContextParallel:
         send = send.transpose(0, 1).contiguous()
         received = self._comm.all_to_all(send)
         return merge_attention(received[..., :values], received[..., values])
+
+
+def create_expert_cpu_group(layout, tp_cpu_group):
+    """Create a startup-only Gloo resource for the existing expert-TP layout.
+
+    Every TP member calls this once in the same order. The caller closes the
+    returned TorchDistributedImpl before destroying the TP bootstrap group.
+    Single-rank expert execution has no timing collective and returns None.
+    """
+    if layout.expert_tensor.size == 1:
+        return None
+    if not dist.is_initialized() or str(dist.get_backend(tp_cpu_group)).lower() != "gloo":
+        raise ValueError("Expert preparation requires an initialized TP Gloo group")
+    ranks = dist.get_process_group_ranks(tp_cpu_group)
+    if len(ranks) != layout.tensor.size or ranks[layout.tensor.rank] != dist.get_rank():
+        raise ValueError("TP CPU group ordering must match ParallelLayout.tensor")
+    if layout.ep_size == 1:
+        return TorchDistributedImpl(tp_cpu_group)  # Borrow; never destroy the bootstrap.
+    resource = None
+    try:
+        for expert_rank in range(layout.ep_size):
+            members = ranks[expert_rank :: layout.ep_size]
+            # Non-TP ranks need not participate; groups in this loop are disjoint.
+            group = dist.new_group(members, backend="gloo", use_local_synchronization=True)
+            if layout.experts.rank == expert_rank:
+                resource = TorchDistributedImpl(group, owns_group=True)
+        return resource
+    except BaseException:
+        if resource is not None:
+            resource.close()
+        raise

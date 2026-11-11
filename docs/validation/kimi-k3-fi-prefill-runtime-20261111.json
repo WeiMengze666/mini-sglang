@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "snapshot_utc": "2026-11-11T06:44:04.000471+00:00",
+  "status": "Tested runtime published on an isolated topic; canonical serving measurement pending",
+  "topic_branch": "kimi-k3-fi-prefill-runtime-20261111",
+  "parent_commit": "c5265a9b1584134d9ecbd57ffde32b84e5aceace",
+  "default_promotion": false,
+  "runtime": {
+    "source_path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-fi-prefill-candidate",
+    "source_head": "a3f3341f451ce660a0316d87beefd05a05a20c11",
+    "source_git_diff_sha256": "03d3761ced930a7e84e98b5aeb875b02c0d9fb9ff462f0a389374dab29a633f6",
+    "source_quality_inputs": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-moe-fi-prefill-prepared/inputs.json",
+      "sha256": "585c11cdea8ac4f22160b8537c24a88df727419e7a36c3cb08f5a29ac1f76077"
+    },
+    "exact_runtime_file_count": 156,
+    "exact_python_file_count": 142,
+    "all_runtime_canonical_json_sha256": "8d0c1d60856e03f31700279e7b13caf078c221ad2d1f2f34d4465412d8e9fcc3",
+    "python_canonical_json_sha256": "dde3f167f9ce4682a6f5463bf0edd4b0f71e742b0cee655c091b05c0c202b0d8",
+    "byte_identity_to_tested46": true,
+    "changed_runtime_sha256": {
+      "python/minisgl/attention/kda/backend.py": "561cbc016fb68e4b997c9b023ee38c78c37533af58efcc9f589159eeb5428807",
+      "python/minisgl/attention/kda/flashinfer.py": "9a2bbfae7409507c52e727e1aa34ed2ec651fd4240dddd1971b12e269cd8b256",
+      "python/minisgl/attention/kda/prefill.py": "c66eed0aaf09405c3e8a2824b7bb1bb3695a77d412de962be5d93cbfec158a17",
+      "python/minisgl/attention/kda/registry.py": "c6028962d0efd16a78a69ffd2a53d451b549434e22b4584fcf546632c9e9e52c",
+      "python/minisgl/attention/kda/sgl.py": "cd5907b8a1d3b13c22d21eccf06195db544039f490c84185c459fe86ae2829fd",
+      "python/minisgl/distributed/context.py": "cccd2f8a10f11d08176fc7cdc25d257892847d38f06fd92b0c704e47216c030b",
+      "python/minisgl/distributed/impl.py": "69ca9e8294c9b2f9f61c80373c510dae7463a047cfa83fdd8673de9e8306dcc6",
+      "python/minisgl/engine/engine.py": "de7e3296159837caab19414f054dd5fcc039afa9173c415c4f0bc8af1ce4e6fc",
+      "python/minisgl/layers/base.py": "89911fec6cdd3fc10c9fcb0d75208bc8abd90023a1c060b7cade68f6d766eb32",
+      "python/minisgl/layers/kda.py": "c79d45674bebedfe2f41bcdbab1dda3297ff9f4790e58047e50a362f3d7dae52",
+      "python/minisgl/layers/latent_moe.py": "0d6dd60180b5d5e8fd64fa22819fb7c2d32af055747fa482d32ca399ea6ccf56",
+      "python/minisgl/moe/base.py": "e616301587c279c750f1b255345a1954800cbfaa608d1b3d22009bf5dbfef670",
+      "python/minisgl/moe/flashinfer.py": "eeeb59564219f68de3255f5d339983031c52d17a82ff010db4c78e8af3bd6175",
+      "python/minisgl/moe/fused.py": "f5bcd5ad456188956f8b92e54ffd2c50e0f5b82ec864a3cb9bdb3c40e0e5ff63",
+      "python/minisgl/moe/prepare.py": "cecee721b2935912ab8b9a4bb437bb7535b63fd7b711ddc3c6c973ed67268b22",
+      "python/minisgl/scheduler/scheduler.py": "2fd00b8263145cb3f1496e36d7748daba58f49e287502c84577299d334748ffe",
+      "python/minisgl/server/launch.py": "f7810e553cea94c6d1d5ce10ffadffc43a59df4a7fad598c6f4ad9358316f91f"
+    },
+    "scope": "EngineV2 generic MoE preparation plus six KDA FI-prefill/SG-safe-decode files qualified in component39; no norm, GEMM-AG, QKVG, large-prefill preparation or automatic checkpoints.",
+    "sdk_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "selection": "Existing --attention-backend fi,sgl; default branch is unchanged by this topic publication."
+  },
+  "necessary_tests": {
+    "tests/core/test_kda_phase.py": "48d7a1db332ac7de1781f7ca5874b534228188ad7907a2573882af2bf73966aa",
+    "tests/core/test_sgl_kda_contract.py": "25143d4a1603a1829aacc6ef2572bfc36d8bb11b64610a4471fa0e5f7f0f8fd1",
+    "tests/core/test_moe_engine_startup.py": "2397fde3660700e6641d88f7c506be7882ef4ecdfdf144893879f75949ecb928",
+    "tests/core/test_moe_prepare_minimal.py": "8f09477cfbeecca803e78da64f1517c56771051ef8788624d45eb7f5f351f6b6"
+  },
+  "verification": {
+    "new_publication_checks": [
+      "Exact156 runtime bytes/142Python files equal source46",
+      "Only17 runtime and4 necessary tests differ from parent",
+      "Python AST syntax, JSON parsing and git diff --check"
+    ],
+    "new_tests_executed": false,
+    "reason_no_new_suite": "Copies already tested source without implementation changes; earlier evidence retains its source and scope.",
+    "engine_v2_cpu": {
+      "passed": 145,
+      "skipped": 9,
+      "scope": "Startup wiring and existing API tests; CPU is not GPU qualification",
+      "artifact": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-prepare-engine-prepared-v2/root-wiring-review.json",
+        "sha256": "ed7b0623b8e7a7dd9900ff78a368f91db2ce76c1a2bc29118af5509d30aba6f1"
+      }
+    },
+    "kda_component39": {
+      "prefill_fixtures": 576,
+      "safe_decode_cases": 440,
+      "scope": "Native adapter/ABI/state ownership/stream/decode-graph scope; B1 total-token prefill has CPU phase evidence only; not independent numerical/full-model/performance acceptance",
+      "artifact": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-norm-fi-prefill-component-prepared/root-component-review.json",
+        "sha256": "09f7df77d131edf72d1b45fd007cb49676bc789f99efddca9a1b41d5c8f3e38b"
+      }
+    },
+    "quality46": {
+      "gpuq_job_id": 46,
+      "candidate_correct": 1275,
+      "reference_correct": 1284,
+      "cases": 1319,
+      "delta_percentage_points": -0.6823351023502654,
+      "candidate_invalid": 0,
+      "candidate_truncated": 0,
+      "declared_execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "bf16_precision": "default",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 1,
+        "page_size": 64
+      },
+      "kernel_precision_path_fully_verified": false,
+      "offline_evaluation_seconds": 638.6131801529991,
+      "offline_time_is_serving_performance": false,
+      "artifact": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-moe-fi-prefill-prepared/review/report.json",
+        "sha256": "b18ea9f099ac33714812e38674acc5786eea63839ee959f13364a48c41d659ff"
+      },
+      "measurement_permission": {
+        "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-moe-fi-prefill-root-performance-review.json",
+        "sha256": "a53b57af7858b8eb485bcb5a0d3215c396e4a3176d8369909fbe16cf69d6a57e"
+      },
+      "user_tradeoff": "Performance bottleneck localization and controlled SGLang comparison first; small task-quality deviation permitted for exploratory measurement."
+    }
+  },
+  "canonical_serving": {
+    "gpuq_job_id": 64,
+    "snapshot_status": "queued; no result in this publication",
+    "submission": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-fi-prefill-prepared/submission-receipt.json",
+      "sha256": "48752df521119428d39850e3b6b5b776e0c1bcf83c53d0eb022b088417cbe386"
+    },
+    "inputs": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-fi-prefill-prepared/inputs.json",
+      "sha256": "0161925e54ffd05a0a05970fcaefb260e0c121faf7705c673869bb384ee9c442"
+    },
+    "profile": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-fi-prefill-prepared/profile.json",
+      "sha256": "d9df39eef8d9338e7efe406115dfddc22f33a2fa0db7321129ac8f52a5601ab2"
+    },
+    "root_release": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-fi-prefill-prepared/release-approval.json",
+      "sha256": "338aeef85eddcc2f7350aad83ddeebb2978d2ae984fec87421f476c092a50f1b"
+    },
+    "stage_order": [
+      "reference",
+      "mini"
+    ],
+    "reference_and_aiperf_argv_unchanged": true,
+    "mini_argv_delta": "Existing --attention-backend auto -> fi,sgl",
+    "benchmark_duration_seconds": 900,
+    "dataset_entries": 393,
+    "concurrency": 48,
+    "seed": 42,
+    "readiness_timeout_seconds": 7200,
+    "fresh_performance_accepted": false
+  },
+  "retained_safe_baseline": {
+    "documentation": "canonical-safe-baseline-20261111.json",
+    "reference_output_tokens_per_second": 364.19661721930964,
+    "mini_output_tokens_per_second": 216.37719632332093,
+    "scope": "Original canonical serving baseline; not this FI-prefill topic. Pending Nsight58 is separate diagnostics."
+  },
+  "limits": [
+    "Declared precision does not establish whole-path dtype/layout/rounding/state correctness.",
+    "Four of seven MoE autotune buckets differ from prior cohort41; quality/offline-time differences cannot be attributed solely to FI prefill.",
+    "No throughput/latency improvement is claimed before job64 completes and is reviewed.",
+    "No quality equality, all-task acceptance or default promotion."
+  ]
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Protocol
 
 import torch
 from minisgl.utils import Registry
@@ -22,12 +22,41 @@ if TYPE_CHECKING:
     from .backend import KDAMetadata
     from .reference import KDAState
 
-RecurrenceKernel = Callable[..., tuple["torch.Tensor", "torch.Tensor"]]
+
+class RecurrenceKernel(Protocol):
+    """Functional core; phase is explicit even when prefill contains one token.
+
+    Adapters receive raw gates and K,V state and must accept ``is_decode``.
+    Portable backends may use one algorithm for both phases; native backends
+    must preserve their phase-specific precision and state-update contracts.
+    """
+
+    def __call__(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        forget: torch.Tensor,
+        beta: torch.Tensor,
+        a_log: torch.Tensor,
+        dt_bias: torch.Tensor,
+        state: torch.Tensor | None,
+        lower_bound: float | None,
+        *,
+        is_decode: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]: ...
+
+
 ProjectionKernel = Callable[["KDALayer", "torch.Tensor"], tuple["torch.Tensor", ...]]
 DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
 IndexedDecodeKernel = Callable[
     ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor", "KDAMetadata"],
     "KDADecodeResult | None",
+]
+
+IndexedPrefillKernel = Callable[
+    ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor", "KDAMetadata"],
+    "torch.Tensor | None",
 ]
 
 
@@ -53,6 +82,7 @@ class KDAKernelSpec:
     decode: DecodeKernel | None = None
     project: ProjectionKernel | None = None
     indexed_decode: IndexedDecodeKernel | None = None
+    indexed_prefill: IndexedPrefillKernel | None = None
 
 
 KDA_KERNELS = Registry[KDAKernelSpec]("KDA kernel backend")
@@ -65,10 +95,13 @@ def register_kda_kernel(
     *,
     project: ProjectionKernel | None = None,
     indexed_decode: IndexedDecodeKernel | None = None,
+    indexed_prefill: IndexedPrefillKernel | None = None,
 ):
     """Register a recurrence backend without coupling it to a model class."""
 
-    KDA_KERNELS.register(name)(KDAKernelSpec(name, recurrence, decode, project, indexed_decode))
+    KDA_KERNELS.register(name)(
+        KDAKernelSpec(name, recurrence, decode, project, indexed_decode, indexed_prefill)
+    )
 
 
 def register_kda_decode_kernel(name: str, decode: DecodeKernel):
@@ -93,10 +126,12 @@ def get_kda_kernel(name: str) -> KDAKernelSpec:
     return KDA_KERNELS[name]
 
 
-def _torch_recurrence(*args):
+def _torch_recurrence(*args, is_decode=False):
     from .reference import kda_log_decay, kda_recurrence
 
     q, k, v, forget, beta, a, dt, state, lower = args
+    if is_decode and q.shape[0] != 1:
+        raise ValueError("KDA decode requires one token per request")
     decay = kda_log_decay(forget, a, dt, lower)
     return kda_recurrence(q, k, v, decay, beta.float().sigmoid(), state)
 
@@ -105,20 +140,20 @@ def _supports_cuda_recurrence(q):
     return q.is_cuda and q.dtype == torch.bfloat16 and q.shape[-1] == 128
 
 
-def _flashinfer_recurrence(*args):
+def _flashinfer_recurrence(*args, is_decode=False):
     if not _supports_cuda_recurrence(args[0]):
-        return _torch_recurrence(*args)
+        return _torch_recurrence(*args, is_decode=is_decode)
     from .flashinfer import recurrent_kda
 
-    return recurrent_kda(*args)
+    return recurrent_kda(*args, is_decode=is_decode)
 
 
-def _sgl_recurrence(*args):
+def _sgl_recurrence(*args, is_decode=False):
     if not _supports_cuda_recurrence(args[0]):
-        return _torch_recurrence(*args)
+        return _torch_recurrence(*args, is_decode=is_decode)
     from .sgl import recurrent_kda
 
-    return recurrent_kda(*args)
+    return recurrent_kda(*args, is_decode=is_decode)
 
 
 def _sgl_project(layer, x):
@@ -139,10 +174,22 @@ def _sgl_indexed_decode(layer, x, pool, layer_id, indices, metadata):
     return indexed_decode(layer, x, pool, layer_id, indices, metadata)
 
 
+def _flashinfer_indexed_prefill(*args):
+    from .flashinfer import indexed_prefill
+
+    return indexed_prefill(*args)
+
+
 register_kda_kernel("torch", _torch_recurrence)
-register_kda_kernel("flashinfer", _flashinfer_recurrence)
 register_kda_kernel(
-    "sgl", _sgl_recurrence, _sgl_decode, project=_sgl_project, indexed_decode=_sgl_indexed_decode
+    "flashinfer", _flashinfer_recurrence, indexed_prefill=_flashinfer_indexed_prefill
+)
+register_kda_kernel(
+    "sgl",
+    _sgl_recurrence,
+    _sgl_decode,
+    project=_sgl_project,
+    indexed_decode=_sgl_indexed_decode,
 )
 
 

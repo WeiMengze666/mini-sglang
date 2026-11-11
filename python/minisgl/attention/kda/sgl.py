@@ -50,8 +50,10 @@ def _safe_decode(mixed, forget, beta, a_log, dt_bias, state, indices, cu_seqlens
     )
 
 
-def recurrent_kda(q, k, v, forget, beta, a_log, dt_bias, state, lower_bound):
+def recurrent_kda(q, k, v, forget, beta, a_log, dt_bias, state, lower_bound, *, is_decode=False):
     tokens, heads, keys = q.shape
+    if is_decode and tokens != 1:
+        raise ValueError("KDA decode requires one token per request")
     values = v.shape[-1]
     # The SDK updates a V,K pool in place. Own the temporary storage so its
     # updates cannot mutate a caller's K,V checkpoint, including graph inputs.
@@ -65,7 +67,7 @@ def recurrent_kda(q, k, v, forget, beta, a_log, dt_bias, state, lower_bound):
     chunk, decode, stream = _kernels()
     indices = torch.zeros(1, device=q.device, dtype=torch.int32)
     with stream():
-        if tokens == 1 and lower_bound is not None:
+        if is_decode and lower_bound is not None:
             output = _safe_decode(
                 torch.cat((q.flatten(1), k.flatten(1), v.flatten(1)), dim=-1),
                 forget.reshape(1, -1).contiguous(),
@@ -77,7 +79,7 @@ def recurrent_kda(q, k, v, forget, beta, a_log, dt_bias, state, lower_bound):
                 torch.arange(2, device=q.device, dtype=torch.int32),
                 lower_bound,
             )
-        elif tokens == 1:
+        elif is_decode:
             output = v.new_empty((1, 1, heads, values))
             decode(
                 mixed_qkv=torch.cat((q.flatten(1), k.flatten(1), v.flatten(1)), dim=-1),
@@ -319,3 +321,46 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
             )
             output = packed[:, 0]
     return KDADecodeResult(output=output)
+
+
+def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
+    """Use official varlen convolution and chunk extend on owned native rows."""
+    from .prefill import prepare, supports
+
+    if not supports(layer, x, pool):
+        return None
+    chunk, _, stream = _kernels()
+    # Plan chunk metadata before convolution mutates its pool.
+    chunks = metadata.kernel_data.get("sgl_prefill_chunks")
+    if chunks is None:
+        chunks = torch.tensor(
+            [
+                (seq, chunk)
+                for seq, length in enumerate(metadata.lengths)
+                for chunk in range((length + 63) // 64)
+            ],
+            device=x.device,
+            dtype=torch.int32,
+        )
+        metadata.kernel_data["sgl_prefill_chunks"] = chunks
+    q, k, v, g, beta, recurrent, plan, indices = prepare(
+        layer, x, pool, layer_id, indices, metadata
+    )
+    with stream():
+        output = chunk(
+            q=q,
+            k=k,
+            v=v,
+            g=g,
+            beta=beta,
+            initial_state=recurrent,
+            initial_state_indices=indices,
+            use_qk_l2norm_in_kernel=True,
+            cu_seqlens=plan["cu_seqlens"],
+            A_log=layer.A_log.reshape(-1),
+            dt_bias=layer.dt_bias.reshape(-1),
+            lower_bound=layer._config.gate_lower_bound,
+            beta_is_raw=True,
+            chunk_indices=chunks,
+        )
+    return output[0]

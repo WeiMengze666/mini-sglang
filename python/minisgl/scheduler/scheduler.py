@@ -26,6 +26,7 @@ from .table import TableManager
 
 if TYPE_CHECKING:
     from minisgl.engine import BatchSamplingArgs, ForwardOutput
+    from minisgl.engine.engine import StartupOwner
 
 
 logger = init_logger(__name__)
@@ -48,10 +49,10 @@ class ForwardData(NamedTuple):
 
 
 class Scheduler(SchedulerIOMixin):
-    def __init__(self, config: SchedulerConfig):
+    def __init__(self, config: SchedulerConfig, *, startup_owner: StartupOwner | None = None):
         from minisgl.engine import Engine
 
-        self.engine = Engine(config)
+        self.engine = Engine(config, startup_owner=startup_owner)
         self.vocab_size = config.model_config.vocab_size
 
         # use another stream to overlap metadata processing with computation
