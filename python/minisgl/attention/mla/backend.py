@@ -1,5 +1,6 @@
 """Paged MLA execution and graph plans, independent of recurrent attention."""
 
+import functools
 from dataclasses import dataclass
 
 import torch
@@ -8,11 +9,13 @@ from minisgl.distributed.context import ContextParallel
 
 from ..base import BaseAttnBackend, SequenceAttnMetadata
 from . import CausalLayout, MLAPagedMetadata, mla_attention
+from .prefill import MLAPrefillMetadata
 
 
 @dataclass
 class MLAMetadata(SequenceAttnMetadata):
     decode: MLAPagedMetadata | None = None
+    prefill: MLAPrefillMetadata | None = None
 
 
 class MLAAttentionBackend(BaseAttnBackend):
@@ -42,6 +45,10 @@ class MLAAttentionBackend(BaseAttnBackend):
                 [req.device_len for req in batch.reqs],
                 get_global_ctx().page_table,
             )
+        if not batch.is_decode and hasattr(self.attention, "prepare_prefill"):
+            metadata.prefill = self.attention.prepare_prefill(
+                batch, get_global_ctx().page_table, ContextParallel(), metadata.cu_seqlens_q
+            )
         batch.attn_metadata = metadata
 
     def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
@@ -63,6 +70,25 @@ class MLAAttentionBackend(BaseAttnBackend):
             if partial is not None:
                 return layer.finish(x, partial)
         cp = ContextParallel()
+        if not is_decode and batch.attn_metadata.prefill is not None:
+            attend_batch = functools.partial(
+                self.attention.prefill_batch,
+                metadata=batch.attn_metadata.prefill,
+                cache=cache,
+                layer_id=layer_id,
+                cp=cp,
+            )
+            partial_output = layer.attend_partial(
+                queries,
+                new_latent,
+                new_key,
+                positions,
+                None,
+                context_sharded=False,
+                attention=attend_batch,
+            )
+            if partial_output is not None and partial_output.values is not None:
+                return layer.finish(x, partial_output)
         outputs, offset = [], 0
         for req in batch.reqs:
             rows = slice(offset, offset + req.extend_len)

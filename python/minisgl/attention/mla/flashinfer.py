@@ -182,45 +182,169 @@ class FlashInferMLAAdapter:
             lse = lse.masked_fill(~metadata.nonempty[:, None], -torch.inf)
         return MLALatentOutput(output, lse)
 
-    def prefill(self, q, latent, key, weight, *, nope_dim, value_dim, scale=None):
-        """Expanded K/V prefill over TP-local heads using FlashInfer's MHA kernel."""
+    def prepare_prefill(self, batch, page_table, cp, cu_lengths):
+        from sglang.srt.environ import envs
+
+        from .prefill import MLAPrefillMetadata
+
+        return MLAPrefillMetadata.from_batch(
+            batch,
+            page_table,
+            cp,
+            envs.SGLANG_MAX_KV_CHUNK_CAPACITY.get(),
+            cu_lengths=cu_lengths,
+        )
+
+    def _run_ragged_prefill(
+        self,
+        q,
+        latent,
+        key,
+        weight,
+        queries,
+        keys_layout,
+        *,
+        nope_dim,
+        value_dim,
+        scale,
+        causal,
+        return_lse,
+    ):
         from flashinfer.prefill import trtllm_ragged_attention_deepseek
         from minisgl.layers.linear import linear_bf16
-        from tvm_ffi import use_torch_stream
 
         if self._expanded_workspace is None or self._expanded_workspace.device != q.device:
             self._expanded_workspace = torch.empty(128 << 20, dtype=torch.uint8, device=q.device)
-        total, tokens, heads = len(latent), len(q), q.shape[1]
-        expanded = linear_bf16(latent, weight).view(total, heads, nope_dim + value_dim)
-        keys = torch.cat((expanded[..., :nope_dim], key[:, None].expand(-1, heads, -1)), -1)
-        output = q.new_empty((tokens, heads, value_dim))
+        expanded = linear_bf16(latent, weight).view(len(latent), q.shape[1], nope_dim + value_dim)
+        keys = torch.cat((expanded[..., :nope_dim], key[:, None].expand(-1, q.shape[1], -1)), -1)
         query, values = q.contiguous(), expanded[..., nope_dim:]
         if self.kv_dtype == torch.float8_e4m3fn:
-            # TRTLLM's FP8 path quantizes current Q/K/V as well as resident KV.
-            # Keep the destination in producer precision, matching the SDK ABI.
             query, keys, values = (part.to(self.kv_dtype) for part in (query, keys, values))
+        output = q.new_empty((len(q), q.shape[1], value_dim))
+        result = trtllm_ragged_attention_deepseek(
+            query=query,
+            key=keys,
+            value=values,
+            out=output,
+            workspace_buffer=self._expanded_workspace,
+            seq_lens=keys_layout.lengths,
+            cum_seq_lens_q=queries.cu_lengths,
+            cum_seq_lens_kv=keys_layout.cu_lengths,
+            max_q_len=queries.max_length,
+            max_kv_len=keys_layout.max_length,
+            batch_size=len(keys_layout.lengths),
+            window_left=-1,
+            enable_pdl=False,
+            bmm1_scale=q.shape[-1] ** -0.5 if scale is None else scale,
+            bmm2_scale=1.0,
+            o_sf_scale=1.0 if causal else -1.0,
+            is_causal=causal,
+            return_lse=return_lse,
+        )
+        return result if return_lse else output
+
+    def prefill_batch(
+        self,
+        q,
+        latent,
+        key,
+        weight,
+        q_positions,
+        kv_positions,
+        *,
+        nope_dim,
+        value_dim,
+        scale=None,
+        return_lse=False,
+        causal_layout=None,
+        metadata,
+        cache,
+        layer_id,
+        cp,
+    ):
+        """One suffix launch per batch, then bounded noncausal prefix chunks."""
+        if (
+            not q.is_cuda
+            or q.dtype != torch.bfloat16
+            or len(q) == 0
+            or (q.shape[-1], value_dim) not in ((128, 128), (192, 128), (256, 256))
+        ):
+            return None
+        from tvm_ffi import use_torch_stream
+
+        from . import MLAOutput
+
+        has_prefix = bool(metadata.prefix_chunks)
         with use_torch_stream():
-            trtllm_ragged_attention_deepseek(
-                query=query,
-                key=keys,
-                value=values,
-                workspace_buffer=self._expanded_workspace,
-                seq_lens=torch.tensor([total], dtype=torch.int32, device=q.device),
-                max_q_len=tokens,
-                max_kv_len=total,
-                bmm1_scale=q.shape[-1] ** -0.5 if scale is None else scale,
-                bmm2_scale=1.0,
-                o_sf_scale=1.0,
-                batch_size=1,
-                window_left=-1,
-                cum_seq_lens_q=torch.tensor([0, tokens], dtype=torch.int32, device=q.device),
-                cum_seq_lens_kv=torch.tensor([0, total], dtype=torch.int32, device=q.device),
-                enable_pdl=False,
-                is_causal=True,
-                return_lse=False,
-                out=output,
+            result = self._run_ragged_prefill(
+                q,
+                latent,
+                key,
+                weight,
+                metadata.queries,
+                metadata.queries,
+                nope_dim=nope_dim,
+                value_dim=value_dim,
+                scale=scale,
+                causal=True,
+                return_lse=has_prefix,
             )
-        return output
+            if not has_prefix:
+                return MLAOutput(result)
+            from sglang.kernels.ops.attention.fixup_zero_kv import fixup_zero_kv_rows
+            from sglang.srt.layers.attention.merge_state import merge_state
+
+            output, lse = result
+            for chunk in metadata.prefix_chunks:
+                prefix_latent, prefix_key = chunk.gather(cache, layer_id, cp, q.dtype)
+                prefix_output, prefix_lse = self._run_ragged_prefill(
+                    q,
+                    prefix_latent,
+                    prefix_key,
+                    weight,
+                    metadata.queries,
+                    chunk.layout,
+                    nope_dim=nope_dim,
+                    value_dim=value_dim,
+                    scale=scale,
+                    causal=False,
+                    return_lse=True,
+                )
+                if chunk.has_empty:
+                    fixup_zero_kv_rows(
+                        prefix_output,
+                        prefix_lse,
+                        chunk.layout.lengths,
+                        metadata.queries.cu_lengths,
+                        metadata.queries.max_length,
+                    )
+                merged_output, merged_lse = torch.empty_like(output), torch.empty_like(lse)
+                merge_state(prefix_output, prefix_lse, output, lse, merged_output, merged_lse)
+                output, lse = merged_output, merged_lse
+        return MLAOutput(output)
+
+    def prefill(self, q, latent, key, weight, *, nope_dim, value_dim, scale=None):
+        """The same native ragged call for an unsupported batched-layout fallback."""
+        from tvm_ffi import use_torch_stream
+
+        from .prefill import RaggedLayout
+
+        queries = RaggedLayout.from_lengths((len(q),), q.device)
+        keys = RaggedLayout.from_lengths((len(latent),), q.device)
+        with use_torch_stream():
+            return self._run_ragged_prefill(
+                q,
+                latent,
+                key,
+                weight,
+                queries,
+                keys,
+                nope_dim=nope_dim,
+                value_dim=value_dim,
+                scale=scale,
+                causal=True,
+                return_lse=False,
+            )
 
     def __call__(
         self,
