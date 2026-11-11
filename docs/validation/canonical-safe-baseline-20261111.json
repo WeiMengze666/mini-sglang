@@ -1,0 +1,138 @@
+{
+  "GPUq_job": 42,
+  "runtime_production_base": "290ad026d257982aabf87484b5c8fb1c1ca0ab12",
+  "reference_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "report_sha256": "f9ab26060361390a200811cfc65686635d860d815c6599fb999e011b588e1637",
+  "manifest_sha256": "a8f84329bde132fe813dd3eb322ff1b2d95c9e85d6da298b957890190bcd4cf1",
+  "root_review_sha256": "b38fa166cfe9068e992dd397f0873442cfbe05ca112a48630bea03c649c8f6e7",
+  "throughput_window_seconds": {
+    "reference": 940.003239497,
+    "mini": 940.002012486
+  },
+  "formal": {
+    "reference": {
+      "output_token_throughput": {
+        "unit": "tokens/sec",
+        "avg": 364.19661721930964
+      },
+      "completed_request_count": {
+        "unit": "requests",
+        "avg": 493.0
+      },
+      "request_error_rate": {
+        "unit": "%",
+        "avg": 0.0
+      },
+      "total_usage_completion_tokens": {
+        "unit": "tokens",
+        "avg": 342346.0
+      },
+      "time_to_first_token": {
+        "unit": "ms",
+        "avg": 1695.6621590060852,
+        "p1": 508.01815283999997,
+        "p5": 681.8609482,
+        "p10": 731.1538807999999,
+        "p25": 833.3873709999999,
+        "p50": 1146.13877,
+        "p75": 1678.9468869999998,
+        "p90": 2538.2966688,
+        "p95": 4929.032246799996,
+        "p99": 11541.050452879981,
+        "min": 430.610283,
+        "max": 17644.265893,
+        "std": 2001.5486904331221,
+        "count": 493,
+        "sum": 835961.44439
+      },
+      "inter_token_latency": {
+        "unit": "ms",
+        "avg": 32.96143049346291,
+        "p1": 12.841676704943819,
+        "p5": 16.95048064533371,
+        "p10": 19.255579198004654,
+        "p25": 23.32342744476744,
+        "p50": 30.28831925560538,
+        "p75": 38.22252269210867,
+        "p90": 46.839070841076264,
+        "p95": 54.203193125842695,
+        "p99": 85.20139275279105,
+        "min": 0.0,
+        "max": 354.1827328181818,
+        "std": 19.78774083609353,
+        "count": 493,
+        "sum": 16249.985233277217
+      },
+      "overall_usage_prompt_cache_read_pct": {
+        "unit": "%",
+        "avg": 93.7672369789643
+      }
+    },
+    "mini": {
+      "output_token_throughput": {
+        "unit": "tokens/sec",
+        "avg": 216.37719632332093
+      },
+      "completed_request_count": {
+        "unit": "requests",
+        "avg": 323.0
+      },
+      "request_error_rate": {
+        "unit": "%",
+        "avg": 0.0
+      },
+      "total_usage_completion_tokens": {
+        "unit": "tokens",
+        "avg": 203395.0
+      },
+      "time_to_first_token": {
+        "unit": "ms",
+        "avg": 3429.8768115913313,
+        "p1": 563.32695144,
+        "p5": 991.970857,
+        "p10": 1359.2105609999999,
+        "p25": 1539.6108964999999,
+        "p50": 2401.1386039999998,
+        "p75": 3762.580834,
+        "p90": 6341.545602800001,
+        "p95": 9813.852378699994,
+        "p99": 18150.18476347996,
+        "min": 487.91391699999997,
+        "max": 19250.016835,
+        "std": 3307.44762963091,
+        "count": 323,
+        "sum": 1107850.210144
+      },
+      "inter_token_latency": {
+        "unit": "ms",
+        "avg": 68.16677737739978,
+        "p1": 27.865091235617975,
+        "p5": 33.94997126407343,
+        "p10": 38.35414321386224,
+        "p25": 51.04535510168309,
+        "p50": 65.8577434624374,
+        "p75": 80.5795574583352,
+        "p90": 95.4554692131536,
+        "p95": 102.47158167865489,
+        "p99": 124.23485079201792,
+        "min": 0.0,
+        "max": 407.1463042352941,
+        "std": 32.61999982808457,
+        "count": 323,
+        "sum": 22017.86909290013
+      },
+      "overall_usage_prompt_cache_read_pct": {
+        "unit": "%",
+        "avg": 88.68646019550893
+      }
+    }
+  },
+  "cancelled": {
+    "reference": 3,
+    "mini": 7
+  },
+  "mini_over_reference_throughput": 0.5941219278075399,
+  "performance_goal_achieved": false,
+  "runtime_changed": false,
+  "scope": "Fresh canonical whole-serving baseline only"
+}
