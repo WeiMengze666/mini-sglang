@@ -66,6 +66,7 @@ __all__ = [
     "silu_and_mul",
     "gelu_and_mul",
     "situ_and_mul",
+    "sigmoid_and_mul",
 ]
 
 
@@ -124,3 +125,41 @@ def situ_and_mul(
     if linear_beta is not None:
         u = linear_beta * torch.tanh(u / linear_beta)
     return (g * u).to(dtype)
+
+
+@cache
+def _sigmoid_mul_kernel():
+    """Resolve an optional mature kernel without requiring the SDK for fallback."""
+    from importlib import import_module
+
+    name = "sglang.kernels.ops.attention.mla_output_gate"
+    try:
+        module = import_module(name)
+    except ModuleNotFoundError as error:
+        if error.name and (name == error.name or name.startswith(error.name + ".")):
+            return None
+        raise
+    from tvm_ffi import use_torch_stream
+
+    return module.covered, module.kimi_k3_mla_output_gate, use_torch_stream
+
+
+def sigmoid_and_mul(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
+    """Multiply by sigmoid in the input dtype, preserving both rounding stages."""
+    if (
+        gate.is_cuda
+        and up.is_cuda
+        and gate.device == up.device
+        and gate.dtype == up.dtype == torch.bfloat16
+        and not (gate.requires_grad or up.requires_grad)
+        # The SDK flattens its element count into a uint32_t.
+        and up.numel() < 2**32
+        and gate.data_ptr() % 16 == up.data_ptr() % 16 == 0
+    ):
+        kernel = _sigmoid_mul_kernel()
+        if kernel is not None:
+            covered, run, stream = kernel
+            if covered(up, gate):
+                with stream():
+                    return run(up, gate)
+    return up * gate.sigmoid()
