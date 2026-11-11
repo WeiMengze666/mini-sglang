@@ -1,0 +1,328 @@
+{
+  "schema": 1,
+  "created_utc": "2026-11-11T04:53:55.827768+00:00",
+  "status": "correction_of_prior_audit_phase_inference",
+  "root_accepted": false,
+  "GPU_execution": false,
+  "SDK_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "correction": "Prior audit incorrectly inferred canonical prefillTriton from leaf linear_attn_backend/decode=Triton and missed final resolver/log. Canonical42 ordinary multi-token KDA prefill selectedFlashInfer; decode/verify selectedTriton.",
+  "actual42": {
+    "server_info_sha256": "6ccd634211d45ee581f9ad8d6a7a7b9bb5000f2c727f8bb8e98c49096d79ee61",
+    "server_log_sha256": "79d497a05d88a8818b9b4e9c159481d466ed394f756ad88c76eae5420309bb04",
+    "log_lines": {
+      "472": "[2026-11-11 00:28:25 TP0] Linear attention kernel backend: decode=triton, prefill=flashinfer, verify=triton",
+      "473": "[2026-11-11 00:28:25 TP0] KDA kernel dispatcher: decode=TritonKDAKernel, verify=TritonKDAKernel, extend=FlashInferKDAPrefillKernel packed_decode=True"
+    },
+    "leaf_flags": {
+      "linear_attn_backend": "triton",
+      "linear_attn_decode_backend": "triton",
+      "linear_attn_prefill_backend": null,
+      "linear_attn_verify_backend": null,
+      "enable_deterministic_inference": false,
+      "enable_two_batch_overlap": false
+    },
+    "prefill_graph": "disabled",
+    "gate_lower_bound": -5.0,
+    "mamba_ssm_dtype": "bfloat16",
+    "MLA_prefill_config": "trtllm_mla",
+    "MLA_decode_config": "cutedsl_mla"
+  },
+  "resolver_chain": [
+    {
+      "file": "attention_registry.py",
+      "lines": "447\u2013455",
+      "meaning": "hybridKDA caller computes flashinfer_kda_prefill_default, then resolve_linear_attn_backends(prefill_default)."
+    },
+    {
+      "file": "linear/kda_backend.py",
+      "lines": "74\u201396",
+      "meaning": "safe gate+baseTriton+!deterministic+!TBO+prefillgraph!=FULL+CUDA SM100/103 => FI default."
+    },
+    {
+      "file": "linear/utils.py",
+      "lines": "81\u2013108",
+      "meaning": "Explicitprefill leaf overrides default; unsetleaf uses prefill_default before base. Decode separate."
+    },
+    {
+      "file": "linear/kda_backend.py",
+      "lines": "479\u2013513,196\u2013214,277\u2013282",
+      "meaning": "Resolvedprefill entersdispatcher FlashInferKDAPrefillKernel; actual42 log confirms selection."
+    },
+    {
+      "file": "linear/kda_backend.py",
+      "lines": "405\u2013438,1097\u20131173",
+      "meaning": "Effectivepercall T<=1=>Triton; unsupported safe gate=>Triton. FI supports_safe_gate and track_state_snapshot; tracking alone does not reroute ordinarymultitoken FI toSG."
+    }
+  ],
+  "CPU_AST_resolution_probe": {
+    "actual_function_decision_bodies": true,
+    "imports_stubbed_noGPU": "hardwareSM103 supplied from saved runtime evidence; no torch/FI import or CUDAquery",
+    "default": "flashinfer",
+    "resolved": {
+      "decode": "triton",
+      "prefill": "flashinfer",
+      "verify": "triton"
+    },
+    "explicit_prefill_triton_override_verified": true,
+    "effective_per_packed_total_tokens": {
+      "0": "TritonKDAKernel",
+      "1": "TritonKDAKernel",
+      "2": "FlashInferKDAPrefillKernel",
+      "4": "FlashInferKDAPrefillKernel",
+      "32768": "FlashInferKDAPrefillKernel"
+    }
+  },
+  "candidate46_MLA": {
+    "actual8rank_routes": {
+      "0": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      },
+      "1": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      },
+      "2": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      },
+      "3": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      },
+      "4": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      },
+      "5": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      },
+      "6": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      },
+      "7": {
+        "observed": true,
+        "prefill": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "flashinfer",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        },
+        "decode": {
+          "backend": "minisgl.attention.base.HybridAttnBackend",
+          "kda_backend": "minisgl.attention.kda.backend.KDAAttentionBackend",
+          "kda_kernel": "sgl",
+          "mla_backend": "minisgl.attention.fi.FlashInferMLABackend"
+        }
+      }
+    },
+    "frozen_MLA_source_identity_vs_safe34": {
+      "attention/__init__.py": {
+        "safe34_sha256": "a429ac1336503aa5676cc127ab99bffec30b5ee88c1bdaa2d857aa79ecce5edb",
+        "candidate46_sha256": "a429ac1336503aa5676cc127ab99bffec30b5ee88c1bdaa2d857aa79ecce5edb",
+        "identical": true
+      },
+      "attention/base.py": {
+        "safe34_sha256": "f1659b78416b540078eafaa0b8b710546c6ae972b8b39b98ee428cc1b4b00149",
+        "candidate46_sha256": "f1659b78416b540078eafaa0b8b710546c6ae972b8b39b98ee428cc1b4b00149",
+        "identical": true
+      },
+      "attention/fi.py": {
+        "safe34_sha256": "8a885c5c04fdae0b96f471760095177301aaf1b500dc25a765cd4b6cbf65ebb4",
+        "candidate46_sha256": "8a885c5c04fdae0b96f471760095177301aaf1b500dc25a765cd4b6cbf65ebb4",
+        "identical": true
+      },
+      "attention/mla/backend.py": {
+        "safe34_sha256": "e4359e1b3b4d23579a1b71826fab37a92f497015f2244c98a309ee3bdb561e22",
+        "candidate46_sha256": "e4359e1b3b4d23579a1b71826fab37a92f497015f2244c98a309ee3bdb561e22",
+        "identical": true
+      },
+      "attention/mla/flashinfer.py": {
+        "safe34_sha256": "b587f25a4df69f348b45e8e9c878a80efa228ebfbcfbf6d23403556766f105b2",
+        "candidate46_sha256": "b587f25a4df69f348b45e8e9c878a80efa228ebfbcfbf6d23403556766f105b2",
+        "identical": true
+      },
+      "attention/mla/cutedsl.py": {
+        "safe34_sha256": "d4afe892409dda04fd95fa00e0c860fb657051c1eee3d5db1a5e4f08198e6434",
+        "candidate46_sha256": "d4afe892409dda04fd95fa00e0c860fb657051c1eee3d5db1a5e4f08198e6434",
+        "identical": true
+      }
+    },
+    "finding": "fi andsgl creators both construct the sameFlashInferMLABackend(config). Outerphasewrapper routesmetadata/forward to respectiveinstance; it does not byitself select a differentMLA numericalkernel. No source evidence for an MLAkernel-change confound caused solelybyfi,sgl. Differentinstances/batches/workspace/lifetime maystillneed fullpath investigation.",
+    "conditional_mature_calls": "Miniadapterprefill185\u2013223 callsFI publictrtllm_ragged_attention_deepseek withFP8QKVcast; compatibledecode111\u2013170 usesCuTeMLADecodePlan. This describes source capability; actualpercall shapes/kernelIO were nottraced by these classrecords. Native42 prefillconfiguredtrtllm_mla, decodeflashinfer withactualCuteDSLmonolithic logs. NamesFIvsTRTLLM alone do notprove differentmath."
+  },
+  "what_remains_true": [
+    "SG additiveepsilon1e-6/BF16 QK materialization vs FI floor1e-24/FP32 fuseddecay and sigmoid/scan differences remain sourceverified portfolio semantics; they do not establish FI noncanonical.",
+    "FI public normalization-off eligibility limit and no double-normalization compensation remain valid.",
+    "Quality46 remains1275/1319,0invalid/0trunc,0wins/9loss vsnative10 and4/7MoEtactic changes vs41; no singlecause attribution.",
+    "No quality/default/performance acceptance or GPUsubmission follows this correction; FICPUcheckpointV3 and SGalternate retain their existing component scope."
+  ],
+  "old_artifacts_superseded_only_for_stated_interpretation": [
+    {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-fi-prefill-semantics-audit/audit.json",
+      "sha256": "57b130edbd98a6c4997a49497a2a119d749cc1cd13cf77a7c1832eefc64cc544",
+      "locations": [
+        "/actual_native42/backend",
+        "/boundaries/0/finding",
+        "canonical-Triton labels in boundaries and CPU toy-value labels"
+      ],
+      "correction": "Replace all-phase triton inference with per-phase actual selection; SG-vsFI formulas remain valid portfolio comparison, not canonical-vsnoncanonical conclusion.",
+      "action": "preserve bytes; interpret with this correction"
+    },
+    {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-fi-prefill-semantics-audit/REPORT.md",
+      "sha256": "aa72d4fd8139e252b277e552c1ef22cfa59d2effed9f500776428686bce8e804",
+      "locations": [
+        "line3",
+        "canonical-Triton wording at31/43/55"
+      ],
+      "correction": "42 ordinary multitoken prefill selectedFI; officialFIcaller was not merely an unrun alternative.",
+      "action": "preserve bytes; interpret with this correction"
+    },
+    {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-fi-prefill-abi-audit/audit.json",
+      "sha256": "5f92ea6bdc0aec22a9cf2252fe37f4c6e9e4529963b08e90086e843c44ae8993",
+      "locations": [
+        "/current_acceptance/no_promotion_reason",
+        "/current_acceptance/FI_V3_autoGPU_driver"
+      ],
+      "correction": "Withdraw noncanonical-normalization pause rationale; quality/adaptation/qualification negatives remain and no automatic GPUauthorization is inferred.",
+      "action": "preserve bytes; interpret with this correction"
+    },
+    {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-fi-prefill-abi-audit/APPENDIX.md",
+      "sha256": "e436964e4605e6745f2ad06ec385f0ef0f42e1446dc6e2b7caab44d2107793d4",
+      "locations": [
+        "line5",
+        "line7"
+      ],
+      "correction": "Withdraw FI-noncanonical automaticcache-base rationale; SG normalization/API is a valid alternate, not42 default prefill.",
+      "action": "preserve bytes; interpret with this correction"
+    },
+    {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-sg-packed-prefill-plan/PLAN.md",
+      "sha256": "8b5be79ab7fe1f82ab15adeca4b541c69bc328939071f1a1b0375855065811c6",
+      "locations": [
+        "title",
+        "lines5/9 canonical wording"
+      ],
+      "correction": "Relabel plainSG packed as generic alternate. Its thin adapter/tracking source plan and qualification needs remain valid.",
+      "action": "preserve bytes; interpret with this correction"
+    },
+    {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-sg-packed-prefill-plan/plan.json",
+      "sha256": "30d6ca99556dcf2372ff87c4e4601a5bf29187621163620fab49c1463e7a3ed3",
+      "locations": [
+        "artifact context/title via PLAN.md"
+      ],
+      "correction": "Source plan still valid; no claim it restores42 default normalization.",
+      "action": "preserve bytes; interpret with this correction"
+    }
+  ],
+  "receipts_preserved": [
+    "42 paired measurement report/metrics and underlyingraw data remain valid; rawleaf flags remain accurate, onlyprefill interpretationcorrected.",
+    "46 fullquality/source/startup report remains valid; no score/scorer/rawrecord change.",
+    "39 component/35MoE/37norm/EngineV2/autoV3 CPU receipts retain originalscoped boundaries; none becomes newGPUacceptance."
+  ],
+  "unknowns": [
+    "No complete percall canonicalFI/T<=1 fallback counts or kernelIO dump.",
+    "Officialofflinequality10 prefillselection is beingchecked separately, not inferred solelyfrom42 serving.",
+    "No proof of completeMini/native numeric equivalence from selecting same recurrence portfolio."
+  ],
+  "source_sha256": {
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-safe-baseline-paired-prepared/run-reference/server-info.json": "6ccd634211d45ee581f9ad8d6a7a7b9bb5000f2c727f8bb8e98c49096d79ee61",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/serving-safe-baseline-paired-prepared/run-reference/server.log": "79d497a05d88a8818b9b4e9c159481d466ed394f756ad88c76eae5420309bb04",
+    "/data/models/Kimi-K3/config.json": "9710e121a58d03ac92c8d6da287a19541994319afbbe6d6202af001ffd379213",
+    "/home/axis/mengze/mini-sglang/deps/sglang-baa9bef/python/sglang/srt/layers/attention/linear/kda_backend.py": "10ebda9c1c71a7d5ce0b5bb3044ab7ff01f35b3afd3012ed6a4f4191334ab278",
+    "/home/axis/mengze/mini-sglang/deps/sglang-baa9bef/python/sglang/srt/layers/attention/linear/utils.py": "16f48557692b6909c1ac5685001775c177ff463696854ed206a592258f8a6349",
+    "/home/axis/mengze/mini-sglang/deps/sglang-baa9bef/python/sglang/srt/layers/attention/attention_registry.py": "734c5fb9f563904e383bbcc419d049a0911a0a38c2899df12dc862f5770aeb26",
+    "/home/axis/mengze/mini-sglang/deps/sglang-baa9bef/python/sglang/srt/layers/attention/linear/kernels/kda_flashinfer_prefill.py": "3389269a5ac0c87b17f7700921fc832aba7b3999d84184cdfd757bf856da13c7",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-moe-fi-prefill-prepared/review/startup-audit.json": "d5cd82f22fbb6dca156fac40ac02b5bc652ad729449158503bce9855896752c0",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-moe-fi-prefill-prepared/inputs.json": "585c11cdea8ac4f22160b8537c24a88df727419e7a36c3cb08f5a29ac1f76077",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-fi-prefill-candidate/python/minisgl/attention/__init__.py": "a429ac1336503aa5676cc127ab99bffec30b5ee88c1bdaa2d857aa79ecce5edb",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-fi-prefill-candidate/python/minisgl/attention/base.py": "f1659b78416b540078eafaa0b8b710546c6ae972b8b39b98ee428cc1b4b00149",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-fi-prefill-candidate/python/minisgl/attention/fi.py": "8a885c5c04fdae0b96f471760095177301aaf1b500dc25a765cd4b6cbf65ebb4",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-fi-prefill-candidate/python/minisgl/attention/mla/backend.py": "e4359e1b3b4d23579a1b71826fab37a92f497015f2244c98a309ee3bdb561e22",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-fi-prefill-candidate/python/minisgl/attention/mla/flashinfer.py": "b587f25a4df69f348b45e8e9c878a80efa228ebfbcfbf6d23403556766f105b2",
+    "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-moe-fi-prefill-candidate/python/minisgl/attention/mla/cutedsl.py": "d4afe892409dda04fd95fa00e0c860fb657051c1eee3d5db1a5e4f08198e6434"
+  }
+}

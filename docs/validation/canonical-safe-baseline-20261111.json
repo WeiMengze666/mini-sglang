@@ -134,5 +134,14 @@
   "mini_over_reference_throughput": 0.5941219278075399,
   "performance_goal_achieved": false,
   "runtime_changed": false,
-  "scope": "Fresh canonical whole-serving baseline only"
+  "scope": "Fresh canonical whole-serving baseline only",
+  "actual_KDA_dispatch_correction": {
+    "native_prefill": "FlashInferKDAPrefillKernel for covered multi-token prefill; Triton for totalT<=1 or unsupported safe-gate cases",
+    "native_decode": "TritonKDAKernel",
+    "native_verify": "TritonKDAKernel",
+    "evidence": "Actual GPUq42 startup server.log lines472-473",
+    "server_log_sha256": "79d497a05d88a8818b9b4e9c159481d466ed394f756ad88c76eae5420309bb04",
+    "correction_sha256": "16b5c77c45a57eb9c23d2c93b4ca3c1fdf3fb145be7bde72023ef258b21f1937",
+    "measurements_changed": false
+  }
 }
