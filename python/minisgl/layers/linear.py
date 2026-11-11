@@ -40,8 +40,8 @@ class MergedLinear:
 
     Parameter names stay on the original operators. Predeclared meta views let
     the weight loader place the group in one allocation, which this plan reuses.
-    ``forward`` retains FP32 accumulators; kernel backends may consume the
-    aligned weight directly for their own supported output formats.
+    ``forward`` retains FP32 accumulators by default; input-dtype output uses
+    the shared dense linear dispatch without an intermediate precision change.
     """
 
     def __init__(self, weight, widths, names):
@@ -96,9 +96,13 @@ class MergedLinear:
             op.weight = view
         return cls(weight, widths, tuple(projections))
 
-    def forward(self, x):
+    def forward(self, x, *, output_dtype=torch.float32):
         flat = x.reshape(-1, x.shape[-1])
-        if (
+        if output_dtype == x.dtype and output_dtype != torch.float32:
+            output = linear_bf16(flat, self.weight)
+        elif output_dtype != torch.float32:
+            raise ValueError("Merged projections support input dtype or float32 output")
+        elif (
             x.is_cuda
             and x.dtype == self.weight.dtype
             and x.dtype in (torch.bfloat16, torch.float16)

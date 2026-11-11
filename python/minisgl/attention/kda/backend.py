@@ -42,7 +42,7 @@ class KDAAttentionBackend(BaseAttnBackend):
                     layer, x, cache.recurrent, layer_id, indices, metadata
                 )
                 if result is not None:
-                    return layer.finish(x, result.output, normed=result.normed)
+                    return layer.finish(x, result.output, normed=result.normed, gate=result.gate)
             initial = cache.recurrent.get_kda_batch(layer_id, indices)
             if self.kernel.decode is not None and is_decode:
                 fused = layer.decode(x, initial, kernel=self.kernel)
@@ -55,24 +55,24 @@ class KDAAttentionBackend(BaseAttnBackend):
         )
         if single_step:
             output, final = layer.update(
-                *(part.unsqueeze(1) for part in projected),
+                *(part.unsqueeze(1) for part in projected[:5]),
                 initial,
                 kernel=self.kernel,
                 is_decode=is_decode,
             )
             cache.recurrent.set_kda_batch(layer_id, indices, final)
-            return layer.finish(x, output[:, 0])
+            return layer.finish(x, output[:, 0], gate=projected.gate)
         outputs, offset = [], 0
         for req in batch.reqs:
             rows = slice(offset, offset + req.extend_len)
             state = cache.get_kda_state(layer_id, req.table_idx)
             output, state = layer.update(
-                *(part[rows] for part in projected), state, kernel=self.kernel
+                *(part[rows] for part in projected[:5]), state, kernel=self.kernel
             )
             cache.set_kda_state(layer_id, req.table_idx, state)
             outputs.append(output)
             offset += req.extend_len
-        return layer.finish(x, torch.cat(outputs))
+        return layer.finish(x, torch.cat(outputs), gate=projected.gate)
 
     def forward(self, q, k, v, layer_id, batch):
         raise NotImplementedError("KDA uses projected gates and recurrent state")

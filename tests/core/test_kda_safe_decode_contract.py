@@ -7,7 +7,12 @@ import pytest
 import torch
 from minisgl.attention.kda import sgl
 from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
-from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
+from minisgl.attention.kda.registry import (
+    KDADecodeResult,
+    KDAKernelSpec,
+    KDAProjection,
+    get_kda_kernel,
+)
 
 
 @pytest.mark.parametrize("state_dtype", [torch.bfloat16, torch.float32])
@@ -72,7 +77,7 @@ def test_indexed_callback_receives_shared_metadata_without_rebuilding_offsets():
         reqs=[SimpleNamespace(extend_len=1) for _ in range(2)],
         attn_metadata=metadata,
     )
-    layer = SimpleNamespace(finish=lambda x, output, normed: output)
+    layer = SimpleNamespace(finish=lambda x, output, normed, gate=None: output)
     x = torch.zeros(2, 3)
     torch.testing.assert_close(backend.forward_layer(layer, 7, x, batch, cache, None), x + 1)
     assert calls == [metadata.cu_seqlens_q]
@@ -124,7 +129,8 @@ def test_indexed_safe_dispatch_keeps_metadata_and_pool_identity(monkeypatch, bou
         calls.append("packed")
         kw["out"].fill_(1)
 
-    monkeypatch.setattr(sgl, "project", lambda op, value: projected)
+    gate = torch.randn(2, 256, dtype=torch.bfloat16)
+    monkeypatch.setattr(sgl, "project", lambda op, value: KDAProjection(*projected, gate=gate))
     monkeypatch.setattr(sgl, "_safe_decode", safe)
     monkeypatch.setattr(sgl, "_safe_decode_kernel", lambda: calls.append("ready"))
     monkeypatch.setattr(sgl, "_kernels", lambda: (None, packed, nullcontext))
@@ -132,6 +138,7 @@ def test_indexed_safe_dispatch_keeps_metadata_and_pool_identity(monkeypatch, bou
 
     monkeypatch.setattr(causal_conv, "_kernels", lambda: (None, convolution))
     result = sgl.indexed_decode(layer, x, pool, 7, indices, metadata)
+    assert result.gate is gate
     assert calls == (["ready", "safe"] if bound is not None else ["packed"])
     assert result.output.shape == (2, 2, 128) and result.state is None and not result.normed
 

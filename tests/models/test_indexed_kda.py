@@ -102,7 +102,10 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
             previous = pool.get_kda_batch(0, indices)
             projected = project(layer, x)
             expected, final = layer.update(
-                *(part.unsqueeze(1) for part in projected), previous, kernel=kernel, is_decode=True
+                *(part.unsqueeze(1) for part in projected[:5]),
+                previous,
+                kernel=kernel,
+                is_decode=True,
             )
             if graph_mode:
                 graph.replay()

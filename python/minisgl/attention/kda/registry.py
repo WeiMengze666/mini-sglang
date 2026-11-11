@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, NamedTuple
 
 import torch
 from minisgl.utils import Registry
@@ -23,12 +23,23 @@ if TYPE_CHECKING:
     from .reference import KDAState
 
 RecurrenceKernel = Callable[..., tuple["torch.Tensor", "torch.Tensor"]]
-ProjectionKernel = Callable[["KDALayer", "torch.Tensor"], tuple["torch.Tensor", ...]]
+ProjectionKernel = Callable[["KDALayer", "torch.Tensor"], "KDAProjection"]
 DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
 IndexedDecodeKernel = Callable[
     ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor", "KDAMetadata"],
     "KDADecodeResult | None",
 ]
+
+
+class KDAProjection(NamedTuple):
+    """Core attention projections and an optional explicitly carried output gate."""
+
+    q: torch.Tensor
+    k: torch.Tensor
+    v: torch.Tensor
+    forget: torch.Tensor
+    beta: torch.Tensor
+    gate: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -38,12 +49,14 @@ class KDADecodeResult:
     ``normed`` is true when the backend already applied KDA's gated output
     normalization. The layer owns the output projection and collective.
     Functional decode returns state; indexed decode updates its owned pool and
-    leaves ``state`` unset.
+    leaves ``state`` unset. The optional gate is carried to the layer when
+    output normalization remains outside the kernel.
     """
 
     output: "torch.Tensor"
     state: "KDAState | None" = None
     normed: bool = False
+    gate: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)

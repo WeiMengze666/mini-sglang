@@ -4,6 +4,8 @@ from functools import cache
 
 import torch
 
+from .registry import KDAProjection
+
 
 @cache
 def _kernels():
@@ -162,12 +164,14 @@ def project(layer, x):
         bfa = gemm(x, plan.weight)
         fa_width, beta_width = plan.widths
         forget = gemm(bfa[..., :fa_width], weight)
-    return (
-        layer.q_proj.forward(x),
-        layer.k_proj.forward(x),
-        layer.v_proj.forward(x),
+    q, k, v, gate = layer.project_qkv(x)
+    return KDAProjection(
+        q,
+        k,
+        v,
         forget.reshape(-1, layer._heads, layer._dim),
         bfa[..., fa_width : fa_width + beta_width],
+        gate,
     )
 
 
@@ -215,9 +219,10 @@ def decode(layer, x, state):
             state.conv.permute(0, 3, 1, 2).flatten(2).clone(memory_format=torch.contiguous_format)
         )
         pool = state.recurrent.transpose(-1, -2).clone(memory_format=torch.contiguous_format)
-    q, k, v, forget, beta = project(layer, x)
+    projected = project(layer, x)
+    q, k, v, forget, beta = projected[:5]
     mixed = torch.cat((q, k, v), dim=-1)
-    gate = layer.g_proj.forward(x)
+    gate = projected.gate if projected.gate is not None else layer.g_proj.forward(x)
     indices = torch.arange(batch, device=x.device, dtype=torch.int32)
     native, stream = _decode_kernels()
     forget = forget.flatten(1)
@@ -280,7 +285,8 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
             [op.weight.squeeze(1) for op in (layer.q_conv1d, layer.k_conv1d, layer.v_conv1d)]
         ),
     )
-    q, k, v, forget, beta = project(layer, x)
+    projected = project(layer, x)
+    q, k, v, forget, beta = projected[:5]
     _, update_conv = conv_kernels()
     _, update_kda, stream = _kernels()
     with stream():
@@ -318,4 +324,4 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
                 use_qk_l2norm_in_kernel=True,
             )
             output = packed[:, 0]
-    return KDADecodeResult(output=output)
+    return KDADecodeResult(output=output, gate=projected.gate)

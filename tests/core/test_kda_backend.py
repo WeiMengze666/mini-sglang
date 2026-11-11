@@ -6,6 +6,7 @@ from minisgl.attention.kda.registry import (
     KDA_KERNELS,
     KDADecodeResult,
     KDAKernelSpec,
+    KDAProjection,
     get_kda_kernel,
     load_kda_provider,
 )
@@ -80,15 +81,15 @@ def test_one_token_prefill_keeps_prefill_kernel_contract(
 
         def project(self, x):
             events.append("project")
-            return (x,)
+            return KDAProjection(x, x, x, x, x)
 
-        def update(self, projected, state, *, kernel, is_decode):
+        def update(self, projected, k, v, forget, beta, state, *, kernel, is_decode):
             events.append("update")
             assert is_decode == batch.is_decode
             assert projected.shape == (2, 1, 3) and state == "initial"
             return projected + 1, "updated"
 
-        def finish(self, x, output):
+        def finish(self, x, output, *, gate=None):
             events.append("finish")
             return output
 
@@ -125,7 +126,7 @@ def test_projection_backend_and_weight_reload_own_their_metadata():
         return op.project(value * 0.5)
 
     spec = KDAKernelSpec("projection", get_kda_kernel("torch").recurrence, project=project)
-    output, expected_state = layer.update(*layer.project(x * 0.5))
+    output, expected_state = layer.update(*layer.project(x * 0.5)[:5])
     expected = layer.finish(x, output)
     actual, state = layer.forward(x, kernel=spec)
     assert calls == [layer]

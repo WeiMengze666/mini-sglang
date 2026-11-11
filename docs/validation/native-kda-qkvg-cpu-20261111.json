@@ -1,0 +1,26 @@
+{
+  "created_utc": "2026-11-11T04:01:49.975946+00:00",
+  "topic": "kimi-k3-kda-qkvg-20261111",
+  "publication_parent": "c47cadcd0bfe1b88ec4f78ef4e142d9dc13ed6c3",
+  "runtime_candidate_base": "290ad026d257982aabf87484b5c8fb1c1ca0ab12",
+  "scope": "Isolated CPU-qualified adapter candidate; not promoted into the default runtime",
+  "frozen_candidate_patch_sha256": "b722886d8e1a13b5c86392afb52e092ea004df6c64b29e596295c32ef9f7c11b",
+  "frozen_runtime_patch_sha256": "1fd47d5b4bfd44326a6e0379805efd2878821f6d66fad0720f0c38e65746c18f",
+  "frozen_manifest_sha256": "55844d78de9c3dbbe7340384535ae8cf9de8055eeddbf7c84e0072134bbdfa73",
+  "runtime_python_files_byte_identical": 140,
+  "CPU": {
+    "passed": 860,
+    "conditional_skipped": 43,
+    "new_cases": 30
+  },
+  "GPU_component_accepted": false,
+  "model_quality_accepted": false,
+  "serving_performance_accepted": false,
+  "default_promotion": false,
+  "next_priority": "Native-versus-safe-baseline Nsight critical-path attribution, queued GPUq54",
+  "frozen_evidence_paths": {
+    "README.md": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-kda-qkvg-prepared/README.md",
+    "manifest.json": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-kda-qkvg-prepared/manifest.json",
+    "source-pins.json": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-kda-qkvg-prepared/source-pins.json"
+  }
+}

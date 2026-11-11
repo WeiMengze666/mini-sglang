@@ -9,10 +9,15 @@ from minisgl.attention.kda import (
     causal_conv1d,
     gated_rms_norm,
 )
-from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
+from minisgl.attention.kda.registry import (
+    KDADecodeResult,
+    KDAKernelSpec,
+    KDAProjection,
+    get_kda_kernel,
+)
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
-from minisgl.layers.linear import Linear
+from minisgl.layers.linear import Linear, MergedLinear
 from minisgl.layers.norm import TorchRMSNorm
 
 
@@ -25,6 +30,7 @@ class KDALayer(BaseOP):
     def __init__(self, config: KDAConfig) -> None:
         self._config = config
         self._kernel_plans = {}
+        self._qkvg = None
         self._tp = TensorParallel()
         self._heads = local_size(config.num_heads, self._tp.size, "KDA heads")
         self._dim = config.head_dim
@@ -53,6 +59,16 @@ class KDALayer(BaseOP):
 
     def after_load(self):
         self._kernel_plans.clear()
+        self._qkvg = None
+        weight = getattr(self.q_proj, "weight", None)
+        if (
+            self._full_gate
+            and isinstance(weight, torch.Tensor)
+            and weight.dtype in (torch.bfloat16, torch.float16, torch.float32)
+        ):
+            self._qkvg = MergedLinear.try_create(
+                {"q": self.q_proj, "k": self.k_proj, "v": self.v_proj, "gate": self.g_proj}
+            )
 
     def prepare_kernel(self, name, create):
         """Cache weight-dependent backend metadata until the next weight load."""
@@ -60,14 +76,24 @@ class KDALayer(BaseOP):
             self._kernel_plans[name] = create()
         return self._kernel_plans[name]
 
+    def project_qkv(self, x):
+        """Share a dense input projection without retaining per-forward gate tensors."""
+        plan = self._qkvg
+        if plan is not None and (x.dtype, x.device) == (plan.weight.dtype, plan.weight.device):
+            projected = plan.forward(x, output_dtype=x.dtype)
+            return projected["q"], projected["k"], projected["v"], projected["gate"]
+        return self.q_proj.forward(x), self.k_proj.forward(x), self.v_proj.forward(x), None
+
     def project(self, x):
         """Project all real batch rows before touching request-owned state."""
-        return (
-            self.q_proj.forward(x),
-            self.k_proj.forward(x),
-            self.v_proj.forward(x),
+        q, k, v, gate = self.project_qkv(x)
+        return KDAProjection(
+            q,
+            k,
+            v,
             self.f_b_proj.forward(self.f_a_proj.forward(x)).reshape(-1, self._heads, self._dim),
             self.b_proj.forward(x),
+            gate,
         )
 
     def update(
@@ -138,15 +164,16 @@ class KDALayer(BaseOP):
             raise TypeError("KDA decode backend must return KDADecodeResult or None")
         if result.state is None:
             raise ValueError("Functional KDA decode must return its updated state")
-        return self.finish(x, result.output, normed=result.normed), result.state
+        return self.finish(x, result.output, normed=result.normed, gate=result.gate), result.state
 
-    def finish(self, x, output, *, normed=False):
+    def finish(self, x, output, *, normed=False, gate=None):
         if not normed:
-            gate = (
-                self.g_proj.forward(x)
-                if self._full_gate
-                else self.g_b_proj.forward(self.g_a_proj.forward(x))
-            )
+            if gate is None:
+                gate = (
+                    self.g_proj.forward(x)
+                    if self._full_gate
+                    else self.g_b_proj.forward(self.g_a_proj.forward(x))
+                )
             output = gated_rms_norm(
                 output, gate.reshape_as(output), self.o_norm.weight, self.o_norm.eps
             )
@@ -162,5 +189,5 @@ class KDALayer(BaseOP):
     ):
         kernel = get_kda_kernel("torch") if kernel is None else kernel
         projected = self.project(x) if kernel.project is None else kernel.project(self, x)
-        output, state = self.update(*projected, state, kernel=kernel)
-        return self.finish(x, output), state
+        output, state = self.update(*projected[:5], state, kernel=kernel)
+        return self.finish(x, output, gate=projected.gate), state
