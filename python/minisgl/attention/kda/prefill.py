@@ -24,7 +24,7 @@ def _conv_kernel():
     return causal_conv1d_fn
 
 
-def prepare(layer, x, pool, layer_id, indices, metadata):
+def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
     """Validate before mutation, then return packed projections and original V,K state.
 
     Callers select/load their recurrence before entering this function. Once the
@@ -82,10 +82,20 @@ def prepare(layer, x, pool, layer_id, indices, metadata):
         raise ValueError("Native KDA prefill projections must be BF16 on the input device")
     _, _, stream = _kernels()
     conv_fn = _conv_kernel()
+    raw = torch.cat((q, k, v), dim=-1)
+    if checkpoint_conv:
+        tracking = metadata.checkpoints
+        if tracking is None or len(checkpoint_conv) != len(tracking.plans):
+            raise ValueError("Convolution checkpoint destinations do not match metadata")
+        windows = raw.index_select(0, tracking.conv_indices.flatten()).view(
+            len(checkpoint_conv), layer._config.conv_kernel_size - 1, 3, heads * dim
+        )
+        for destination, window in zip(checkpoint_conv, windows):
+            destination.copy_(window.permute(1, 2, 0))
     # Metadata, projections and both kernel imports are ready before state writes.
     with stream():
         mixed = conv_fn(
-            torch.cat((q, k, v), dim=-1).t(),
+            raw.t(),
             weights,
             None,
             conv,

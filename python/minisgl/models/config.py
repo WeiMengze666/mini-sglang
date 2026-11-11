@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
+    from minisgl.attention.config import KDAConfig, MLAConfig
     from minisgl.kvcache.config import HybridCacheConfig
 
 from transformers import PretrainedConfig
@@ -39,6 +40,7 @@ class ModelConfig:
     architectures: list[str]
     hf_config: PretrainedConfig | None = None
     cache_config: HybridCacheConfig | None = None
+    attention_configs: tuple[tuple[int, KDAConfig | MLAConfig], ...] = ()
 
     @property
     def is_moe(self) -> bool:
@@ -61,10 +63,12 @@ class ModelConfig:
                     setattr(config, attr, getattr(top, attr))
 
         if getattr(config, "model_type", None) == "kimi_linear":
-            from .kimi_config import KimiTextConfig, cache_config
+            from .kimi_config import KimiTextConfig, cache_config, kda_config, mla_config
 
             kimi = KimiTextConfig(**config.to_dict())
             kimi.validate_text()
+            cache = cache_config(kimi)
+            kda, mla = kda_config(kimi), mla_config(kimi)
             return cls(
                 num_layers=kimi.num_hidden_layers,
                 num_qo_heads=kimi.num_attention_heads,
@@ -90,7 +94,11 @@ class ModelConfig:
                 model_type="kimi_linear",
                 architectures=["KimiK3LinearForCausalLM"],
                 hf_config=kimi,
-                cache_config=cache_config(kimi),
+                cache_config=cache,
+                attention_configs=tuple(
+                    (i, kda if i in cache.recurrent_layers else mla)
+                    for i in range(kimi.num_hidden_layers)
+                ),
             )
 
         num_kv_heads = getattr(config, "num_key_value_heads", config.num_attention_heads)

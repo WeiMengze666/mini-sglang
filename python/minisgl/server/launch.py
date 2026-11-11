@@ -45,10 +45,10 @@ def _stop_workers(workers):
             worker.join(timeout=5)
 
 
-def _abort_startup(error: BaseException) -> NoReturn:
-    """Exit this owned worker; the startup parent detects it and stops peers."""
+def _abort_worker(error: BaseException) -> NoReturn:
+    """Exit this owned worker; the parent detects it and stops peers."""
     init_logger(__name__).error(
-        "Runtime preparation failed; terminating the owned startup worker",
+        "Owned worker failed; terminating the owned worker",
         exc_info=(type(error), error, error.__traceback__),
     )
     os._exit(1)
@@ -56,13 +56,13 @@ def _abort_startup(error: BaseException) -> NoReturn:
 
 def _run_scheduler(args: ServerArgs, ack_queue: mp.Queue[str]) -> None:
     import torch
-    from minisgl.engine.engine import StartupOwner
+    from minisgl.engine.engine import WorkerOwner
     from minisgl.scheduler import Scheduler
 
     with torch.inference_mode():
         # This entry runs in the fresh spawn process owned by launch_server.
-        owner = StartupOwner(fresh_worker=True, abort=_abort_startup)
-        scheduler = Scheduler(args, startup_owner=owner)
+        owner = WorkerOwner(fresh_worker=True, abort_callback=_abort_worker)
+        scheduler = Scheduler(args, worker_owner=owner)
         scheduler.sync_all_ranks()
 
         if args.tp_info.is_primary():

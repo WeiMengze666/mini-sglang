@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Callable, Dict, Iterator, NamedTuple, NoReturn, Tuple
@@ -44,7 +45,7 @@ class ForwardOutput(NamedTuple):
 
 
 @dataclass(frozen=True)
-class StartupOwner:
+class WorkerOwner:
     """Borrow a launcher's fresh FI ownership assertion and fatal worker abort.
 
     Freshness excludes ambient FI contexts/stores and concurrent FI users; it
@@ -52,11 +53,18 @@ class StartupOwner:
     """
 
     fresh_worker: bool
-    abort: Callable[[BaseException], NoReturn]
+    abort_callback: Callable[[BaseException], NoReturn]
+
+    def abort(self, error: BaseException) -> NoReturn:
+        """Enforce owned-worker termination before device resources can unwind."""
+        try:
+            self.abort_callback(error)
+        finally:
+            os._exit(1)
 
 
 class Engine:
-    def __init__(self, config: EngineConfig, *, startup_owner: StartupOwner | None = None):
+    def __init__(self, config: EngineConfig, *, worker_owner: WorkerOwner | None = None):
         assert not torch.cuda.is_initialized()
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         configure_parallel(dcp_size=config.dcp_size, ep_size=config.ep_size)
@@ -70,6 +78,7 @@ class Engine:
         self.stream = torch.cuda.Stream()
         torch.cuda.set_stream(self.stream)
         self.dtype = config.dtype
+        self.worker_owner = worker_owner
         self.ctx = Context(config.logical_page_size)
         self.ctx.bf16_precision = resolve_bf16_precision(config.bf16_precision)
         set_global_ctx(self.ctx)
@@ -110,7 +119,8 @@ class Engine:
 
         if (
             config.model_config.is_moe
-            and startup_owner is not None
+            and worker_owner is not None
+            and worker_owner.fresh_worker
             and self.ctx.bf16_precision == "default"
         ):
             try:
@@ -127,8 +137,8 @@ class Engine:
                         local_rows=(config.max_running_req,),
                         cpu_group=resource.group if resource is not None else None,
                         precision=self.ctx.bf16_precision,
-                        fresh_worker=startup_owner.fresh_worker,
-                        abort=startup_owner.abort,
+                        fresh_worker=worker_owner.fresh_worker,
+                        abort=worker_owner.abort,
                     ),
                 )
                 # Normal completion only: unknown device failures terminate the owned
@@ -136,8 +146,8 @@ class Engine:
                 if resource is not None:
                     resource.close()
             except BaseException as error:
-                startup_owner.abort(error)
-                raise RuntimeError("Startup abort callback returned") from error
+                worker_owner.abort(error)
+                raise RuntimeError("Worker abort callable returned") from error
 
         # ======================= KV cache initialization ========================
         self.num_pages = self._determine_num_pages(init_free_memory, config)
@@ -154,6 +164,7 @@ class Engine:
             unified_memory=config.enable_unified_memory,
             enable_cache_overlap=config.enable_cache_overlap,
             state_dtype=config.recurrent_state_dtype,
+            device_abort=(worker_owner.abort if worker_owner is not None else None),
         )
 
         # ======================= Page table initialization ========================
@@ -170,6 +181,27 @@ class Engine:
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
             config.attention_backend, config.model_config
         )
+        self.checkpoint_quantum = _prepare_checkpoint_model(
+            self.attn_backend,
+            config.model_config.attention_configs,
+            self.tp_cpu_group if config.model_config.has_recurrent_state else None,
+            (
+                str(self.dtype),
+                str(config.recurrent_state_dtype),
+                self.ctx.bf16_precision,
+                config.logical_page_size,
+                repr(config.model_config.cache_config),
+                config.tp_info.size,
+                config.dcp_size,
+                config.ep_size,
+            ),
+            enabled=worker_owner is not None and worker_owner.fresh_worker,
+        )
+        if (
+            getattr(config, "state_cache_strategy", "auto") == "extra_buffer"
+            and self.checkpoint_quantum is None
+        ):
+            raise ValueError("extra_buffer requires an available checkpoint/lease backend capability")
 
         # ======================= Sampler initialization ========================
         self.sampler = Sampler(self.device, config.model_config.vocab_size)
@@ -356,11 +388,7 @@ class Engine:
             # token budget after subtracting each rank's own state reservation.
             before = self._initial_free_memory
             available = int(config.memory_ratio * before) - (before - self._local_free_memory)
-            cached = (
-                getattr(config, "max_cached_states", 0)
-                if getattr(config, "cache_type", "hybrid") != "naive"
-                else 0
-            )
+            cached = 0
             overlap = getattr(config, "enable_cache_overlap", False)
             ratio = getattr(config, "state_memory_ratio", None)
             if ratio is not None:
@@ -374,7 +402,7 @@ class Engine:
                         state_bytes,
                         config.max_running_req,
                         ratio=ratio,
-                        scratch_slots=config.max_running_req if overlap else 0,
+                        scratch_slots=(2 if overlap else 1) * config.max_running_req,
                     )
                 except MemoryError:
                     cached = 0  # all ranks must reach the capacity collective
@@ -387,7 +415,7 @@ class Engine:
                     raise MemoryError(
                         "State budget on a TP rank cannot hold request state, scratch and a checkpoint"
                     )
-            scratch = config.max_running_req if cached and overlap else 0
+            scratch = (2 if overlap else 1) * config.max_running_req if cached else 0
             state_slots = (
                 config.max_running_req + cached + scratch
                 if ratio is not None
@@ -484,6 +512,27 @@ class Engine:
             self._precision_scope.close()
 
 
+def _prepare_checkpoint_model(backend, records, cpu_group, signature, *, enabled=True):
+    """Borrow full-TP Gloo; agree before any request can reserve tracking state."""
+    quantum, error = None, None
+    try:
+        backend.prepare_model(records)
+        quantum = backend.checkpoint_quantum() if enabled else None
+        if quantum is not None and (type(quantum) is not int or quantum <= 0):
+            raise ValueError("Automatic checkpoint quantum must be a positive integer")
+    except BaseException as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    local = (repr(records), signature, quantum, error)
+    gathered = [local]
+    if cpu_group is not None:
+        gathered = [None] * torch.distributed.get_world_size(cpu_group)
+        torch.distributed.all_gather_object(gathered, local, group=cpu_group)
+    errors = [item[3] for item in gathered if item[3] is not None]
+    if errors or any(item[:2] != local[:2] for item in gathered):
+        raise RuntimeError(f"Checkpoint startup agreement failed: {errors or 'model signature'}")
+    return quantum if quantum is not None and all(item[2] == quantum for item in gathered) else None
+
+
 def _align_up_32(num: int) -> int:
     return (num + 31) // 32 * 32
 
@@ -501,17 +550,33 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("KV cache storage supports float16, bfloat16, float32 or FP8 E4M3")
     if config.recurrent_state_dtype not in (torch.float32, torch.bfloat16):
         raise ValueError("Recurrent state storage supports float32 or bfloat16")
-    if config.max_cached_states < 0:
-        raise ValueError("max_cached_states cannot be negative")
-    if config.mxfp4_backend not in ("torch", "triton", "flashinfer"):
-        raise ValueError("mxfp4_backend must be torch, triton or flashinfer")
-    if config.mxfp4_activation_precision not in ("bf16", "mxfp8"):
-        raise ValueError("mxfp4_activation_precision must be bf16 or mxfp8")
+    if config.mxfp4_backend not in ("auto", "torch", "triton", "flashinfer"):
+        raise ValueError("mxfp4_backend must be auto, torch, triton or flashinfer")
+    if config.mxfp4_activation_precision not in ("auto", "bf16", "mxfp8"):
+        raise ValueError("mxfp4_activation_precision must be auto, bf16 or mxfp8")
+    quantization = getattr(getattr(config.model_config, "hf_config", None), "quantization_config", None)
+    native_mxfp4 = (
+        isinstance(quantization, dict)
+        and quantization.get("format") == "mxfp4-pack-quantized"
+        and config.dtype == torch.bfloat16
+        and is_sm100_supported()
+    )
+    if config.mxfp4_backend == "auto":
+        override("mxfp4_backend", "flashinfer" if native_mxfp4 else "torch")
+    if config.mxfp4_activation_precision == "auto":
+        override(
+            "mxfp4_activation_precision",
+            "mxfp8" if config.mxfp4_backend == "flashinfer" else "bf16",
+        )
+    if config.distributed_backend == "auto" and config.tp_info.size > 1 and is_sm100_supported():
+        override("distributed_backend", "mnnvl")
+        if config.distributed_provider is None:
+            override("distributed_provider", "minisgl.distributed.sgl")
     if config.distributed_backend not in ("auto", "torch", "pynccl", "mnnvl"):
         raise ValueError("distributed_backend must be auto, torch, pynccl or mnnvl")
     if config.distributed_backend == "mnnvl" and not config.distributed_provider:
         raise ValueError("distributed_provider is required for the mnnvl backend")
-    resolve_bf16_precision(config.bf16_precision)
+    override("bf16_precision", resolve_bf16_precision(config.bf16_precision))
     ParallelLayout(
         DistributedInfo(config.tp_info.rank, config.tp_info.size), config.dcp_size, config.ep_size
     )
@@ -526,6 +591,16 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("page_size must be positive")
     if config.enable_unified_memory and not config.model_config.has_recurrent_state:
         raise ValueError("Unified memory requires a hybrid recurrent/token cache")
+    if (
+        config.state_memory_ratio is None
+        and config.model_config.has_recurrent_state
+        and getattr(config, "cache_type", "naive") != "naive"
+    ):
+        override("state_memory_ratio", 0.9)  # Native fallback for prefix-cache state/KV bytes.
+    if getattr(config, "state_cache_strategy", "auto") == "extra_buffer" and (
+        not config.model_config.has_recurrent_state or getattr(config, "cache_type", None) == "naive"
+    ):
+        raise ValueError("extra_buffer requires recurrent prefix caching")
     if config.state_memory_ratio is not None:
         from math import isfinite
 
@@ -556,7 +631,8 @@ def _adjust_config(config: EngineConfig):
         if config.model_config.num_qo_heads % config.tp_info.size:
             raise ValueError("MLA heads must be divisible by TP size")
         if config.attention_backend == "auto":
-            override("attention_backend", "sgl")
+            strategy = getattr(config, "state_cache_strategy", "auto")
+            override("attention_backend", "fi,sgl" if strategy == "extra_buffer" else "sgl")
         backends = [
             SUPPORTED_ATTENTION_BACKENDS[name] for name in config.attention_backend.split(",")
         ]
@@ -574,9 +650,7 @@ def _adjust_config(config: EngineConfig):
             if config.cache_type != "naive":
                 override(
                     "cache_type",
-                    "hybrid"
-                    if config.max_cached_states > 0 or config.state_memory_ratio is not None
-                    else "naive",
+                    "hybrid" if config.state_memory_ratio is not None else "naive",
                 )
         logger.warning_rank0(
             f"Hybrid attention {config.attention_backend}: TP={config.tp_info.size}, "

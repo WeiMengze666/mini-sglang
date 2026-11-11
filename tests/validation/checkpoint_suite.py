@@ -123,7 +123,6 @@ def main():
             ep_size=args.ep_size,
             page_size=args.dcp_size,
             max_running_req=max(2, max_batch),
-            max_cached_states=0,
             max_seq_len_override=args.max_context,
             num_page_override=max(args.max_context, max_batch * stride // args.dcp_size),
             memory_ratio=0.9,

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import contextmanager
+from typing import NoReturn
 
 import torch
 from minisgl.distributed.parallel import local_size, tp_info
@@ -35,6 +37,7 @@ class HybridCache(BaseKVCachePool):
         *,
         state_dtype: torch.dtype = torch.float32,
         kv_dtype: torch.dtype | None = None,
+        device_abort: Callable[[BaseException], NoReturn] | None = None,
     ):
         if min(num_pages, page_size, max_running_req) <= 0:
             raise ValueError("Hybrid cache capacities must be positive")
@@ -80,8 +83,19 @@ class HybridCache(BaseKVCachePool):
             device,
             max_cached_states=max_cached_states,
             arena=self.arena,
-            max_staged_states=max_running_req if enable_cache_overlap and max_cached_states else 0,
+            max_staged_states=(
+                (2 if enable_cache_overlap else 1) * max_running_req if max_cached_states else 0
+            ),
             state_dtype=state_dtype,
+            device_abort=device_abort,
+        )
+
+    @property
+    def supports_checkpoint_overlap(self):
+        return (
+            self.supports_overlap
+            and self.forward_stream_updates
+            and self.recurrent.supports_checkpoint_overlap
         )
 
     def stage_state(self, table_idx, uid, length):
@@ -106,9 +120,21 @@ class HybridCache(BaseKVCachePool):
             yield
             for req in started:
                 self.finish_request(req.table_idx, req.uid, req.device_len)
-        except Exception:
+            for plan in getattr(batch, "checkpoint_plan", ()):
+                self.recurrent.seal_checkpoint(plan)
+        except BaseException as error:
+            if getattr(batch, "checkpoint_plan", ()) and self.recurrent.device_abort is not None:
+                self.recurrent.fail_device(error)
+            for plan in getattr(batch, "checkpoint_plan", ()):
+                try:
+                    self.recurrent.abort_checkpoint(plan)
+                except BaseException as exc:
+                    error.add_note(f"Checkpoint abort failed: {exc}")
             for req in started:
-                self.release_request(req.table_idx, req.uid)
+                try:
+                    self.release_request(req.table_idx, req.uid)
+                except BaseException as exc:
+                    error.add_note(f"Working state release failed: {exc}")
             raise
 
     def finish_request(self, *args):
@@ -140,10 +166,7 @@ class HybridCache(BaseKVCachePool):
     def allocated_bytes(self) -> int:
         if self.arena is not None:
             return self.arena.buffer.numel()
-        return sum(
-            t.numel() * t.element_size()
-            for t in (self.mla._mla, self.recurrent._conv, self.recurrent._recurrent)
-        )
+        return self.mla._mla.numel() * self.mla._mla.element_size() + self.recurrent.allocated_bytes
 
     @property
     def device(self) -> torch.device:

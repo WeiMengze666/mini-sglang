@@ -91,7 +91,7 @@ def test_server_cli_retains_trust_and_served_name():
 
     config, shell = parse_args(
         [
-            "--model",
+            "--model-path",
             "fixture",
             "--dtype",
             "float32",

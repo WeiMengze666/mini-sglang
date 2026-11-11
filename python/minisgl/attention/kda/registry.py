@@ -10,16 +10,20 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Mapping, Protocol
 
 import torch
 from minisgl.utils import Registry
 
 if TYPE_CHECKING:
+    from minisgl.attention.config import KDAConfig
+    from minisgl.core import Batch
+    from minisgl.kvcache.config import HybridCacheConfig
+    from minisgl.kvcache.hybrid_pool import HybridCache
     from minisgl.kvcache.recurrent_pool import RecurrentStatePool
     from minisgl.layers.kda import KDALayer
 
-    from .backend import KDAMetadata
+    from .backend import KDACheckpoints, KDAMetadata
     from .reference import KDAState
 
 
@@ -75,6 +79,26 @@ class KDADecodeResult:
     normed: bool = False
 
 
+class CheckpointPreparation(Protocol):
+    def __call__(
+        self,
+        batch: Batch,
+        metadata: KDAMetadata,
+        layers_by_id: Mapping[int, KDAConfig],
+        config: HybridCacheConfig,
+        device: torch.device,
+        page_size: int,
+        *,
+        cache: HybridCache,
+    ) -> KDACheckpoints: ...
+
+
+CheckpointQuantum = Callable[
+    ["Mapping[int, KDAConfig]", "HybridCacheConfig", "HybridCache", str, "Batch | None"],
+    int | None,
+]
+
+
 @dataclass(frozen=True)
 class KDAKernelSpec:
     name: str
@@ -83,6 +107,8 @@ class KDAKernelSpec:
     project: ProjectionKernel | None = None
     indexed_decode: IndexedDecodeKernel | None = None
     indexed_prefill: IndexedPrefillKernel | None = None
+    prepare_checkpoints: CheckpointPreparation | None = None
+    checkpoint_quantum: CheckpointQuantum | None = None
 
 
 KDA_KERNELS = Registry[KDAKernelSpec]("KDA kernel backend")
@@ -96,11 +122,22 @@ def register_kda_kernel(
     project: ProjectionKernel | None = None,
     indexed_decode: IndexedDecodeKernel | None = None,
     indexed_prefill: IndexedPrefillKernel | None = None,
+    prepare_checkpoints: CheckpointPreparation | None = None,
+    checkpoint_quantum: CheckpointQuantum | None = None,
 ):
     """Register a recurrence backend without coupling it to a model class."""
 
     KDA_KERNELS.register(name)(
-        KDAKernelSpec(name, recurrence, decode, project, indexed_decode, indexed_prefill)
+        KDAKernelSpec(
+            name,
+            recurrence,
+            decode,
+            project,
+            indexed_decode,
+            indexed_prefill,
+            prepare_checkpoints,
+            checkpoint_quantum,
+        )
     )
 
 
@@ -180,9 +217,25 @@ def _flashinfer_indexed_prefill(*args):
     return indexed_prefill(*args)
 
 
+def _flashinfer_prepare_checkpoints(*args, **kwargs):
+    from .flashinfer import prepare_checkpoints
+
+    return prepare_checkpoints(*args, **kwargs)
+
+
+def _flashinfer_checkpoint_quantum(*args):
+    from .flashinfer import checkpoint_quantum
+
+    return checkpoint_quantum(*args)
+
+
 register_kda_kernel("torch", _torch_recurrence)
 register_kda_kernel(
-    "flashinfer", _flashinfer_recurrence, indexed_prefill=_flashinfer_indexed_prefill
+    "flashinfer",
+    _flashinfer_recurrence,
+    indexed_prefill=_flashinfer_indexed_prefill,
+    prepare_checkpoints=_flashinfer_prepare_checkpoints,
+    checkpoint_quantum=_flashinfer_checkpoint_quantum,
 )
 register_kda_kernel(
     "sgl",

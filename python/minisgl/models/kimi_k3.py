@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+from minisgl.attention.config import KDAConfig, MLAConfig
 from minisgl.core import get_global_ctx
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel
@@ -21,12 +22,14 @@ from .kimi_parallel import validate_tp_config
 
 
 class KimiDecoderLayer(BaseOP):
-    def __init__(self, config, layer_id):
+    def __init__(self, config, layer_id, attention_config=None):
         self._layer_id = layer_id
         self._is_kda = layer_id + 1 in config.linear_attn_config["kda_layers"]
-        self.self_attn = (
-            KDALayer(kda_config(config)) if self._is_kda else MLALayer(mla_config(config))
-        )
+        if attention_config is None:
+            attention_config = kda_config(config) if self._is_kda else mla_config(config)
+        if not isinstance(attention_config, KDAConfig if self._is_kda else MLAConfig):
+            raise ValueError("Declared attention configuration differs from the decoder layer")
+        self.self_attn = KDALayer(attention_config) if self._is_kda else MLALayer(attention_config)
         is_moe = (
             config.num_experts > 0
             and layer_id >= config.first_k_dense_replace
@@ -71,9 +74,26 @@ class KimiDecoderLayer(BaseOP):
 
 
 class KimiModel(BaseOP):
-    def __init__(self, config):
+    def __init__(self, config, attention_configs=()):
+        if not isinstance(attention_configs, tuple) or any(
+            not isinstance(record, tuple) or len(record) != 2 for record in attention_configs
+        ):
+            raise ValueError("Attention records must be immutable (global ID, config) pairs")
+        declared = dict(attention_configs)
+        if attention_configs and (
+            len(declared) != len(attention_configs)
+            or any(not isinstance(c, (KDAConfig, MLAConfig)) for c in declared.values())
+            or any(type(i) is not int for i in declared)
+            or set(declared) != set(range(config.num_hidden_layers))
+        ):
+            raise ValueError("Attention records must cover every decoder layer exactly once")
         self.embed_tokens = Embedding(config.vocab_size, config.hidden_size)
-        self.layers = OPList([KimiDecoderLayer(config, i) for i in range(config.num_hidden_layers)])
+        self.layers = OPList(
+            [
+                KimiDecoderLayer(config, i, declared[i] if attention_configs else None)
+                for i in range(config.num_hidden_layers)
+            ]
+        )
         self.norm = TorchRMSNorm(config.hidden_size, config.rms_norm_eps)
         self._attn_res = config.attn_res_block_size is not None
         self._residual_blocks = (
@@ -108,7 +128,7 @@ class KimiK3LinearForCausalLM(BaseLLMModel):
         validate_tp_config(text, self._tp.size, dcp_size=layout.dcp_size, ep_size=layout.ep_size)
         self._sharded_vocab = self._tp.size > 1 and text.vocab_size % self._tp.size == 0
         vocab_width = text.vocab_size // self._tp.size if self._sharded_vocab else text.vocab_size
-        self.model = KimiModel(text)
+        self.model = KimiModel(text, config.attention_configs)
         self.lm_head = Linear(text.hidden_size, vocab_width)
         self._tie_embeddings = text.tie_word_embeddings
         if self._tie_embeddings:

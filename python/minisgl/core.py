@@ -9,6 +9,7 @@ import torch
 if TYPE_CHECKING:
     from minisgl.attention import BaseAttnBackend, BaseAttnMetadata
     from minisgl.kvcache import BaseCacheHandle, BaseKVCachePool
+    from minisgl.kvcache.recurrent_pool import CheckpointWrite
     from minisgl.moe import BaseMoeBackend
 
 
@@ -80,6 +81,7 @@ class Batch:
     padded_reqs: List[Req] = field(init=False)
     # this field should be set by attention backend
     attn_metadata: BaseAttnMetadata = field(init=False)
+    checkpoint_plan: tuple[CheckpointWrite, ...] = field(default=(), repr=False)
 
     @property
     def is_prefill(self) -> bool:

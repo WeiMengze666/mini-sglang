@@ -20,7 +20,9 @@ class NaivePrefixCache(BasePrefixCache):
         NaiveCacheHandle.empty_tensor = self.empty_tensor
         super().__init__()
 
-    def lock_handle(self, handle: BaseCacheHandle, unlock: bool = False) -> None:
+    def lock_handle(
+        self, handle: BaseCacheHandle, unlock: bool = False, *, for_restore: bool = True
+    ) -> None:
         pass
 
     def match_prefix(self, input_ids: torch.Tensor) -> MatchResult:

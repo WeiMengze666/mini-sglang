@@ -39,12 +39,12 @@ class HybridPrefixCache(RadixPrefixCache):
         self.checkpoints: dict[int, tuple[RadixTreeNode, StateCheckpoint]] = {}
         self._pending_restores: dict[int, tuple[int, int]] = {}
 
-    def lock_handle(self, handle, unlock=False):
+    def lock_handle(self, handle, unlock=False, *, for_restore=True):
         super().lock_handle(handle, unlock)
         if isinstance(handle, HybridCacheHandle) and handle.cached_len:
             if unlock:
                 self._unpin_state(handle)
-            else:
+            elif for_restore:
                 count = self._pending_restores.get(id(handle), (0, 0))[1]
                 self._pending_restores[id(handle)] = (handle.node.uuid, count + 1)
 
@@ -81,27 +81,34 @@ class HybridPrefixCache(RadixPrefixCache):
         arena = self.states.arena
         if arena is None:
             return
+        while arena.free_bytes < required_bytes and self._evict_checkpoint(exclude):
+            pass
+
+    def evict_checkpoint(self) -> bool:
+        return self._evict_checkpoint()
+
+    def _evict_checkpoint(self, exclude=None):
         pinned = {node_id for node_id, _ in self._pending_restores.values()}
-        candidates = sorted(
+        node = min(
             (
                 node
                 for node, _ in self.checkpoints.values()
                 if node.uuid != exclude and node.uuid not in pinned
             ),
-            key=lambda n: (len(n.children) > 1, n.timestamp),
+            key=lambda n: n.timestamp,
+            default=None,
         )
-        for node in candidates:
-            if arena.free_bytes >= required_bytes:
-                break
-            # Admission restores matched checkpoints immediately. Once copied,
-            # a live request only pins KV; its private state needs no tree slot.
-            # This is called by the serial scheduler on the forward stream.
-            self._drop(node)
+        if node is None:
+            return False
+        # Restored readers own private state; only a queued restore pins this slot.
+        self._drop(node)
+        return True
 
     def _drop(self, node):
-        entry = self.checkpoints.pop(node.uuid, None)
+        entry = self.checkpoints.get(node.uuid)
         if entry is not None:
             self.states.drop_checkpoint(entry[1])
+            self.checkpoints.pop(node.uuid)
 
     def cache_state(self, req, handle, *, checkpoint=None, cached_len=None):
         # A state cannot be rewound to an earlier page boundary. Checkpoint only
@@ -126,13 +133,10 @@ class HybridPrefixCache(RadixPrefixCache):
             candidates = [n for n in path if n.uuid not in pinned]
             if not candidates:
                 return
-            self._drop(min(candidates, key=lambda n: (len(n.children) > 1, n.timestamp)))
+            self._drop(min(candidates, key=lambda n: n.timestamp))
         if len(self.checkpoints) >= self.states.max_cached_states:
-            candidates = [n for n, _ in self.checkpoints.values() if n.uuid not in pinned]
-            if not candidates:
+            if not self.evict_checkpoint():
                 return
-            # Preserve branching points before equivalent single-child nodes.
-            self._drop(min(candidates, key=lambda n: (len(n.children) > 1, n.timestamp)))
         try:
             snapshot = checkpoint or self.states.snapshot(
                 req.table_idx, req.uid, expected_len=length

@@ -11,12 +11,12 @@ For demonstration and testing purposes, an interactive shell mode is available. 
 Example:
 
 ```bash
-python -m minisgl --model "Qwen/Qwen3-0.6B" --shell
+python -m minisgl --model-path "Qwen/Qwen3-0.6B" --shell
 ```
 
 ## Distributed Serving
 
-To scale performance across multiple GPUs, Mini-SGLang supports Tensor Parallelism (TP). You can enable distributed serving by specifying the number of GPUs with the `--tp n` argument, where `n` is the degree of parallelism.
+To scale performance across multiple GPUs, Mini-SGLang supports Tensor Parallelism (TP). You can enable distributed serving by specifying the number of GPUs with the `--tp-size n` argument, where `n` is the degree of parallelism.
 
 DCP (`--dcp-size`) partitions token ownership for context-sharded MLA and merges partial attention using output/LSE exchange. EP (`--ep-size`) partitions experts independently of their tensor shards, for both ordinary and latent MoE. The replicated-token scheduler combines local expert contributions by TP reduction. The integrated paged DCP path currently serves MLA; the exchange itself is independent of the attention algorithm.
 Collective backends declare per-operation capabilities, so an optional backend can handle only supported all-reduces or gathers while the tested fallback handles the rest. Grouped MoE also accepts a generic RoutingPolicy; stable_moe_routing=true selects deterministic integer route grouping for calibrated references, while the default keeps the native grouping path.
@@ -43,11 +43,11 @@ You can specify the page size of the system using the `--page-size` argument.
 
 Mini-SGLang integrates high-performance attention kernels, including [`FlashAttention`](https://github.com/Dao-AILab/flash-attention) (`fa`), [`FlashInfer`](https://github.com/flashinfer-ai/flashinfer) (`fi`) and [`TensorRT-LLM fmha`](https://github.com/NVIDIA/TensorRT-LLM) (`trtllm`). It supports using different backends for the prefill and decode phases to maximize efficiency. For example, on NVIDIA Hopper GPUs, `FlashAttention 3` is used for prefill and `FlashInfer` for decode by default.
 
-You can specify the backend using the `--attn` argument. If two values are provided (e.g., `--attn fa,fi`), the first specifies the prefill backend and the second the decode backend. Note that some attention backend might override the user-provided page size (e.g. `trtllm` only supports page size 16,32,64).
+You can specify the backend using the `--attention-backend` argument. If two values are provided (e.g., `--attention-backend fa,fi`), the first specifies the prefill backend and the second the decode backend. Note that some attention backend might override the user-provided page size (e.g. `trtllm` only supports page size 16,32,64).
 
 ## CUDA Graph
 
-To minimize CPU launch overhead during decoding, Mini-SGLang supports capturing and replaying CUDA graphs. This feature is enabled by default. The maximum batch size for CUDA graph capture can be set with `--cuda-graph-max-bs n`. Setting `n` to `0` disables this feature. Explicit buckets can be supplied with `--cuda-graph-bs 1 2 4 8`.
+To minimize CPU launch overhead during decoding, Mini-SGLang supports capturing and replaying CUDA graphs. This feature is enabled by default. The maximum batch size for CUDA graph capture can be set with `--cuda-graph-max-bs-decode n`. Setting `n` to `0` disables this feature. Explicit buckets can be supplied with `--cuda-graph-bs 1 2 4 8`.
 
 Hybrid recurrent attention requires explicit graph enablement and a compatible native backend. It uses exact batch sizes with eager fallback for uncaptured sizes, because padded rows would mutate request state. Capture temporarily borrows idle state slots at startup; replay resolves current request and page indirection.
 
@@ -58,7 +58,7 @@ Adopting the original design from [SGLang](https://github.com/sgl-project/sglang
 ![radix](https://lmsys.org/images/blog/sglang/radix_attn.jpg)
 *Illustration of Radix Attention from [LMSYS Blog](https://lmsys.org/blog/2024-01-17-sglang/).*
 
-Hybrid prefix reuse additionally preserves sparse recurrent checkpoints alongside token pages. `--max-cached-states` bounds shared snapshots; admission restores a private working copy before updates. `--enable-unified-memory` places state and token pages in the same compacting byte arena.
+Hybrid prefix reuse preserves paired recurrent/convolution checkpoints alongside token pages. `--mamba-radix-cache-strategy extra_buffer` uses native tracking kernels and donates completed checkpoint slots to the radix tree. `--mamba-full-memory-ratio` divides the post-load state/KV memory budget; state capacity reserves a working slot plus one tracking slot per request, or two tracking slots with overlap. Remaining slots form the LRU state cache. Admission copies shared state into a private working slot. `--enable-unified-memory` is a separate compacting-arena mode and does not support native checkpoint tracking.
 
 ## Overlap Scheduling
 
@@ -67,4 +67,6 @@ To further reduce CPU overhead, Mini-SGLang employs overlap scheduling, a techni
 ![overlap](https://lmsys.org/images/blog/sglang_v0_4/scheduler.jpg)
 *Illustration of Overlap Scheduling from [LMSYS Blog](https://lmsys.org/blog/2024-12-04-sglang-v0-4/).*
 
-For mutable hybrid pools, `--enable-cache-overlap` stages completed frontiers before the next forward and donates them when consuming the prior reply. Working state, staged snapshots and tree checkpoints have separate ownership. All compaction and state mutation use the producer stream. This option is off by default; `MINISGL_DISABLE_OVERLAP_SCHEDULING=1` disables overlap for every pool.
+Overlap is enabled by default. `--disable-overlap-schedule` selects serial scheduling. Mutable hybrid pools preserve completed frontiers on the producer stream before the next forward and donate them only after the prior completion event succeeds. Working state, tracking leases and cached checkpoints have separate ownership. `MINISGL_DISABLE_OVERLAP_SCHEDULING=1` also disables overlap for every pool.
+
+`--max-prefill-tokens` and `--chunked-prefill-size` are independent shared batch budgets, following SGLang admission and physical-page charging. The current comparison recipe uses16384 for both; see `benchmark/online/profiles/kimi-k3-sglang.json`. Public names replaced the former options; no compatibility aliases are accepted.

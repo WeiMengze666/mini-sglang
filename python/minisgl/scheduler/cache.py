@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from math import lcm
 from typing import TYPE_CHECKING, List, Tuple
 
 import torch
@@ -14,7 +15,15 @@ if TYPE_CHECKING:
 
 class CacheManager:
     def __init__(
-        self, num_pages: int, page_size: int, page_table: torch.Tensor, type: str, pool=None
+        self,
+        num_pages: int,
+        page_size: int,
+        page_table: torch.Tensor,
+        type: str,
+        pool=None,
+        *,
+        cpu_group=None,
+        checkpoint_quantum=None,
     ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
@@ -28,6 +37,8 @@ class CacheManager:
         self.pool = pool
         self.arena = getattr(pool, "arena", None)
         self._handles = {}
+        self._checkpoint_cpu_group = cpu_group
+        self._checkpoint_quantum = checkpoint_quantum
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
@@ -36,12 +47,15 @@ class CacheManager:
 
     def restore_state(self, table_idx: int, uid: int, handle: BaseCacheHandle) -> None:
         self.prefix_cache.restore_state(table_idx, uid, handle)
-        if self.arena is not None and handle.cached_len == 0:
-            self.prefix_cache.release_checkpoint_memory(self.arena.state_bytes)
+        if getattr(self.pool, "recurrent", None) is not None and handle.cached_len == 0:
+            if self.arena is not None:
+                self.prefix_cache.release_checkpoint_memory(self.arena.state_bytes)
             self.pool.recurrent.reserve_request(table_idx, uid)
         self._handles[table_idx, uid] = handle
 
     def release_state(self, table_idx, uid):
+        if self.arena is not None:
+            self.arena._check_mutable()
         self._handles.pop((table_idx, uid), None)
         if self.pool is not None and hasattr(self.pool, "release_request"):
             self.pool.release_request(table_idx, uid)
@@ -54,6 +68,132 @@ class CacheManager:
     def should_cache(self, is_prefill, length):
         interval = self.prefix_cache.checkpoint_interval
         return is_prefill or (interval is not None and length % interval == 0)
+
+    def coordinates_checkpoints(self, batch):
+        return self._checkpoint_quantum is not None and batch.is_prefill
+
+    def _checkpoint_exchange(self, value):
+        gathered = [value]
+        if self._checkpoint_cpu_group is not None:
+            gathered = [None] * torch.distributed.get_world_size(self._checkpoint_cpu_group)
+            torch.distributed.all_gather_object(gathered, value, group=self._checkpoint_cpu_group)
+        return gathered
+
+    def plan_checkpoints(self, batch, backend):
+        """Reserve optional local leases, then intersect full-TP logical row masks."""
+        coordinated = self.coordinates_checkpoints(batch)
+        old_plans, plans, signature, error = tuple(batch.checkpoint_plan), [], [], None
+        try:
+            if old_plans:
+                raise RuntimeError("Batch already owns a checkpoint plan")
+            capability = getattr(backend, "checkpoint_quantum", None)
+            quantum = capability(batch) if capability is not None else None
+            states = getattr(self.pool, "recurrent", None)
+            if not coordinated and (not batch.is_prefill or quantum is None or states is None):
+                return ()
+            grid_quantum = self._checkpoint_quantum if coordinated else quantum
+            if type(grid_quantum) is not int or grid_quantum <= 0:
+                raise ValueError("Checkpoint quantum must be positive")
+            grid = lcm(self.page_size, grid_quantum)
+            for req in batch.reqs:
+                frontier = req.device_len // grid * grid
+                fork = getattr(self.current_handle(req), "replay_until", 0)
+                if req.cached_len < fork < frontier and fork % grid == 0:
+                    if (fork - req.cached_len) % grid_quantum == 0:
+                        frontier = fork
+                signature.append((req.table_idx, req.uid, req.cached_len, req.device_len, frontier))
+                eligible = (
+                    quantum == grid_quantum
+                    and states is not None
+                    and req.cached_len < frontier < req.device_len
+                    and (frontier - req.cached_len) % grid_quantum == 0
+                )
+                plan = None
+                if eligible:
+                    staged = bool(states.max_staged_states)
+                    plan = states.reserve_checkpoint(
+                        req.table_idx, req.uid, frontier, end_len=req.device_len, staged=staged
+                    )
+                    if (
+                        plan is None
+                        and not staged
+                        and states.available_checkpoint_slots == 0
+                        and self.prefix_cache.evict_checkpoint()
+                    ):
+                        plan = states.reserve_checkpoint(
+                            req.table_idx, req.uid, frontier, end_len=req.device_len
+                        )
+                plans.append(plan)
+        except BaseException as exc:
+            error = exc
+        if coordinated:
+            packet = (
+                tuple(signature),
+                tuple(p is not None for p in plans),
+                None if error is None else f"{type(error).__name__}: {error}",
+            )
+            peers = self._checkpoint_exchange(packet)
+            errors = [item[2] for item in peers if item[2] is not None]
+            if errors or any(item[0] != packet[0] for item in peers):
+                error = RuntimeError(
+                    f"Checkpoint plan agreement failed: {errors or 'row signature'}"
+                )
+            if error is None:
+                for row, plan in enumerate(plans):
+                    if plan is not None and not all(item[1][row] for item in peers):
+                        try:
+                            self.release_checkpoint_plan((plan,))
+                            plans[row] = None
+                        except BaseException as exc:
+                            error = exc
+                errors = self._checkpoint_exchange(
+                    None if error is None else f"{type(error).__name__}: {error}"
+                )
+                if any(item is not None for item in errors):
+                    error = RuntimeError(f"Checkpoint reservation cleanup failed: {errors}")
+        if error is not None:
+            self.release_checkpoint_plan([p for p in plans if p is not None], error=error)
+            if coordinated:
+                self.release_checkpoint_plan(old_plans, error=error)
+                batch.checkpoint_plan = ()
+            raise error
+        batch.checkpoint_plan = tuple(p for p in plans if p is not None)
+        return batch.checkpoint_plan
+
+    def checkpoint_metadata_ready(self, batch, error=None):
+        if self.coordinates_checkpoints(batch):
+            errors = self._checkpoint_exchange(
+                None if error is None else f"{type(error).__name__}: {error}"
+            )
+            if any(item is not None for item in errors):
+                error = RuntimeError(f"Checkpoint metadata agreement failed: {errors}")
+        if error is not None:
+            self.release_checkpoint_plan(batch.checkpoint_plan, error=error)
+            batch.checkpoint_plan = ()
+            raise error
+
+    @contextmanager
+    def checkpoint_writes(self, batch, backend):
+        """Reserve/abort scope; only HybridCache seals a complete all-layer forward."""
+        plans = self.plan_checkpoints(batch, backend)
+        try:
+            yield plans
+        except BaseException as error:
+            self.release_checkpoint_plan(plans, error=error)
+            raise
+
+    def release_checkpoint_plan(self, plans, *, error=None):
+        failure = None
+        for plan in plans:
+            try:
+                self.pool.recurrent.abort_checkpoint(plan)
+            except BaseException as exc:
+                if error is not None:
+                    error.add_note(f"Checkpoint abort failed: {exc}")
+                elif failure is None:
+                    failure = exc
+        if failure is not None:
+            raise failure
 
     def stage_states(self, reqs, lengths, *, is_prefill, excluded=()):
         staged = {}
@@ -92,8 +232,8 @@ class CacheManager:
             )
         return self.prefix_cache.size_info.evictable_size + free_pages * self.page_size
 
-    def lock(self, handle: BaseCacheHandle) -> None:
-        self.prefix_cache.lock_handle(handle, unlock=False)
+    def lock(self, handle: BaseCacheHandle, *, for_restore: bool = True) -> None:
+        self.prefix_cache.lock_handle(handle, unlock=False, for_restore=for_restore)
 
     def unlock(self, handle: BaseCacheHandle) -> None:
         self.prefix_cache.lock_handle(handle, unlock=True)
@@ -112,6 +252,8 @@ class CacheManager:
             _write_page_table(self.page_table, allocated, allocation_info, self.page_size)
 
     def cache_req(self, req: Req, *, finished: bool, frontier=None, checkpoint=None) -> None:
+        if self.arena is not None:
+            self.arena._check_mutable()
         # ==================================== valid cache region ====================================
         # [0, req.cached_len)                       This part is valid for attention kernel read/write.
         # [0, old_handle.cached_len)                This part is in the prefix cache before prefill.
@@ -146,7 +288,8 @@ class CacheManager:
                 page_indices[: new_handle.cached_len].copy_(new_handle.get_matched_indices())
             req.cache_handle = new_handle
             self._handles[req.table_idx, req.uid] = new_handle
-            self.lock(new_handle)
+            # A continuing request already owns private recurrent state.
+            self.lock(new_handle, for_restore=False)
 
     def check_integrity(self) -> None:
         self.prefix_cache.check_integrity()
@@ -177,6 +320,8 @@ class CacheManager:
             self.free_slots = torch.cat([self.free_slots] + lazy_free_list)
 
     def _allocate(self, needed_pages: int) -> torch.Tensor:
+        if self.arena is not None:
+            self.arena._check_mutable()
         free_pages = len(self.free_slots)
         if self.arena is not None:
             self.prefix_cache.release_checkpoint_memory(needed_pages * self.arena.page_bytes)

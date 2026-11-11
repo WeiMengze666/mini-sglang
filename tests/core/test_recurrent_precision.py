@@ -42,7 +42,7 @@ def test_precision_follows_working_state_checkpoint_and_reordered_batch(
     if unified:
         assert cache.arena.state_bytes >= expected_bytes
     else:
-        assert cache.allocated_bytes == 128 * 7 * kv_dtype.itemsize + 3 * expected_bytes
+        assert cache.allocated_bytes == 128 * 7 * kv_dtype.itemsize + (3 + pool.max_cached_states + pool.max_staged_states) * expected_bytes
     assert pool.conv_dtype == torch.bfloat16 and pool.state_dtype == state_dtype
 
     cache.begin_request(0, 10, 0)
@@ -109,7 +109,7 @@ def test_server_resolves_independent_recurrent_storage(name, dtype):
     from minisgl.server.args import parse_args
 
     config, _ = parse_args(
-        ["--model", "unused", "--dtype", "bfloat16", "--recurrent-state-dtype", name]
+        ["--model-path", "unused", "--dtype", "bfloat16", "--mamba-ssm-dtype", name]
     )
     assert config.dtype == torch.bfloat16
     assert config.recurrent_state_dtype == dtype
@@ -160,13 +160,13 @@ def test_server_resolves_independent_token_cache_storage(name, expected):
 
     config, _ = parse_args(
         [
-            "--model",
+            "--model-path",
             "unused",
             "--dtype",
             "bfloat16",
             "--kv-cache-dtype",
             name,
-            "--recurrent-state-dtype",
+            "--mamba-ssm-dtype",
             "bfloat16",
         ]
     )

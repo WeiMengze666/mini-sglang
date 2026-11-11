@@ -16,11 +16,11 @@ def test_explicit_graph_buckets_reject_invalid_sizes(sizes):
         _determine_cuda_graph_bs(sizes, None, 90 << 30)
 
 
-@pytest.mark.parametrize("extra,maximum", [([], None), (["--cuda-graph-max-bs", "0"], 0)])
+@pytest.mark.parametrize("extra,maximum", [([], None), (["--cuda-graph-max-bs-decode", "0"], 0)])
 def test_shell_preserves_graph_preference(extra, maximum):
     from minisgl.server.args import parse_args
 
-    config, shell = parse_args(["--model", "unused", "--dtype", "bfloat16", "--shell-mode", *extra])
+    config, shell = parse_args(["--model-path", "unused", "--dtype", "bfloat16", "--shell-mode", *extra])
     assert shell and config.max_running_req == 1
     assert config.cuda_graph_max_bs == maximum
 
@@ -29,7 +29,7 @@ def test_explicit_graph_bucket_cli():
     from minisgl.server.args import parse_args
 
     config, _ = parse_args(
-        ["--model", "unused", "--dtype", "bfloat16", "--cuda-graph-bs", "1", "2", "3"]
+        ["--model-path", "unused", "--dtype", "bfloat16", "--cuda-graph-bs", "1", "2", "3"]
     )
     assert config.cuda_graph_bs == [1, 2, 3]
 

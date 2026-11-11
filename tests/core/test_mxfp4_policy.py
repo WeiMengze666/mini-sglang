@@ -6,7 +6,7 @@ from minisgl.layers.linear import Linear
 
 def test_engine_config_declares_packed_activation_precision():
     config = EngineConfig("/tmp/model", object(), torch.bfloat16)
-    assert config.mxfp4_activation_precision == "bf16"
+    assert config.mxfp4_activation_precision == "auto"
 
 
 def test_mxfp4_linear_accepts_flashinfer_mxfp8_policy():

@@ -10,7 +10,7 @@ all-reduce, all-gather, capture and teardown interface.
 Use SGLang's custom all-reduce v2 through the regular MNNVL provider:
 
 ```bash
-python -m minisgl --model /data/models/Kimi-K3 --tp-size 8 \
+python -m minisgl --model-path /data/models/Kimi-K3 --tp-size 8 \
   --distributed-backend mnnvl \
   --distributed-provider minisgl.distributed.sgl
 ```

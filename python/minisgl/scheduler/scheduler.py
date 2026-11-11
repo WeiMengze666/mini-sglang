@@ -26,7 +26,8 @@ from .table import TableManager
 
 if TYPE_CHECKING:
     from minisgl.engine import BatchSamplingArgs, ForwardOutput
-    from minisgl.engine.engine import StartupOwner
+    from minisgl.engine.engine import WorkerOwner
+    from minisgl.kvcache.recurrent_pool import CheckpointWrite
 
 
 logger = init_logger(__name__)
@@ -46,13 +47,14 @@ class ForwardData(NamedTuple):
     inputs: ForwardInput
     output: ForwardOutput
     processed_lens: tuple[int, ...]
+    checkpoint_plan: tuple[CheckpointWrite, ...] = ()
 
 
 class Scheduler(SchedulerIOMixin):
-    def __init__(self, config: SchedulerConfig, *, startup_owner: StartupOwner | None = None):
+    def __init__(self, config: SchedulerConfig, *, worker_owner: WorkerOwner | None = None):
         from minisgl.engine import Engine
 
-        self.engine = Engine(config, startup_owner=startup_owner)
+        self.engine = Engine(config, worker_owner=worker_owner)
         self.vocab_size = config.model_config.vocab_size
 
         # use another stream to overlap metadata processing with computation
@@ -70,10 +72,16 @@ class Scheduler(SchedulerIOMixin):
             self.engine.page_table,
             config.cache_type,
             pool=self.engine.kv_cache,
+            cpu_group=self.engine.tp_cpu_group,
+            checkpoint_quantum=self.engine.checkpoint_quantum,
         )
         self.decode_manager = DecodeManager(config.logical_page_size)
         self.prefill_manager = PrefillManager(
-            self.cache_manager, self.table_manager, self.decode_manager
+            self.cache_manager,
+            self.table_manager,
+            self.decode_manager,
+            chunked_prefill_size=config.chunked_prefill_size,
+            compute_page_size=config.page_size,
         )
 
         # some alias for easy access
@@ -86,7 +94,8 @@ class Scheduler(SchedulerIOMixin):
         self.eos_token_id = self.tokenizer.eos_token_id
         self.stop_token_ids = get_stop_token_ids(self.tokenizer)
         self.token_pool = self.table_manager.token_pool
-        self.prefill_budget = config.max_extend_tokens
+        self.prefill_budget = config.max_prefill_tokens
+        self.enable_overlap_schedule = config.enable_cache_overlap
         # self.config = config
 
         # Initialize the I/O mixin
@@ -105,18 +114,19 @@ class Scheduler(SchedulerIOMixin):
         It will overlap the execution of current batch and processing of last batch's results,
         which can effectively hide CPU latency and improve GPU utilization.
         """
-        blocking = not (
-            last_data is not None  # don't block if we have a batch to be processed
-            or self.prefill_manager.runnable
-            or self.decode_manager.runnable
-        )
-        for msg in self.receive_msg(blocking=blocking):
-            self._process_one_msg(msg)
-
-        forward_input = self._schedule_next_batch()
+        forward_input = None
         ongoing_data = None
         staged = {}
+        failed_with_live_state = False
         try:
+            blocking = not (
+                last_data is not None  # don't block if we have a batch to be processed
+                or self.prefill_manager.runnable
+                or self.decode_manager.runnable
+            )
+            for msg in self.receive_msg(blocking=blocking):
+                self._process_one_msg(msg)
+            forward_input = self._schedule_next_batch()
             if last_data is not None:
                 excluded = {req.uid for req in self.finished_reqs | self.aborted_reqs}
                 staged = self.cache_manager.stage_states(
@@ -133,10 +143,20 @@ class Scheduler(SchedulerIOMixin):
                         forward_input,
                         output,
                         tuple(req.cached_len for req in forward_input.batch.reqs),
+                        tuple(forward_input.batch.checkpoint_plan),
                     )
             self._process_last_data(last_data, staged=staged)
+        except BaseException as error:
+            live_plans = (
+                last_data is not None and last_data.checkpoint_plan
+            ) or (forward_input is not None and forward_input.batch.checkpoint_plan)
+            if live_plans or staged:
+                failed_with_live_state = True
+                self.engine.kv_cache.recurrent.fail_device(error)
+            raise
         finally:
-            self.cache_manager.release_staged(staged)
+            if not failed_with_live_state:
+                self.cache_manager.release_staged(staged)
         return ongoing_data
 
     def normal_loop(self) -> None:
@@ -152,13 +172,18 @@ class Scheduler(SchedulerIOMixin):
                 forward_input,
                 output,
                 tuple(req.cached_len for req in forward_input.batch.reqs),
+                tuple(forward_input.batch.checkpoint_plan),
             )
 
         self._process_last_data(ongoing_data)
 
     @torch.inference_mode()
     def run_forever(self) -> NoReturn:
-        if ENV.DISABLE_OVERLAP_SCHEDULING or not self.engine.kv_cache.supports_overlap:
+        if (
+            ENV.DISABLE_OVERLAP_SCHEDULING
+            or not self.enable_overlap_schedule
+            or not self.engine.kv_cache.supports_overlap
+        ):
             with self.engine_stream_ctx:
                 self.engine.stream.wait_stream(self.stream)
                 while True:
@@ -188,52 +213,74 @@ class Scheduler(SchedulerIOMixin):
             return
 
         batch, (_, next_tokens_cpu, copy_done) = last_data[0].batch, last_data[1]
-        copy_done.synchronize()
-        reply: List[DetokenizeMsg] = []
-        new_finished_reqs: Set[Req] = set()
-        excluded = {req.uid for req in self.finished_reqs | self.aborted_reqs}
-        with self.cache_manager.lazy_free_region():
-            for i, req in enumerate(batch.reqs):
-                if req.uid in excluded:
-                    continue
-                length = last_data.processed_lens[i] if staged is not None else req.cached_len
-                checkpoint = staged.get(req.uid) if staged is not None else None
-                cache_args = (
-                    {"frontier": length, "checkpoint": checkpoint} if staged is not None else {}
-                )
-                if isinstance(req, ChunkedReq):
-                    self.cache_manager.cache_req(req, finished=False, **cache_args)
-                    continue
-                next_token = next_tokens_cpu[i]
-                req.append_host(next_token.unsqueeze(0))
-                next_token = int(next_token.item())
-                finish_reason = None
-                if length + 1 >= req.max_device_len:
-                    finish_reason = "length"
-                elif not req.sampling_params.ignore_eos and next_token in self.stop_token_ids:
-                    finish_reason = "stop"
-                finished = finish_reason is not None
-                reply.append(
-                    DetokenizeMsg(
-                        uid=req.uid,
-                        next_token=next_token,
-                        finished=finished,
-                        cached_tokens=req.cached_prompt_tokens,
-                        finish_reason=finish_reason,
+        # A failed completion event does not authorize reclaiming caller leases.
+        try:
+            copy_done.synchronize()
+        except BaseException as error:
+            if last_data.checkpoint_plan:
+                self.engine.kv_cache.recurrent.fail_device(error)
+            raise
+        error = None
+        try:
+            plans = {(p.table_idx, p.uid): p for p in last_data.checkpoint_plan}
+            reply: List[DetokenizeMsg] = []
+            new_finished_reqs: Set[Req] = set()
+            excluded = {req.uid for req in self.finished_reqs | self.aborted_reqs}
+            with self.cache_manager.lazy_free_region():
+                for i, req in enumerate(batch.reqs):
+                    if req.uid in excluded:
+                        continue
+                    plan = plans.get((req.table_idx, req.uid))
+                    if plan is not None:
+                        self.cache_manager.cache_req(
+                            req,
+                            finished=False,
+                            frontier=plan.checkpoint.length,
+                            checkpoint=plan.checkpoint,
+                        )
+                    length = last_data.processed_lens[i] if staged is not None else req.cached_len
+                    checkpoint = staged.get(req.uid) if staged is not None else None
+                    cache_args = (
+                        {"frontier": length, "checkpoint": checkpoint} if staged is not None else {}
                     )
-                )
+                    if isinstance(req, ChunkedReq):
+                        self.cache_manager.cache_req(req, finished=False, **cache_args)
+                        continue
+                    next_token = next_tokens_cpu[i]
+                    req.append_host(next_token.unsqueeze(0))
+                    next_token = int(next_token.item())
+                    finish_reason = None
+                    if length + 1 >= req.max_device_len:
+                        finish_reason = "length"
+                    elif not req.sampling_params.ignore_eos and next_token in self.stop_token_ids:
+                        finish_reason = "stop"
+                    finished = finish_reason is not None
+                    reply.append(
+                        DetokenizeMsg(
+                            uid=req.uid,
+                            next_token=next_token,
+                            finished=finished,
+                            cached_tokens=req.cached_prompt_tokens,
+                            finish_reason=finish_reason,
+                        )
+                    )
 
-                # NOTE: overlap scheduling may make the request freed twice, skip second free
-                if finished and req not in self.finished_reqs:
-                    self.decode_manager.remove_req(req)
-                    self._free_req_resources(req, **cache_args)
-                    new_finished_reqs.add(req)
-                elif self.cache_manager.should_cache(batch.is_prefill, length):
-                    self.cache_manager.cache_req(req, finished=False, **cache_args)
+                    # NOTE: overlap scheduling may make the request freed twice, skip second free
+                    if finished and req not in self.finished_reqs:
+                        self.decode_manager.remove_req(req)
+                        self._free_req_resources(req, **cache_args)
+                        new_finished_reqs.add(req)
+                    elif self.cache_manager.should_cache(batch.is_prefill, length):
+                        self.cache_manager.cache_req(req, finished=False, **cache_args)
 
-        self.finished_reqs = new_finished_reqs
-        self.aborted_reqs.clear()
-        self.send_result(reply)
+            self.finished_reqs = new_finished_reqs
+            self.aborted_reqs.clear()
+            self.send_result(reply)
+        except BaseException as exc:
+            error = exc
+            raise
+        finally:
+            self.cache_manager.release_checkpoint_plan(last_data.checkpoint_plan, error=error)
 
     def _process_one_msg(self, msg: BaseBackendMsg) -> None:
         if isinstance(msg, BatchBackendMsg):
@@ -308,19 +355,29 @@ class Scheduler(SchedulerIOMixin):
         self.table_manager.free(req.table_idx)
 
     def _prepare_batch(self, batch: Batch) -> ForwardInput:
-        self.engine.graph_runner.pad_batch(batch)
-        self.cache_manager.allocate_paged(batch.reqs)
-        batch.positions = _make_positions(batch, self.device)
-        input_mapping = _make_input_tuple(batch, self.device)
-        write_mapping = _make_write_tuple(batch, self.device)
-        batch.out_loc = self.engine.page_table[input_mapping]
-        self.engine.attn_backend.prepare_metadata(batch)
-        return ForwardInput(
-            batch=batch,
-            sample_args=self.engine.sampler.prepare(batch),
-            input_tuple=input_mapping,
-            write_tuple=write_mapping,
-        )
+        if self.cache_manager.coordinates_checkpoints(batch):
+            self.cache_manager.plan_checkpoints(batch, self.engine.attn_backend)
+        error = None
+        try:
+            self.engine.graph_runner.pad_batch(batch)
+            self.cache_manager.allocate_paged(batch.reqs)
+            batch.positions = _make_positions(batch, self.device)
+            input_mapping = _make_input_tuple(batch, self.device)
+            write_mapping = _make_write_tuple(batch, self.device)
+            batch.out_loc = self.engine.page_table[input_mapping]
+            self.engine.attn_backend.prepare_metadata(batch)
+            prepared = ForwardInput(
+                batch=batch,
+                sample_args=self.engine.sampler.prepare(batch),
+                input_tuple=input_mapping,
+                write_tuple=write_mapping,
+            )
+        except BaseException as exc:
+            if self.cache_manager.coordinates_checkpoints(batch) or batch.checkpoint_plan:
+                self.engine.kv_cache.recurrent.fail_device(exc)
+            error = exc
+        self.cache_manager.checkpoint_metadata_ready(batch, error)
+        return prepared
 
     def _schedule_next_batch(self) -> ForwardInput | None:
         # TODO: support other policies: e.g. DECODE first
@@ -332,12 +389,17 @@ class Scheduler(SchedulerIOMixin):
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:
         batch, sample_args, input_mapping, output_mapping = forward_input
-        batch.input_ids = self.token_pool[input_mapping]
-        forward_output = self.engine.forward_batch(batch, sample_args)
-        self.token_pool[output_mapping] = forward_output.next_tokens_gpu
-        self.decode_manager.filter_reqs(forward_input.batch.reqs)
-        self.inflight_reqs.update((req.uid, req) for req in batch.reqs)
-        return forward_output
+        try:
+            batch.input_ids = self.token_pool[input_mapping]
+            forward_output = self.engine.forward_batch(batch, sample_args)
+            self.token_pool[output_mapping] = forward_output.next_tokens_gpu
+            self.decode_manager.filter_reqs(forward_input.batch.reqs)
+            self.inflight_reqs.update((req.uid, req) for req in batch.reqs)
+            return forward_output
+        except BaseException as error:
+            if batch.checkpoint_plan:
+                self.engine.kv_cache.recurrent.fail_device(error)
+            raise
 
 
 def _make_positions(batch: Batch, device: torch.device) -> torch.Tensor:

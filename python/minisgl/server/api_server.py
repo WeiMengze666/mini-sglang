@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 from contextlib import AbstractContextManager, aclosing, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Callable, Dict, List, Literal, Tuple
 
@@ -185,6 +185,9 @@ class FrontendManager:
             try:
                 self.check_backend()
             except HTTPException:
+                from .launch import _stop_workers
+
+                await asyncio.to_thread(_stop_workers, self.workers)
                 return
             await asyncio.sleep(0.25)
 
@@ -239,6 +242,8 @@ class FrontendManager:
                         # Consumers may stop immediately after the terminal reply.
                         self.ack_map.pop(uid, None)
                         self.event_map.pop(uid, None)
+                    if not self.config.enable_cache_report and ack.cached_tokens is not None:
+                        ack = replace(ack, cached_tokens=None)
                     yield ack
                     if finished:
                         return
@@ -446,6 +451,8 @@ async def v1_completions(req: OpenAICompletionRequest, request: Request):
 async def metrics():
     """Frontend counters; completed-token totals exclude failed/cancelled requests."""
     state = get_global_state()
+    if not state.config.enable_metrics:
+        raise HTTPException(status_code=404, detail="Metrics are disabled")
     counters = {
         "requests_total": state.uid_counter,
         "completed_requests_total": state.completed_requests,

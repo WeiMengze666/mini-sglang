@@ -4,7 +4,11 @@ Recurrent state grows from the left, token pages from the right. Removing a
 block moves the last block of that kind into its hole, then updates indirection.
 Views must be acquired after allocations/frees; mutations run on the forward
 stream so earlier kernels finish using an old view before a move overwrites it.
+Explicit state borrows reject allocation/free until all borrowers exit. Only
+aborted checkpoint state frees are deferred, without relocating a borrowed view.
 """
+
+from contextlib import contextmanager
 
 import torch
 
@@ -24,6 +28,34 @@ class UnifiedMemory:
         self._pages: dict[int, int] = {}
         self._state_ids: list[object] = []
         self._page_ids: list[int] = []
+        self._view_borrows = 0
+        self._deferred_state_frees: set[object] = set()
+
+    @contextmanager
+    def borrow_state(self, key):
+        """Keep physical views stable until all nested borrowers have exited."""
+        self._view_borrows += 1
+        try:
+            yield self.state_view(key)
+        finally:
+            self._view_borrows -= 1
+            if self._view_borrows == 0:
+                pending, self._deferred_state_frees = self._deferred_state_frees, set()
+                for key in pending:
+                    self.free_state(key)
+
+    def _check_mutable(self):
+        if self._view_borrows:
+            raise RuntimeError("Cannot mutate unified memory while state views are borrowed")
+
+    def _free_state_after_borrow(self, key):
+        # Only aborted checkpoint leases use this path. No view moves yet.
+        if key not in self._states:
+            raise KeyError(key)
+        if self._view_borrows:
+            self._deferred_state_frees.add(key)
+        else:
+            self.free_state(key)
 
     @property
     def free_bytes(self):
@@ -49,6 +81,7 @@ class UnifiedMemory:
         return key in self._states
 
     def allocate_state(self, key):
+        self._check_mutable()
         if key in self._states:
             raise ValueError("State handle is already allocated")
         if self.free_bytes < self.state_bytes:
@@ -58,6 +91,7 @@ class UnifiedMemory:
         return self.state_view(key)
 
     def free_state(self, key):
+        self._check_mutable()
         index = self._states.pop(key)
         last = self._state_ids.pop()
         if last != key:
@@ -71,6 +105,7 @@ class UnifiedMemory:
         return self.buffer[stop - self.page_bytes : stop]
 
     def allocate_pages(self, keys):
+        self._check_mutable()
         keys = [int(key) for key in keys]
         if len(set(keys)) != len(keys) or any(key in self._pages for key in keys):
             raise ValueError("Token page handle is already allocated")
@@ -87,6 +122,7 @@ class UnifiedMemory:
         self.page_map[keys] = torch.tensor(physical, device=self.buffer.device)
 
     def free_pages_by_id(self, keys):
+        self._check_mutable()
         for key in keys:
             key = int(key)
             index = self._pages.pop(key)

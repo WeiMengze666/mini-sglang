@@ -158,16 +158,16 @@ def test_staged_frontier_does_not_survive_cancellation_or_slot_reuse(manager):
 
 
 @pytest.mark.parametrize(
-    "overlap,cached,cache_type,expected",
+    "overlap,ratio,cache_type,expected",
     [
-        (False, 2, "hybrid", 6),
-        (True, 2, "hybrid", 10),
-        (True, 0, "hybrid", 4),
-        (True, 2, "naive", 4),
+        (False, 0.31, "hybrid", 8),
+        (True, 0.31, "hybrid", 12),
+        (True, None, "hybrid", 4),
+        (True, 0.31, "naive", 4),
     ],
 )
 def test_memory_budget_reserves_one_staged_frontier_per_running_request(
-    overlap, cached, cache_type, expected
+    overlap, ratio, cache_type, expected
 ):
     from minisgl.distributed import DistributedInfo
     from minisgl.scheduler import SchedulerConfig
@@ -177,7 +177,7 @@ def test_memory_budget_reserves_one_staged_frontier_per_running_request(
         DistributedInfo(0, 1),
         torch.bfloat16,
         max_running_req=4,
-        max_cached_states=cached,
+        state_memory_ratio=ratio,
         cache_type=cache_type,
         enable_cache_overlap=overlap,
     )

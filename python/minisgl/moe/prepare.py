@@ -1,4 +1,4 @@
-"""Optional fresh-worker FI preparation. The Engine does not call this entry.
+"""Optional fresh-worker FI preparation, invoked by owned Engine startup.
 
 fresh_worker is a launcher ownership contract, not ambient-store detection:
 no previous FI context/v2/store, bundled cache, serving or concurrent FI user.

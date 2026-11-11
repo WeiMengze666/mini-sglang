@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from collections.abc import Callable
+from typing import TYPE_CHECKING, NoReturn, Protocol
 
 import torch
 from minisgl.utils import Registry
@@ -37,6 +38,7 @@ def create_kvcache_pool(
     *,
     state_dtype: torch.dtype = torch.float32,
     kv_dtype: torch.dtype | None = None,
+    device_abort: Callable[[BaseException], NoReturn] | None = None,
 ) -> BaseKVCachePool:
     if model_config.cache_config is not None:
         from .hybrid_pool import HybridCache
@@ -55,6 +57,7 @@ def create_kvcache_pool(
             enable_cache_overlap=enable_cache_overlap,
             state_dtype=state_dtype,
             kv_dtype=kv_dtype,
+            device_abort=device_abort,
         )
 
     from .mha_pool import MHAKVCache

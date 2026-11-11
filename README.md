@@ -102,13 +102,13 @@ Since Mini-SGLang requires Linux-specific dependencies, Windows users should use
 2. **Run the server**:
    ```bash
    docker run --gpus all -p 1919:1919 \
-       minisgl --model Qwen/Qwen3-0.6B --host 0.0.0.0
+       minisgl --model-path Qwen/Qwen3-0.6B --host 0.0.0.0
    ```
 
 3. **Run in interactive shell mode**:
    ```bash
    docker run -it --gpus all \
-       minisgl --model Qwen/Qwen3-0.6B --shell
+       minisgl --model-path Qwen/Qwen3-0.6B --shell
    ```
 
 4. **Using Docker Volumes for persistent caches** (recommended for faster subsequent startups):
@@ -117,7 +117,7 @@ Since Mini-SGLang requires Linux-specific dependencies, Windows users should use
        -v huggingface_cache:/app/.cache/huggingface \
        -v tvm_cache:/app/.cache/tvm-ffi \
        -v flashinfer_cache:/app/.cache/flashinfer \
-       minisgl --model Qwen/Qwen3-0.6B --host 0.0.0.0
+       minisgl --model-path Qwen/Qwen3-0.6B --host 0.0.0.0
    ```
 
 </details>
@@ -128,10 +128,10 @@ Launch an OpenAI-compatible API server with a single command.
 
 ```bash
 # Deploy Qwen/Qwen3-0.6B on a single GPU
-python -m minisgl --model "Qwen/Qwen3-0.6B"
+python -m minisgl --model-path "Qwen/Qwen3-0.6B"
 
 # Deploy meta-llama/Llama-3.1-70B-Instruct on 4 GPUs with Tensor Parallelism, on port 30000
-python -m minisgl --model "meta-llama/Llama-3.1-70B-Instruct" --tp 4 --port 30000
+python -m minisgl --model-path "meta-llama/Llama-3.1-70B-Instruct" --tp-size 4 --port 30000
 ```
 
 Once the server is running, you can send requests using standard tools like `curl` or any OpenAI-compatible client.
@@ -141,7 +141,7 @@ Once the server is running, you can send requests using standard tools like `cur
 Chat with your model directly in the terminal by adding the `--shell` flag.
 
 ```bash
-python -m minisgl --model "Qwen/Qwen3-0.6B" --shell
+python -m minisgl --model-path "Qwen/Qwen3-0.6B" --shell
 ```
 
 ![shell-example](https://lmsys.org/images/blog/minisgl/shell.png)
@@ -178,16 +178,16 @@ Launch command:
 
 ```bash
 # Mini-SGLang
-python -m minisgl --model "Qwen/Qwen3-32B" --tp 4 --cache naive
+python -m minisgl --model-path "Qwen/Qwen3-32B" --tp-size 4 --cache naive
 
 # SGLang
-python3 -m sglang.launch_server --model "Qwen/Qwen3-32B" --tp 4 \
+python3 -m sglang.launch_server --model-path "Qwen/Qwen3-32B" --tp-size 4 \
     --disable-radix --port 1919 --decode-attention flashinfer
 ```
 
 > **Note**: If you encounter network issues when downloading models from HuggingFace, try using `--model-source modelscope` to download from ModelScope instead:
 > ```bash
-> python -m minisgl --model "Qwen/Qwen3-32B" --tp 4 --model-source modelscope
+> python -m minisgl --model-path "Qwen/Qwen3-32B" --tp-size 4 --model-source modelscope
 > ```
 
 ![online](https://lmsys.org/images/blog/minisgl/online.png)

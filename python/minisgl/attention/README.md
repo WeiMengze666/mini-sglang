@@ -69,10 +69,9 @@ after physical-page relocation. Graph plans keep device buffers at stable
 addresses and share a decode workspace; expanded prefill owns its workspace.
 
 `--kv-cache-dtype` selects persistent token storage independently of model
-activations, convolution history and `--recurrent-state-dtype`. Prefill consumes
-fresh projections before token-cache quantization and dequantizes cached
-prefixes to the projection dtype. These adapters still require full-model
-numerical acceptance before a performance claim.
+activations, convolution history and `--mamba-ssm-dtype`. Supported FP8-KV MLA prefill follows the native FP8 Q/K/V
+path with BF16 output. Kernel/precision/state semantics are recorded separately
+from convergence performance and final model-quality acceptance.
 
 KDA parameters and recurrent/convolution state keep their tensor-TP partition.
 DCP expands MLA decode queries across cyclic KV shards. `ParallelLayout.mla_decode`

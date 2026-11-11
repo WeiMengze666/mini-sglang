@@ -20,6 +20,8 @@ class ServerArgs(SchedulerConfig):
     served_model_name: str | None = None
     reasoning_parser: str | None = None
     tool_call_parser: str | None = None
+    enable_metrics: bool = False
+    enable_cache_report: bool = False
 
     @property
     def share_tokenizer(self) -> bool:
@@ -68,11 +70,10 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     from minisgl.kvcache import SUPPORTED_CACHE_MANAGER
     from minisgl.moe import SUPPORTED_MOE_BACKENDS
 
-    parser = argparse.ArgumentParser(description="MiniSGL Server Arguments")
+    parser = argparse.ArgumentParser(description="MiniSGL Server Arguments", allow_abbrev=False)
 
     parser.add_argument(
         "--model-path",
-        "--model",
         type=str,
         required=True,
         help="The path of the model weights. This can be a local folder or a Hugging Face repo ID.",
@@ -86,6 +87,10 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     parser.add_argument("--served-model-name", help="Model identifier exposed by the API.")
     parser.add_argument("--reasoning-parser", help="Optional native reasoning-format parser.")
     parser.add_argument("--tool-call-parser", help="Optional native tool-call parser.")
+    parser.add_argument("--enable-metrics", action="store_true", help="Expose runtime metrics.")
+    parser.add_argument(
+        "--enable-cache-report", action="store_true", help="Report cached prompt tokens in usage."
+    )
 
     parser.add_argument(
         "--dtype",
@@ -103,8 +108,8 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
-        "--tensor-parallel-size",
         "--tp-size",
+        dest="tensor_parallel_size",
         type=int,
         default=1,
         help="The tensor parallelism size.",
@@ -125,13 +130,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     parser.add_argument(
         "--mxfp4-backend",
-        choices=["torch", "triton", "flashinfer"],
+        choices=["auto", "torch", "triton", "flashinfer"],
         default=ServerArgs.mxfp4_backend,
         help="Weight-only MXFP4 execution backend.",
     )
     parser.add_argument(
         "--mxfp4-activation-precision",
-        choices=["bf16", "mxfp8"],
+        choices=["auto", "bf16", "mxfp8"],
         default=ServerArgs.mxfp4_activation_precision,
         help="Activation precision for packed MXFP4 experts.",
     )
@@ -152,28 +157,32 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
-        "--recurrent-state-dtype",
+        "--mamba-ssm-dtype",
+        dest="recurrent_state_dtype",
         choices=["float32", "bfloat16"],
         default=str(ServerArgs.recurrent_state_dtype).removeprefix("torch."),
         help="Persistent recurrent state storage, independent of model/KV dtype.",
     )
-    state_budget = parser.add_mutually_exclusive_group()
-    state_budget.add_argument(
-        "--max-cached-states",
-        type=int,
-        default=argparse.SUPPRESS,
-        help="Maximum sparse recurrent checkpoints retained by the hybrid prefix cache.",
-    )
-    state_budget.add_argument(
-        "--state-memory-ratio",
+    parser.add_argument(
+        "--mamba-full-memory-ratio",
+        dest="state_memory_ratio",
         type=float,
-        default=argparse.SUPPRESS,
-        help="Recurrent state bytes / KV bytes; derive checkpoint capacity from the post-load budget.",
+        default=ServerArgs.state_memory_ratio,
+        help="State bytes / full KV bytes; checkpoint capacity is derived from the memory budget.",
     )
     parser.add_argument(
-        "--enable-cache-overlap",
-        action="store_true",
-        help="Stage immutable recurrent checkpoints for overlap scheduling; uses one temporary state per running request at boundaries.",
+        "--mamba-radix-cache-strategy",
+        dest="state_cache_strategy",
+        choices=["auto", "extra_buffer"],
+        default=ServerArgs.state_cache_strategy,
+        help="extra_buffer requires the backend's generic checkpoint/lease capability.",
+    )
+    parser.add_argument(
+        "--disable-overlap-schedule",
+        dest="enable_cache_overlap",
+        action="store_false",
+        default=ServerArgs.enable_cache_overlap,
+        help="Disable overlap scheduling and use the serial cache lifecycle.",
     )
 
     parser.add_argument(
@@ -183,14 +192,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
-        "--max-seq-len-override",
+        "--context-length",
+        dest="max_seq_len_override",
         type=int,
         default=ServerArgs.max_seq_len_override,
         help="The maximum sequence length override.",
     )
 
     parser.add_argument(
-        "--memory-ratio",
+        "--mem-fraction-static",
+        dest="memory_ratio",
         type=float,
         default=ServerArgs.memory_ratio,
         help="The fraction of GPU memory to use for KV cache.",
@@ -257,12 +268,12 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         type=int,
         nargs="+",
         default=ServerArgs.cuda_graph_bs,
-        help="Exact batch sizes to capture; overrides --cuda-graph-max-bs.",
+        help="Exact batch sizes to capture; overrides --cuda-graph-max-bs-decode.",
     )
 
     parser.add_argument(
-        "--cuda-graph-max-bs",
-        "--graph",
+        "--cuda-graph-max-bs-decode",
+        dest="cuda_graph_max_bs",
         type=int,
         default=ServerArgs.cuda_graph_max_bs,
         help="The maximum batch size for CUDA graph capture. None means auto-tuning based on the GPU memory.",
@@ -270,19 +281,22 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     parser.add_argument(
         "--num-tokenizer",
-        "--tokenizer-count",
         type=int,
         default=ServerArgs.num_tokenizer,
         help="The number of tokenizer processes to launch. 0 means the tokenizer is shared with the detokenizer.",
     )
 
     parser.add_argument(
-        "--max-prefill-length",
-        "--max-extend-length",
+        "--max-prefill-tokens",
         type=int,
-        dest="max_extend_tokens",
-        default=ServerArgs.max_extend_tokens,
-        help="Chunk Prefill maximum chunk size in tokens.",
+        default=ServerArgs.max_prefill_tokens,
+        help="Shared input-token admission budget for each prefill batch.",
+    )
+    parser.add_argument(
+        "--chunked-prefill-size",
+        type=int,
+        default=ServerArgs.chunked_prefill_size,
+        help="Shared chunk-token budget for each prefill batch.",
     )
 
     parser.add_argument(
@@ -302,7 +316,6 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     parser.add_argument(
         "--attention-backend",
-        "--attn",
         type=str,
         default=ServerArgs.attention_backend,
         help="The attention backend to use. If two backends are specified,"

@@ -97,8 +97,14 @@ class BasePrefixCache(ABC):
     def release_checkpoint_memory(self, required_bytes: int) -> None:
         """Give optional snapshots back to a unified byte pool under pressure."""
 
+    def evict_checkpoint(self) -> bool:
+        """Release one unpinned state checkpoint under allocation pressure."""
+        return False
+
     @abstractmethod
-    def lock_handle(self, handle: BaseCacheHandle, unlock: bool = False) -> None:
+    def lock_handle(
+        self, handle: BaseCacheHandle, unlock: bool = False, *, for_restore: bool = True
+    ) -> None:
         """
         Lock or unlock a cache handle.
         This operation will not modify the cache, but change the size info only.

@@ -36,9 +36,17 @@ class PrefillAdder:
     cache_manager: CacheManager
     table_manager: TableManager
     chunk_alignment: int = 1
+    chunk_budget: int | None = None
+    compute_page_size: int = 1
 
     def _chunk_size(self, req: PendingReq, handle: BaseCacheHandle, cached_len: int) -> int:
-        end = min(cached_len + self.token_budget, req.input_len)
+        budget = self.token_budget if self.chunk_budget is None else self.chunk_budget
+        remaining = req.input_len - cached_len
+        page = self.compute_page_size
+        if self.chunk_budget is not None and -(-remaining // page) * page > budget:
+            end = cached_len + budget // page * page
+        else:
+            end = min(cached_len + budget, req.input_len)
         replay_until = getattr(handle, "replay_until", 0)
         if replay_until > cached_len:
             end = min(end, replay_until)
@@ -98,7 +106,10 @@ class PrefillAdder:
             return None
         is_chunked = chunk_size < remain_len
         CLS = ChunkedReq if is_chunked else Req
-        self.token_budget -= chunk_size
+        charge = -(-chunk_size // self.compute_page_size) * self.compute_page_size
+        self.token_budget -= charge
+        if self.chunk_budget is not None:
+            self.chunk_budget -= charge
         self.reserved_size += remain_len + pending_req.output_len
         # NOTE: update the tokens ids only; new pages will be allocated in the scheduler
         _slice = slice(cached_len, cached_len + chunk_size)
@@ -120,7 +131,9 @@ class PrefillAdder:
         )
 
     def try_add_one(self, pending_req: PendingReq) -> Req | None:
-        if self.token_budget <= 0:
+        if self.token_budget <= 0 or (
+            self.chunk_budget is not None and self.chunk_budget <= 0
+        ):
             return None
 
         if chunked_req := pending_req.chunked_req:
@@ -149,6 +162,8 @@ class PrefillManager:
     table_manager: TableManager
     decode_manager: DecodeManager
     pending_list: List[PendingReq] = field(default_factory=list)
+    chunked_prefill_size: int | None = None
+    compute_page_size: int | None = None
 
     def add_one_req(self, req: UserMsg) -> None:
         self.pending_list.append(PendingReq(req.uid, req.input_ids, req.sampling_params))
@@ -158,17 +173,21 @@ class PrefillManager:
             return None
 
         # estimated offset due to in-flight decode
+        page_size = self.compute_page_size or self.cache_manager.page_size
+        chunk_budget = (
+            prefill_budget if self.chunked_prefill_size is None else self.chunked_prefill_size
+        )
         adder = PrefillAdder(
             token_budget=prefill_budget,
+            chunk_budget=chunk_budget,
+            compute_page_size=page_size,
             reserved_size=self.decode_manager.inflight_tokens,
             cache_manager=self.cache_manager,
             table_manager=self.table_manager,
             # Keep intermediate frontiers page-aligned for KV and state reuse.
             # A configured budget below one page must still make progress.
             chunk_alignment=(
-                self.cache_manager.page_size
-                if prefill_budget >= self.cache_manager.page_size
-                else 1
+                page_size if chunk_budget >= page_size else 1
             ),
         )
         reqs: List[Req] = []

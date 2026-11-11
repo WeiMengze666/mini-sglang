@@ -57,7 +57,6 @@ def main():
             mxfp4_backend="triton",
             cuda_graph_bs=[1, 2, 4],
             max_running_req=8,
-            max_cached_states=2,
             page_size=8,
             max_seq_len_override=64,
             num_page_override=256,

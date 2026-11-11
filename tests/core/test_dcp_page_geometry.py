@@ -36,10 +36,10 @@ def test_scheduler_and_engine_share_the_same_page_contract():
         dtype=torch.bfloat16,
         dcp_size=8,
         page_size=64,
-        max_extend_tokens=32768,
+        max_prefill_tokens=32768,
     )
     assert config.page_size == 64 and config.logical_page_size == 512
-    assert config.max_extend_tokens % config.logical_page_size == 0
+    assert config.max_prefill_tokens % config.logical_page_size == 0
 
 
 @pytest.mark.parametrize("kv_dtype", [torch.bfloat16, torch.float8_e4m3fn])
@@ -56,7 +56,6 @@ def test_engine_capacity_counts_complete_physical_pages_on_each_rank(context_siz
         dcp_size=context_size,
         page_size=64,
         max_running_req=1,
-        max_cached_states=0,
         memory_ratio=0.5,
         kv_cache_dtype=kv_dtype,
     )

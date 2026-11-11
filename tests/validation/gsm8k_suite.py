@@ -263,7 +263,6 @@ def run_mini(args, cases, stop_ids):
             dcp_size=args.dcp_size,
             ep_size=args.ep_size,
             max_running_req=args.max_running_requests,
-            max_cached_states=0,
             max_seq_len_override=args.max_context,
             page_size=64,
             num_page_override=(args.batch_size * args.max_context + 64 * args.dcp_size - 1)

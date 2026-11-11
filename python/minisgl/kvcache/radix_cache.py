@@ -110,7 +110,9 @@ class RadixPrefixCache(BasePrefixCache):
         self.root_node = RadixTreeNode(self.key_fn)
         self.root_node.ref_count = 1  # root is always protected
 
-    def lock_handle(self, handle: BaseCacheHandle, unlock: bool = False) -> None:
+    def lock_handle(
+        self, handle: BaseCacheHandle, unlock: bool = False, *, for_restore: bool = True
+    ) -> None:
         assert isinstance(handle, RadixCacheHandle)
         node = handle.node
         if unlock:

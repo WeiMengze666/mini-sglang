@@ -20,14 +20,13 @@ class EngineConfig:
     kv_cache_dtype: torch.dtype | None = None
     dcp_size: int = 1
     ep_size: int = 1
-    mxfp4_backend: str = "torch"
-    mxfp4_activation_precision: str = "bf16"
+    mxfp4_backend: str = "auto"
+    mxfp4_activation_precision: str = "auto"
     bf16_precision: str = "auto"
     max_running_req: int = 256
-    max_cached_states: int = 8
     state_memory_ratio: float | None = None
     enable_unified_memory: bool = False
-    enable_cache_overlap: bool = False
+    enable_cache_overlap: bool = True
     recurrent_state_dtype: torch.dtype = torch.float32
     attention_backend: str = "auto"
     moe_backend: str = "auto"
@@ -76,11 +75,12 @@ class EngineConfig:
 
     @property
     def state_slot_budget(self) -> int:
-        cached = self.max_cached_states if getattr(self, "cache_type", "hybrid") != "naive" else 0
-        automatic = self.state_memory_ratio is not None
-        staged = self.max_running_req if (cached or automatic) and self.enable_cache_overlap else 0
-        # Automatic checkpoint capacity is resolved from the post-load budget.
-        return self.max_running_req + (0 if automatic else cached) + staged
+        automatic = (
+            self.state_memory_ratio is not None and getattr(self, "cache_type", None) != "naive"
+        )
+        staged = (2 if self.enable_cache_overlap else 1) * self.max_running_req if automatic else 0
+        # Checkpoint capacity is resolved from the post-load state/KV byte ratio.
+        return self.max_running_req + staged
 
     @property
     def distributed_addr(self) -> str:

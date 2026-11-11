@@ -13,10 +13,20 @@ def _get_pid_suffix() -> str:
 
 @dataclass(frozen=True)
 class SchedulerConfig(EngineConfig):
-    max_extend_tokens: int = 8192
+    max_prefill_tokens: int = 16384
+    chunked_prefill_size: int = 16384
+    state_cache_strategy: str = "auto"
     cache_type: str = "radix"
     offline_mode: bool = False
     trust_remote_code: bool = False
+
+    def __post_init__(self):
+        for name in ("max_prefill_tokens", "chunked_prefill_size"):
+            value = getattr(self, name)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.state_cache_strategy not in ("auto", "extra_buffer"):
+            raise ValueError("Unsupported recurrent prefix-cache strategy")
 
     # networking config
     _unique_suffix: str = field(default_factory=_get_pid_suffix)
@@ -35,7 +45,7 @@ class SchedulerConfig(EngineConfig):
 
     @property
     def max_forward_len(self) -> int:
-        return self.max_extend_tokens
+        return max(self.max_prefill_tokens, self.chunked_prefill_size)
 
     @property
     def backend_create_detokenizer_link(self) -> bool:

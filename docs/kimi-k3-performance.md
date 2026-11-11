@@ -1,5 +1,13 @@
 # Kimi-K3 serving performance target
 
+> Current configuration: use the SGLang-compatible names in
+> `benchmark/online/profiles/kimi-k3-sglang.json`, with both prefill budgets set to
+> 16384. Former Mini option names are removed, without compatibility aliases.
+> Historical runs below retain their original commands and measured results.
+> Optimization now prioritizes matching kernels, cache/pool/scheduling behavior
+> and performance, using readable-output/crash/state-boundary smoke. Full model
+> quality is qualified after performance convergence.
+
 ## Replacement-machine baseline (2026-11-11 CST)
 
 The [fresh canonical pair](validation/kimi-k3-replacement-baseline-20261110.json)

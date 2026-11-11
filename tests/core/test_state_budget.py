@@ -27,7 +27,7 @@ def test_state_ratio_cannot_take_required_request_slots():
         cached_state_capacity(1000, 100, 4, ratio=1, scratch_slots=4)
 
 
-@pytest.mark.parametrize("overlap,expected", [(False, 4), (True, 8)])
+@pytest.mark.parametrize("overlap,expected", [(False, 8), (True, 12)])
 def test_automatic_preload_estimate_reserves_only_mandatory_state(overlap, expected):
     config = SchedulerConfig(
         "unused",
@@ -60,8 +60,7 @@ def plan(monkeypatch, *, ratio=1.0, overlap=False, unified=False, pages=None, co
         recurrent_state_dtype=torch.bfloat16,
         memory_ratio=0.9,
         enable_unified_memory=unified,
-        max_cached_states=2,
-        state_slot_budget=6 + (4 if overlap else 0),
+        state_slot_budget=4 + ((8 if overlap else 4) if ratio is not None else 0),
         state_memory_ratio=ratio,
         max_running_req=4,
         enable_cache_overlap=overlap,
@@ -71,15 +70,15 @@ def plan(monkeypatch, *, ratio=1.0, overlap=False, unified=False, pages=None, co
     return pages, engine.cached_state_capacity
 
 
-@pytest.mark.parametrize("overlap,expected_cached", [(False, 31), (True, 27)])
+@pytest.mark.parametrize("overlap,expected_cached", [(False, 27), (True, 23)])
 def test_static_engine_budget_uses_one_common_byte_limit(monkeypatch, overlap, expected_cached):
     pages, cached = plan(monkeypatch, overlap=overlap)
     assert (pages, cached) == (16, expected_cached)
-    assert (pages + 1) * 200 + (4 + cached + (4 if overlap else 0)) * 100 <= 7000
+    assert (pages + 1) * 200 + (4 + cached + (8 if overlap else 4)) * 100 <= 7000
 
 
 def test_state_and_token_pools_follow_least_safe_rank(monkeypatch):
-    expected_collectives = [(31, 23), (4300, 2800)]
+    expected_collectives = [(27, 23), (3900, 2800)]
 
     def reduce(tensor, **options):
         local, shared = expected_collectives.pop(0)
@@ -89,14 +88,14 @@ def test_state_and_token_pools_follow_least_safe_rank(monkeypatch):
     pages, cached = plan(monkeypatch, collective=reduce)
     assert not expected_collectives
     assert (pages, cached) == (13, 23)
-    assert (pages + 1) * 200 + (4 + cached) * 100 == 5500
+    assert (pages + 1) * 200 + (8 + cached) * 100 == 5900
 
 
-def test_manual_checkpoint_limit_preserves_budget(monkeypatch):
-    assert plan(monkeypatch, ratio=None) == (31, 2)
+def test_without_prefix_ratio_only_working_state_is_reserved(monkeypatch):
+    assert plan(monkeypatch, ratio=None) == (32, 0)
 
 
-@pytest.mark.parametrize("override,expected", [(None, (26, 9)), (15, (15, 4))])
+@pytest.mark.parametrize("override,expected", [(None, (26, 5)), (23, (23, 4))])
 def test_unified_state_limit_uses_actual_aligned_arena(monkeypatch, override, expected):
     assert plan(monkeypatch, unified=True, pages=override) == expected
 
@@ -106,23 +105,23 @@ def test_explicit_pages_cannot_overspend_state_budget(monkeypatch):
         plan(monkeypatch, pages=17)
 
 
-def test_cli_selects_automatic_or_explicit_checkpoint_budget():
+def test_cli_uses_ratio_derived_checkpoint_budget():
     from minisgl.server.args import parse_args
 
-    base = ["--model", "unused", "--dtype", "bfloat16"]
-    config, _ = parse_args([*base, "--state-memory-ratio", "0.31"])
+    config, _ = parse_args(
+        ["--model-path", "unused", "--dtype", "bfloat16", "--mamba-full-memory-ratio", "0.31"]
+    )
     assert config.state_memory_ratio == 0.31
-    config, _ = parse_args([*base, "--max-cached-states", "8"])
-    assert config.max_cached_states == 8 and config.state_memory_ratio is None
+    assert not hasattr(config, "max_cached_states")
 
 
 @pytest.mark.parametrize("limit", [0, 8, 9])
 @pytest.mark.parametrize("reverse", [False, True])
-def test_cli_rejects_explicit_state_budget_options_even_at_default(limit, reverse):
+def test_cli_rejects_removed_fixed_capacity_option(limit, reverse):
     from minisgl.server.args import parse_args
 
-    base = ["--model", "unused", "--dtype", "bfloat16"]
-    ratio, explicit = ["--state-memory-ratio", "0.31"], ["--max-cached-states", str(limit)]
+    base = ["--model-path", "unused", "--dtype", "bfloat16"]
+    ratio, explicit = ["--mamba-full-memory-ratio", "0.31"], ["--max-cached-states", str(limit)]
     options = [*explicit, *ratio] if reverse else [*ratio, *explicit]
     with pytest.raises(SystemExit):
         parse_args([*base, *options])
@@ -131,7 +130,7 @@ def test_cli_rejects_explicit_state_budget_options_even_at_default(limit, revers
 def test_state_footprints_can_differ_between_ranks(monkeypatch):
     # Local state uses100B, peer300B. Both get7000B, so the peer permits
     # seven cached slots. Each rank then deducts its own11-slot reservation.
-    expected_collectives = [(31, 7), (5900, 3700)]
+    expected_collectives = [(27, 3), (5900, 3700)]
 
     def reduce(tensor, **options):
         local, shared = expected_collectives.pop(0)
@@ -140,8 +139,8 @@ def test_state_footprints_can_differ_between_ranks(monkeypatch):
 
     pages, cached = plan(monkeypatch, collective=reduce)
     assert not expected_collectives
-    assert (pages, cached) == (17, 7)
-    assert (pages + 1) * 200 + (4 + cached) * 300 <= 7000
+    assert (pages, cached) == (17, 3)
+    assert (pages + 1) * 200 + (8 + cached) * 300 <= 7000
 
 
 def test_insufficient_peer_state_budget_fails_collectively(monkeypatch):
@@ -153,4 +152,4 @@ def test_insufficient_peer_state_budget_fails_collectively(monkeypatch):
 
     with pytest.raises(MemoryError, match="State budget on a TP rank"):
         plan(monkeypatch, collective=reduce)
-    assert calls == [31]
+    assert calls == [27]

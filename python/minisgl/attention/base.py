@@ -47,6 +47,13 @@ class HybridAttnMetadata(BaseAttnMetadata):
 class BaseAttnBackend(ABC):
     supports_graph_padding = True
 
+    def prepare_model(self, attention_configs) -> None:
+        """Bind optional immutable global-layer configurations before graph setup."""
+
+    def checkpoint_quantum(self, batch=None) -> int | None:
+        """Optional all-layer prefill tracking capability; no reservation or writes."""
+        return None
+
     def finish_capture(self, batch) -> None:
         """Release any temporary cache ownership used to warm/capture a graph."""
 
@@ -73,6 +80,14 @@ class BaseAttnBackend(ABC):
 
 
 class PrefillDecodeAttnBackend(BaseAttnBackend):
+    def prepare_model(self, attention_configs):
+        self.prefill_backend.prepare_model(attention_configs)
+        if self.decode_backend is not self.prefill_backend:
+            self.decode_backend.prepare_model(attention_configs)
+
+    def checkpoint_quantum(self, batch=None):
+        return self.prefill_backend.checkpoint_quantum(batch)
+
     @property
     def supports_graph_padding(self):
         return self.decode_backend.supports_graph_padding
@@ -124,6 +139,14 @@ class HybridAttnBackend(BaseAttnBackend):
     @property
     def supports_graph_padding(self):
         return self.kda_backend.supports_graph_padding and self.mla_backend.supports_graph_padding
+
+    def prepare_model(self, attention_configs):
+        self.kda_backend.prepare_model(attention_configs)
+        if self.mla_backend is not self.kda_backend:
+            self.mla_backend.prepare_model(attention_configs)
+
+    def checkpoint_quantum(self, batch=None):
+        return self.kda_backend.checkpoint_quantum(batch)
 
     def _call(self, kind, batch, method, *args):
         metadata = batch.attn_metadata

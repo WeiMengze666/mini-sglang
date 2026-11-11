@@ -15,10 +15,10 @@ import pytest
 import torch
 from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.layout import ParallelLayout
-from minisgl.engine.engine import Engine, StartupOwner
+from minisgl.engine.engine import Engine, WorkerOwner
 from minisgl.layers.base import BaseOP
 from minisgl.moe.fused import FusedMoe
-from minisgl.server.launch import _abort_startup, _run_scheduler, _stop_workers, _wait_for_workers
+from minisgl.server.launch import _abort_worker, _run_scheduler, _stop_workers, _wait_for_workers
 
 
 class Stream:
@@ -36,6 +36,7 @@ def construction(monkeypatch):
     events = []
     bootstrap = SimpleNamespace(ranks=list(range(4)), backend="gloo", name="bootstrap")
     contexts = []
+    pool_args = []
     calls = []
     real_zeros = torch.zeros
 
@@ -111,9 +112,17 @@ def construction(monkeypatch):
     monkeypatch.setattr(engine, "create_model", lambda config: Model())
     monkeypatch.setattr(engine, "create_moe_backend", lambda name: backend)
     monkeypatch.setattr(
-        engine, "create_kvcache_pool", lambda **kwargs: events.append("KV") or SimpleNamespace()
+        engine,
+        "create_kvcache_pool",
+        lambda **kwargs: pool_args.append(kwargs) or events.append("KV") or SimpleNamespace(),
     )
-    monkeypatch.setattr(engine, "create_attention_backend", lambda *args: SimpleNamespace())
+    monkeypatch.setattr(
+        engine,
+        "create_attention_backend",
+        lambda *args: SimpleNamespace(
+            prepare_model=lambda records: None, checkpoint_quantum=lambda: None
+        ),
+    )
     monkeypatch.setattr(engine, "Sampler", lambda *args: SimpleNamespace())
     monkeypatch.setattr(
         engine, "GraphRunner", lambda **kwargs: events.append("graphs") or SimpleNamespace()
@@ -135,6 +144,13 @@ def construction(monkeypatch):
     monkeypatch.setattr(dist, "get_backend", lambda group: group.backend)
     monkeypatch.setattr(dist, "get_process_group_ranks", lambda group: group.ranks)
     monkeypatch.setattr(dist, "get_rank", lambda *args: 0)
+    monkeypatch.setattr(dist, "get_world_size", lambda group: len(group.ranks))
+
+    def gather(values, value, *, group):
+        assert group is bootstrap
+        values[:] = [value] * len(group.ranks)
+
+    monkeypatch.setattr(dist, "all_gather_object", gather)
     monkeypatch.setattr(dist, "new_group", new_group)
     monkeypatch.setattr(dist, "destroy_process_group", destroy)
 
@@ -148,7 +164,11 @@ def construction(monkeypatch):
             logical_page_size=64,
             bf16_precision=precision,
             model_config=SimpleNamespace(
-                is_moe=is_moe, cache_config=object() if hybrid else None, vocab_size=8
+                is_moe=is_moe,
+                cache_config=object() if hybrid else None,
+                vocab_size=8,
+                attention_configs=(),
+                has_recurrent_state=hybrid,
             ),
             moe_backend="fused",
             mxfp4_backend="flashinfer",
@@ -171,6 +191,7 @@ def construction(monkeypatch):
     return SimpleNamespace(
         events=events,
         contexts=contexts,
+        pool_args=pool_args,
         backend=backend,
         config=config,
         bootstrap=bootstrap,
@@ -187,13 +208,13 @@ def test_preparation_follows_weights_and_releases_only_owned_ETP_before_budget(
     construction, hybrid, ep, rows
 ):
     f = construction
-    owner = StartupOwner(True, _abort_startup)
-    value = Engine(f.config(ep=ep, rows=rows, hybrid=hybrid), startup_owner=owner)
+    owner = WorkerOwner(True, _abort_worker)
+    value = Engine(f.config(ep=ep, rows=rows, hybrid=hybrid), worker_owner=owner)
     assert len(f.contexts) == 1
     context = f.contexts[0]
     assert context.device == value.device and context.layout.ep_size == ep
     assert context.local_rows == (rows,) and context.precision == "default"
-    assert context.fresh_worker and context.abort is owner.abort
+    assert context.fresh_worker and context.abort == owner.abort
     assert (
         f.events.index("after_load")
         < f.events.index("prepare")
@@ -224,8 +245,8 @@ def test_optional_unsupported_paths_keep_original_initialization(construction, m
         lambda *args: pytest.fail("optional path created prep group"),
     )
     config = f.config(precision="strict" if mode == "strict" else "auto", is_moe=mode != "non_moe")
-    owner = None if mode == "no_owner" else StartupOwner(True, _abort_startup)
-    value = Engine(config, startup_owner=owner)
+    owner = None if mode == "no_owner" else WorkerOwner(True, _abort_worker)
+    value = Engine(config, worker_owner=owner)
     assert not f.contexts and "prepare" not in f.events and "graphs" in f.events
     assert value.ctx.bf16_precision == ("strict" if mode == "strict" else "default")
 
@@ -245,7 +266,7 @@ def test_nonFI_empty_public_plan_does_not_profile_or_allocate_extra_GPU(construc
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", forbid)
-    Engine(config, startup_owner=StartupOwner(True, _abort_startup))
+    Engine(config, worker_owner=WorkerOwner(True, _abort_worker))
     assert not f.contexts and not f.destroyed and "graphs" in f.events
     assert f.events.count("base_buffer") == 1  # Existing page table only, no preparation buffer.
     assert not torch.cuda.is_initialized()
@@ -288,7 +309,7 @@ def test_preparation_failure_aborts_once_without_unknown_cleanup(construction, m
 
         monkeypatch.setattr(f.groups, "create_expert_cpu_group", group)
     with pytest.raises(OwnedAbort):
-        Engine(f.config(ep=2), startup_owner=StartupOwner(True, abort))
+        Engine(f.config(ep=2), worker_owner=SimpleNamespace(fresh_worker=True, abort=abort))
     assert calls == [error]
     assert "budget" not in f.events and "graphs" not in f.events
     assert not f.destroyed
@@ -304,8 +325,8 @@ def test_returning_abort_callback_is_rejected(construction, monkeypatch):
         raise error
 
     monkeypatch.setattr(f.backend, "prepare", fail)
-    with pytest.raises(RuntimeError, match="Startup abort callback returned") as raised:
-        Engine(f.config(ep=2), startup_owner=StartupOwner(True, calls.append))
+    with pytest.raises(RuntimeError, match="Worker abort callable returned") as raised:
+        Engine(f.config(ep=2), worker_owner=SimpleNamespace(fresh_worker=True, abort=calls.append))
     assert raised.value.__cause__ is error and calls == [error]
     assert not f.destroyed and "budget" not in f.events and "graphs" not in f.events
 
@@ -325,9 +346,10 @@ def test_scheduler_passes_borrowed_owner_and_existing_CPU_group(monkeypatch, has
         num_pages=4,
         kv_cache=object(),
         tp_cpu_group=group,
+        checkpoint_quantum=None,
     )
     monkeypatch.setattr(
-        engine, "Engine", lambda config, *, startup_owner=None: seen.append(startup_owner) or fake
+        engine, "Engine", lambda config, *, worker_owner=None: seen.append(worker_owner) or fake
     )
     monkeypatch.setattr(torch.cuda, "Stream", lambda *args, **kwargs: stream)
     monkeypatch.setattr(torch.cuda, "stream", lambda stream: nullcontext())
@@ -349,25 +371,25 @@ def test_scheduler_passes_borrowed_owner_and_existing_CPU_group(monkeypatch, has
         cache_type="naive",
         model_path="cpu-fixture",
         trust_remote_code=False,
-        max_extend_tokens=17,
+        max_prefill_tokens=17,
         tp_info=DistributedInfo(0, 1),
         offline_mode=True,
     )
-    owner = StartupOwner(True, _abort_startup) if has_owner else None
-    result = scheduler.Scheduler(config, startup_owner=owner)
+    owner = WorkerOwner(True, _abort_worker) if has_owner else None
+    result = scheduler.Scheduler(config, worker_owner=owner)
     assert seen == [owner] and result.tp_cpu_group is group
 
 
-def test_startup_owner_is_small_and_pickleable():
-    owner = StartupOwner(True, _abort_startup)
+def test_worker_owner_is_small_and_pickleable():
+    owner = WorkerOwner(True, _abort_worker)
     restored = pickle.loads(pickle.dumps(owner))
-    assert restored.fresh_worker and restored.abort is _abort_startup
+    assert restored.fresh_worker and restored.abort_callback is _abort_worker
 
 
-def _metadata_failure_scheduler(args, *, startup_owner):
+def _metadata_failure_scheduler(args, *, worker_owner):
     from minisgl.moe.prepare import MoePreparation
 
-    assert startup_owner.fresh_worker and startup_owner.abort is _abort_startup
+    assert worker_owner.fresh_worker and worker_owner.abort_callback is _abort_worker
     root = BaseOP()
 
     def bad(context, *, dry_run=False):
@@ -394,8 +416,8 @@ def _metadata_failure_scheduler(args, *, startup_owner):
             torch.device("cpu"),
             ParallelLayout(),
             (args.rows,),
-            fresh_worker=startup_owner.fresh_worker,
-            abort=startup_owner.abort,
+            fresh_worker=worker_owner.fresh_worker,
+            abort=worker_owner.abort,
         ),
     )
     raise AssertionError("fatal owner returned")
@@ -446,3 +468,13 @@ def test_real_fresh_spawn_fatal_preflight_is_seen_by_existing_parent_and_peers_e
     finally:
         _stop_workers([failed, peer, unrelated])
         queue.close()
+
+
+def test_nonfresh_worker_keeps_FI_untuned_but_borrows_runtime_abort(construction):
+    f = construction
+    owner = WorkerOwner(False, _abort_worker)
+    value = Engine(f.config(), worker_owner=owner)
+    assert value.worker_owner is owner and value.checkpoint_quantum is None
+    assert not f.contexts and "prepare" not in f.events
+    assert f.pool_args[-1]["device_abort"] == owner.abort
+    assert "graphs" in f.events and not f.destroyed
