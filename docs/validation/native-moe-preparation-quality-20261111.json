@@ -1,0 +1,211 @@
+{
+  "scope": "Complete prepare-only1319 quality diagnostic; source differs from this branch by removing the six native-norm files, retained separately",
+  "recorded_utc": "2026-11-11T00:45:07.908475+00:00",
+  "runtime_inputs_sha256": "56f5e55d45961d24311d58cdf724c73866d8638219e2545c1c27cdda53c406fe",
+  "runtime_base": "a3f3341f451ce660a0316d87beefd05a05a20c11",
+  "runtime_patch_sha256": "1923e60301127ce96c71dff458785688a60ec01b2ba829e7c22f0020049d7e4d",
+  "summary": {
+    "candidate": {
+      "correct": 1281,
+      "expected": 1319,
+      "invalid_ids": [
+        93,
+        423
+      ],
+      "truncated_ids": [
+        423
+      ]
+    },
+    "reference": {
+      "correct": 1284,
+      "expected": 1319,
+      "invalid_ids": [],
+      "truncated_ids": []
+    },
+    "safe34": {
+      "correct": 1284,
+      "expected": 1319,
+      "invalid_ids": [
+        93,
+        754
+      ],
+      "truncated_ids": [
+        754
+      ]
+    },
+    "mini_baseline": {
+      "correct": 1281,
+      "expected": 1319,
+      "invalid_ids": [
+        423,
+        1176
+      ],
+      "truncated_ids": [
+        423,
+        1176
+      ]
+    },
+    "combined38": {
+      "correct": 1279,
+      "expected": 1319,
+      "invalid_ids": [],
+      "truncated_ids": []
+    }
+  },
+  "paired_counts": {
+    "reference": {
+      "both_correct": 1278,
+      "both_wrong": 32,
+      "left_only_correct": [
+        675,
+        796,
+        1038
+      ],
+      "right_only_correct": [
+        37,
+        306,
+        423,
+        425,
+        754,
+        1003
+      ],
+      "identical_token_ids": 677,
+      "strict_tokens_diagnostic_only": true
+    },
+    "safe34": {
+      "both_correct": 1278,
+      "both_wrong": 32,
+      "left_only_correct": [
+        234,
+        552,
+        675
+      ],
+      "right_only_correct": [
+        12,
+        187,
+        306,
+        423,
+        425,
+        1003
+      ],
+      "identical_token_ids": 677,
+      "strict_tokens_diagnostic_only": true
+    },
+    "mini_baseline": {
+      "both_correct": 1278,
+      "both_wrong": 35,
+      "left_only_correct": [
+        322,
+        675,
+        1183
+      ],
+      "right_only_correct": [
+        306,
+        425,
+        754
+      ],
+      "identical_token_ids": 690,
+      "strict_tokens_diagnostic_only": true
+    },
+    "combined38": {
+      "both_correct": 1277,
+      "both_wrong": 36,
+      "left_only_correct": [
+        234,
+        552,
+        675,
+        796
+      ],
+      "right_only_correct": [
+        12,
+        423
+      ],
+      "identical_token_ids": 681,
+      "strict_tokens_diagnostic_only": true
+    }
+  },
+  "actual_tactic_comparison38": {
+    "changed_profiles": 5,
+    "total_profiles": 7,
+    "profiles": [
+      {
+        "rows": 1,
+        "prepare41": [
+          8,
+          1141
+        ],
+        "combined38": [
+          8,
+          1128
+        ]
+      },
+      {
+        "rows": 2,
+        "prepare41": [
+          8,
+          1129
+        ],
+        "combined38": [
+          8,
+          1151
+        ]
+      },
+      {
+        "rows": 4,
+        "prepare41": [
+          8,
+          1067
+        ],
+        "combined38": [
+          8,
+          1125
+        ]
+      },
+      {
+        "rows": 8,
+        "prepare41": [
+          8,
+          1211
+        ],
+        "combined38": [
+          8,
+          867
+        ]
+      },
+      {
+        "rows": 16,
+        "prepare41": [
+          16,
+          194
+        ],
+        "combined38": [
+          16,
+          178
+        ]
+      }
+    ],
+    "same_profiles": [
+      32,
+      64
+    ],
+    "all8rank_consistent_within_each_run": true,
+    "not_a_fixed_tactic_norm_ablation": true
+  },
+  "interpretation": {
+    "task_score": "1281/1319 vs1284official/safe34: paired3candidate-only correct and6other-only correct, net-3/-0.227445percentagepoints. Versus oldMini1281:3wins/3losses despite same score. Versus combined38 1279:4wins/2losses net+2. Descriptive single-run counts, not an implementation-error/significance conclusion or quality-equivalence proof.",
+    "completion": "Invalid93fraction and1024cap423; safe34 invalid93/754 cap754, combined38 noinvalid/cap. Preserve all texts. Finishing754wrong107 is not correctness recovery;423completion regression retained.",
+    "strict_tokens": "Per-token equality/difference is diagnostic only, not a release criterion or proof of whole-path arithmetic identity.",
+    "attribution": "EngineV2 only preparation versus safe34, no materialized norm. Combined38 differs by norm source, but fresh actual FI tuning changes5of7tactics, so this is not fixed-tactic norm-only attribution. No all-path trace or established causal blame.",
+    "precision": "BF16 persistent state/conv unchanged; original source and scorer pinned. No complete runtime tensor dump.",
+    "performance": "Offline evaluation/startup timings are not canonical900s serving TTFT/ITL or performance acceptance.",
+    "acceptance": "Current safe default retained while generic lifecycle/semantic/numerical/component/model/serving evidence is evaluated together. Net3score alone is not a release gate; equal token/score results are not required proof.40historical serving +1.58% is small/nonpaired and no new combined full-path qualification exists."
+  },
+  "quality_accepted_for_default": false,
+  "default_promotion": false,
+  "performance_accepted": false,
+  "full_path_tensor_trace": false,
+  "report_sha256": "87ea76bc760ef54188caced9a9d9d24b7588d1c3705afd40a8ed845d2d1f39d6",
+  "review_manifest_sha256": "92e9576644b5fb21398ac8a1ae7a28e8795a012c0baccf41007a4177c902f905",
+  "root_review_sha256": "2714a0e218232a8c3d9122a5feb8a1b6d00d5241a636bbd9201c63ce29f72700",
+  "remote_artifacts": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/quality-moe-prepare-only-prepared/review"
+}
