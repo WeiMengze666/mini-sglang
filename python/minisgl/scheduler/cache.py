@@ -238,6 +238,33 @@ class CacheManager:
     def unlock(self, handle: BaseCacheHandle) -> None:
         self.prefix_cache.lock_handle(handle, unlock=True)
 
+    def reclaim_capacity(self, required_tokens: int) -> bool:
+        """Reclaim unpinned cache pages before considering live-request retraction."""
+        required_pages = div_ceil(required_tokens, self.page_size)
+        if self.arena is not None:
+            self.prefix_cache.release_checkpoint_memory(required_pages * self.arena.page_bytes)
+        free_pages = len(self.free_slots)
+        if self.arena is not None:
+            free_pages = min(free_pages, self.arena.free_pages)
+        shortage = max(0, required_pages - free_pages) * self.page_size
+        reclaim = min(shortage, self.prefix_cache.size_info.evictable_size)
+        if reclaim:
+            self._free(self.prefix_cache.evict(reclaim))
+        free_pages = len(self.free_slots)
+        if self.arena is not None:
+            free_pages = min(free_pages, self.arena.free_pages)
+        return free_pages >= required_pages
+
+    def discard_req(self, req: Req) -> None:
+        """Drop private completed KV and state without publishing a new prefix."""
+        handle = self._handles.get((req.table_idx, req.uid))
+        if handle is None:
+            raise RuntimeError("Cannot retract a request without its current cache ownership")
+        end = div_ceil(req.cached_len, self.page_size) * self.page_size
+        self._free(self.page_table[req.table_idx, handle.cached_len : end])
+        self.unlock(handle)
+        self.release_state(req.table_idx, req.uid)
+
     def allocate_paged(self, reqs: List[Req]) -> None:
         needed_pages = 0
         allocation_info: List[Tuple[int, int, int]] = []

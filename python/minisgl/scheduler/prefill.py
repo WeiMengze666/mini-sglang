@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, List, Tuple
 
 import torch
 from minisgl.core import Batch, Req
 from minisgl.utils import init_logger
 
-from .utils import PendingReq
+from .utils import CLIP_MAX_NEW_TOKENS, PendingReq
 
 if TYPE_CHECKING:
     from minisgl.kvcache import BaseCacheHandle
@@ -65,12 +65,12 @@ class PrefillAdder:
             return None
         # TODO: better estimate policy
         extend_len = req.input_len - cached_len
-        estimated_len = extend_len + req.output_len
+        estimated_len = extend_len + min(req.output_len, CLIP_MAX_NEW_TOKENS)
 
-        if estimated_len + self.reserved_size > self.cache_manager.available_size:
+        if estimated_len + self.reserved_size >= self.cache_manager.available_size:
             return None
         self.cache_manager.lock(handle)
-        if estimated_len + self.reserved_size > self.cache_manager.available_size:
+        if estimated_len + self.reserved_size >= self.cache_manager.available_size:
             return self.cache_manager.unlock(handle)
 
         table_idx = self.table_manager.allocate()
@@ -80,7 +80,7 @@ class PrefillAdder:
             self.table_manager.free(table_idx)
             self.cache_manager.unlock(handle)
             return None
-        if estimated_len + self.reserved_size > self.cache_manager.available_size:
+        if estimated_len + self.reserved_size >= self.cache_manager.available_size:
             self.cache_manager.release_state(table_idx, req.uid)
             self.table_manager.free(table_idx)
             self.cache_manager.unlock(handle)
@@ -110,20 +110,30 @@ class PrefillAdder:
         self.token_budget -= charge
         if self.chunk_budget is not None:
             self.chunk_budget -= charge
-        self.reserved_size += remain_len + pending_req.output_len
+        # Reserve the actual new KV pages of this forward. Unfinished chunks
+        # cannot decode yet; their future output is billed when their final chunk runs.
+        page = getattr(self.cache_manager, "page_size", self.compute_page_size)
+        first_page = (cached_len + page - 1) // page
+        last_page = (cached_len + chunk_size + page - 1) // page
+        new_pages = last_page - first_page
+        future = 0 if is_chunked else min(pending_req.output_len, CLIP_MAX_NEW_TOKENS)
+        self.reserved_size += new_pages * page + future
         # NOTE: update the tokens ids only; new pages will be allocated in the scheduler
         _slice = slice(cached_len, cached_len + chunk_size)
         device_ids = self.table_manager.token_pool[table_idx, _slice]
         device_ids.copy_(pending_req.input_ids[_slice].pin_memory(), non_blocking=True)
+        cached_prompt_tokens = getattr(pending_req, "cached_prompt_tokens", None)
+        if cached_prompt_tokens is None:
+            cached_prompt_tokens = (
+                pending_req.chunked_req.cached_prompt_tokens
+                if pending_req.chunked_req is not None
+                else cached_len
+            )
         return CLS(
             input_ids=pending_req.input_ids[: cached_len + chunk_size],
             table_idx=table_idx,
             cached_len=cached_len,
-            cached_prompt_tokens=(
-                pending_req.chunked_req.cached_prompt_tokens
-                if pending_req.chunked_req is not None
-                else cached_len
-            ),
+            cached_prompt_tokens=cached_prompt_tokens,
             output_len=pending_req.output_len,
             uid=pending_req.uid,
             cache_handle=cache_handle,
@@ -167,6 +177,20 @@ class PrefillManager:
 
     def add_one_req(self, req: UserMsg) -> None:
         self.pending_list.append(PendingReq(req.uid, req.input_ids, req.sampling_params))
+
+    def requeue(self, req: Req) -> None:
+        """Replay complete host history after a completed-boundary decode retraction."""
+        remaining = req.max_device_len - len(req.input_ids)
+        if remaining <= 0:
+            raise ValueError("Only unfinished requests can be requeued")
+        self.pending_list.append(
+            PendingReq(
+                req.uid,
+                req.input_ids,
+                replace(req.sampling_params, max_tokens=remaining),
+                cached_prompt_tokens=req.cached_prompt_tokens,
+            )
+        )
 
     def schedule_next_batch(self, prefill_budget: int) -> Batch | None:
         if len(self.pending_list) == 0:

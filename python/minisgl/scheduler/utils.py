@@ -11,12 +11,17 @@ if TYPE_CHECKING:
     from .prefill import ChunkedReq
 
 
+# Native scheduler estimation only; generation still uses the full request limit.
+CLIP_MAX_NEW_TOKENS = 4096
+
+
 @dataclass
 class PendingReq:
     uid: int
     input_ids: torch.Tensor
     sampling_params: SamplingParams
     chunked_req: ChunkedReq | None = None
+    cached_prompt_tokens: int | None = None
 
     @property
     def input_len(self) -> int:

@@ -36,7 +36,7 @@ def scheduler_with_fault(log_path, case):
     plans = (object(),) if case in ("new-plan", "message-with-old-plan", "old-plan") else ()
     batch = SimpleNamespace(reqs=[], checkpoint_plan=plans, is_prefill=True)
     forward = SimpleNamespace(batch=batch)
-    scheduler._schedule_next_batch = lambda: forward if case == "new-plan" else None
+    scheduler._schedule_next_batch = lambda **kwargs: forward if case == "new-plan" else None
     scheduler._forward = error
     scheduler.cache_manager = SimpleNamespace(
         stage_states=lambda *args, **kwargs: {"lease": object()} if case == "staged" else {},
