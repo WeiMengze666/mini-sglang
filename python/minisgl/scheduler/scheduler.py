@@ -23,6 +23,7 @@ from .decode import DecodeManager
 from .io import SchedulerIOMixin
 from .prefill import ChunkedReq, PrefillManager
 from .table import TableManager
+from .utils import CLIP_MAX_NEW_TOKENS
 
 if TYPE_CHECKING:
     from minisgl.engine import BatchSamplingArgs, ForwardOutput
@@ -126,7 +127,9 @@ class Scheduler(SchedulerIOMixin):
             )
             for msg in self.receive_msg(blocking=blocking):
                 self._process_one_msg(msg)
-            forward_input = self._schedule_next_batch()
+            # A pressure-only empty step lets the original completion path
+            # commit host tokens and leases before any request is retracted.
+            forward_input = self._schedule_next_batch(allow_retract=last_data is None)
             if last_data is not None:
                 excluded = {req.uid for req in self.finished_reqs | self.aborted_reqs}
                 staged = self.cache_manager.stage_states(
@@ -147,9 +150,9 @@ class Scheduler(SchedulerIOMixin):
                     )
             self._process_last_data(last_data, staged=staged)
         except BaseException as error:
-            live_plans = (
-                last_data is not None and last_data.checkpoint_plan
-            ) or (forward_input is not None and forward_input.batch.checkpoint_plan)
+            live_plans = (last_data is not None and last_data.checkpoint_plan) or (
+                forward_input is not None and forward_input.batch.checkpoint_plan
+            )
             if live_plans or staged:
                 failed_with_live_state = True
                 self.engine.kv_cache.recurrent.fail_device(error)
@@ -379,12 +382,49 @@ class Scheduler(SchedulerIOMixin):
         self.cache_manager.checkpoint_metadata_ready(batch, error)
         return prepared
 
-    def _schedule_next_batch(self) -> ForwardInput | None:
-        # TODO: support other policies: e.g. DECODE first
-        batch = (
-            self.prefill_manager.schedule_next_batch(self.prefill_budget)
-            or self.decode_manager.schedule_next_batch()
-        )
+    def _prepare_decode_capacity(self, *, allow_retract: bool) -> bool:
+        while self.decode_manager.runnable:
+            needed = self.decode_manager.next_page_tokens
+            if self.cache_manager.reclaim_capacity(needed):
+                return True
+            if not allow_retract:
+                return False  # The overlap loop must consume its old completion first.
+            req = self.decode_manager.retraction_candidate()
+            last_request = len(self.decode_manager.running_reqs) == 1
+            if last_request:
+                self.decode_manager.remove_req(req)
+            else:
+                self.decode_manager.retract_req(req)
+            self.inflight_reqs.pop(req.uid, None)
+            self.cache_manager.discard_req(req)
+            self.table_manager.free(req.table_idx)
+            remaining = req.max_device_len - len(req.input_ids)
+            cannot_readmit = (
+                len(req.input_ids) + min(remaining, CLIP_MAX_NEW_TOKENS)
+                >= self.cache_manager.num_pages * self.cache_manager.page_size
+            )
+            if last_request or cannot_readmit:
+                self.decode_manager.remove_req(req)
+                self.send_result(
+                    [
+                        DetokenizeMsg(
+                            uid=req.uid,
+                            next_token=None,
+                            finished=True,
+                            cached_tokens=req.cached_prompt_tokens,
+                            error="KV cache capacity is insufficient for the next decode step",
+                        )
+                    ]
+                )
+            else:
+                self.prefill_manager.requeue(req)
+                logger.warning_rank0("Retracting request %d under decode memory pressure", req.uid)
+        return False
+
+    def _schedule_next_batch(self, *, allow_retract: bool = True) -> ForwardInput | None:
+        batch = self.prefill_manager.schedule_next_batch(self.prefill_budget)
+        if batch is None and self._prepare_decode_capacity(allow_retract=allow_retract):
+            batch = self.decode_manager.schedule_next_batch()
         return self._prepare_batch(batch) if batch else None
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:
