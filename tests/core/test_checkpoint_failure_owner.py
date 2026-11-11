@@ -73,7 +73,9 @@ def _child(kind, folder):
     elif kind == "allocation":
         states.abort_checkpoint = original
         original(plan)
-        torch.empty_like = fault
+        # Dense checkpoints reuse preallocated storage; inject the actual
+        # slot/view reservation seam instead of an unused tensor allocator.
+        states._allocate_checkpoint_storage = fault
         states.reserve_checkpoint(0, 10, 64, end_len=67)
     else:
         scheduler = object.__new__(Scheduler)
