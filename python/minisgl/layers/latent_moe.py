@@ -198,6 +198,11 @@ class LatentMoE(BaseOP):
             routing_policy=RoutingPolicy.from_config(self._config),
         )
 
+    def prepare_runtime(self, context, *, dry_run=False):
+        return self._backend.prepare_local(
+            self._expert_executor, self.gate.routing, context, dry_run=dry_run
+        )
+
     def validate_cuda_graph(self):
         if not self._expert_executor.supports_cuda_graph:
             raise ValueError("CUDA graphs require a device-side grouped expert executor")

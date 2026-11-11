@@ -212,6 +212,16 @@ def fused_experts_impl(
 class FusedMoe(BaseMoeBackend):
     route = staticmethod(grouped_topk)
 
+    def prepare(self, model, context):
+        from .prepare import prepare
+
+        prepare(self, model, context)
+
+    def prepare_local(self, executor, routing_builder, context, *, dry_run=False):
+        from .prepare import prepare_local
+
+        return prepare_local(self, executor, routing_builder, context, dry_run=dry_run)
+
     def forward(
         self,
         hidden_states: torch.Tensor,

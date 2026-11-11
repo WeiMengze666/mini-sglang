@@ -61,6 +61,11 @@ class EngineConfig:
         return self.model_config.rotary_config.max_position
 
     @property
+    def preparation_rows(self) -> tuple[int, ...]:
+        """Known workload representatives for optional fresh-worker preparation."""
+        return (self.max_running_req,)
+
+    @property
     def max_forward_len(self) -> int:
         return self.max_seq_len
 

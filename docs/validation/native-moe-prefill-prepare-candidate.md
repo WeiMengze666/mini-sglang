@@ -1,0 +1,7 @@
+# Bounded native MoE preparation candidate
+
+This independent topic connects owned fresh-worker preparation to the generic MoE backend and public BaseOP.prepare_runtime traversal. EngineConfig.preparation_rows advertises the decode representative; SchedulerConfig adds its actual max_extend_tokens bound with stable deduplication. Bare Engine use does not turn a1M context limit into an unbounded preparation allocation. No model name, new CLI option or custom tuner is introduced.
+
+Preparation reuses FlashInfer public autotune/session handling, existing routing/quantization and the same mature MoE execution path used at inference. Canonical representatives48 and32768 exercise packed decode and unpacked prefill. Their low token buckets can overlap: separate cache namespaces, memory fit, preserved decode tactics and runtime speed are not assumed. Ownership, expert-TP consensus and failure handling remain explicit.
+
+CPU verification:151 passed,9 existing skips; the isolated component driver has49 passed,0 skipped. GPUq component job44 has been queued; no GPU result is included or accepted by this publication. Full-model quality and canonical serving performance remain unqualified. The topic is independent of GEMM/all-gather and reduce/norm work. Its frozen a3f3341 patch is applied to290ad026, whose only intervening changes are safe-quality documents; runtime/test bytes match the frozen candidate. The default290ad026 runtime is unchanged and the norm candidate is not included. The adjacent JSON records exact source/patch and test identities.

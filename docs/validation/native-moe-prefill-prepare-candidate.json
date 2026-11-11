@@ -1,0 +1,27 @@
+{
+  "status": "independent_candidate_CPU_qualified_GPU_component_pending",
+  "publication_base_commit": "290ad026d257982aabf87484b5c8fb1c1ca0ab12",
+  "frozen_candidate_head": "a3f3341f451ce660a0316d87beefd05a05a20c11",
+  "frozen_complete_patch_sha256": "03d8297a2d7f8fc0fe709ef1c217f7edc6438c9b44ae3f53e8f2381a05a74086",
+  "frozen_source_manifest_sha256": "92ac9a2b9aae473cc6b5a6cf8d32ff0a67eecd805501c29eae3dd0164392d306",
+  "runtime_visible_files": 155,
+  "runtime_content_manifest_sha256": "b534a91854b9fa23faf0001ebed2fca9460d1efdbd5144230915ff989d942243",
+  "new_tests_sha256": {
+    "tests/core/test_moe_engine_startup.py": "544db58a4f85c21d19918fdafb815ac6636a34137729dccb1a62fdece7f59928",
+    "tests/core/test_moe_prepare_minimal.py": "d2514adf21ef6b2c2b478ce18013c8c6c0e83594da5a3cb01ddf395c765a9a9d"
+  },
+  "CPU_passed": 151,
+  "CPU_skipped": 9,
+  "CPU_xml_sha256": "c67b34450cf8a99cda9c73b830e10a6ca86112ec32d7d0fff6fc3b0c55260e1e",
+  "GPUq_component_job_queued": 44,
+  "GPU_result_included": false,
+  "GPU_component_accepted": false,
+  "full_model_quality_accepted": false,
+  "canonical_serving_performance_accepted": false,
+  "default_promotion": false,
+  "norm_candidate_included": false,
+  "driver_CPU_passed": 49,
+  "driver_CPU_skipped": 0,
+  "driver_CPU_xml_sha256": "73366f72c887b2a88a1f1b231e8558eacbfcaae3fab6e72bc5222909e224ac8e",
+  "base_equivalence": "a3f3341 to290ad026 changes only two safe-quality documentation files; runtime and tests unchanged"
+}

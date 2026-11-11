@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Dict, Iterator, NamedTuple, Tuple
+from typing import Any, Callable, Dict, Iterator, NamedTuple, NoReturn, Tuple
 
 import torch
 from minisgl.attention import (
@@ -21,7 +22,7 @@ from minisgl.distributed import (
 from minisgl.distributed.context import init_context_parallel
 from minisgl.distributed.impl import TorchDistributedImpl
 from minisgl.distributed.info import DistributedInfo
-from minisgl.distributed.layout import ParallelLayout, configure_parallel
+from minisgl.distributed.layout import ParallelLayout, configure_parallel, get_parallel_layout
 from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight
@@ -42,8 +43,20 @@ class ForwardOutput(NamedTuple):
     copy_done_event: torch.cuda.Event
 
 
+@dataclass(frozen=True)
+class StartupOwner:
+    """Borrow a launcher's fresh FI ownership assertion and fatal worker abort.
+
+    Freshness excludes ambient FI contexts/stores and concurrent FI users; it
+    does not mean weights or other startup work have not used the GPU.
+    """
+
+    fresh_worker: bool
+    abort: Callable[[BaseException], NoReturn]
+
+
 class Engine:
-    def __init__(self, config: EngineConfig):
+    def __init__(self, config: EngineConfig, *, startup_owner: StartupOwner | None = None):
         assert not torch.cuda.is_initialized()
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         configure_parallel(dcp_size=config.dcp_size, ep_size=config.ep_size)
@@ -94,6 +107,37 @@ class Engine:
             self.model.load_weights(self._iter_weights(config), device=self.device)
         else:
             self.model.load_state_dict(self._load_weight_state_dict(config))
+
+        if (
+            config.model_config.is_moe
+            and startup_owner is not None
+            and self.ctx.bf16_precision == "default"
+        ):
+            try:
+                from minisgl.distributed.context import create_expert_cpu_group
+                from minisgl.moe.prepare import MoePreparation
+
+                layout = get_parallel_layout()
+                resource = create_expert_cpu_group(layout, self.tp_cpu_group)
+                self.moe_backend.prepare(
+                    self.model,
+                    MoePreparation(
+                        device=self.device,
+                        layout=layout,
+                        local_rows=config.preparation_rows,
+                        cpu_group=resource.group if resource is not None else None,
+                        precision=self.ctx.bf16_precision,
+                        fresh_worker=startup_owner.fresh_worker,
+                        abort=startup_owner.abort,
+                    ),
+                )
+                # Normal completion only: unknown device failures terminate the owned
+                # worker through abort, rather than attempting cleanup collectives.
+                if resource is not None:
+                    resource.close()
+            except BaseException as error:
+                startup_owner.abort(error)
+                raise RuntimeError("Startup abort callback returned") from error
 
         # ======================= KV cache initialization ========================
         self.num_pages = self._determine_num_pages(init_free_memory, config)

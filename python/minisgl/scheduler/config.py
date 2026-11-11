@@ -38,5 +38,9 @@ class SchedulerConfig(EngineConfig):
         return self.max_extend_tokens
 
     @property
+    def preparation_rows(self) -> tuple[int, ...]:
+        return tuple(dict.fromkeys((self.max_running_req, self.max_extend_tokens)))
+
+    @property
     def backend_create_detokenizer_link(self) -> bool:
         return True
