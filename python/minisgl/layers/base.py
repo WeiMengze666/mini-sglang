@@ -35,6 +35,9 @@ class BaseOP:
         """Optional local startup work after weights, before memory budgeting."""
         return None
 
+    def prepare_inference(self) -> None:
+        """Optional layer-owned startup work after cache allocation, before graphs."""
+
     def validate_cuda_graph(self) -> None:
         """Reject an execution path that needs host decisions during replay."""
 

@@ -54,7 +54,7 @@ class MLAAttentionBackend(BaseAttnBackend):
     def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
         is_decode = getattr(batch, "is_decode", False)
         positions = batch.positions[: len(x)]
-        queries, new_latent, new_key = layer.project(x, positions)
+        queries, new_latent, new_key = layer.project(x, positions, is_decode=is_decode)
         cache.store_mla(
             layer_id,
             new_latent,
@@ -92,7 +92,7 @@ class MLAAttentionBackend(BaseAttnBackend):
         outputs, offset = [], 0
         for req in batch.reqs:
             rows = slice(offset, offset + req.extend_len)
-            sharded = cp.size > 1 and is_decode
+            sharded = False
             if not is_decode:
                 # Current projections remain in producer precision. Persistent
                 # storage is the source only for a previously cached prefix.
@@ -111,13 +111,14 @@ class MLAAttentionBackend(BaseAttnBackend):
                     latent, key = new_latent[rows], new_key[rows]
                 history = torch.arange(req.device_len, device=x.device)
             else:
-                history = torch.arange(
-                    cp.rank, max(cp.rank, req.device_len), cp.size, device=x.device
-                )
+                history = torch.arange(req.device_len, device=x.device)
                 locations = page_table[req.table_idx, cp.rank : req.device_len : cp.size]
-                latent, key = (
-                    part.to(queries.dtype) for part in cache.gather_mla(layer_id, locations)
+                latent, key = cache.gather_mla(layer_id, locations)
+                latent_dim = latent.shape[-1]
+                gathered = cp.gather_interleaved(
+                    torch.cat((latent, key), -1).to(queries.dtype), req.device_len
                 )
+                latent, key = gathered.split((latent_dim, key.shape[-1]), -1)
             outputs.append(
                 layer.attend_partial(
                     queries[rows],

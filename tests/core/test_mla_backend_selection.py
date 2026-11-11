@@ -20,7 +20,7 @@ def test_mla_store_policy_follows_its_executor(monkeypatch, native_mla):
     stored = []
 
     class Layer:
-        def project(self, x, positions):
+        def project(self, x, positions, *, is_decode=False):
             return x, x, x[:, :1]
 
         def attend_partial(self, q, *args, **kwargs):
@@ -146,7 +146,7 @@ def test_prefill_uses_unquantized_current_rows_and_dequantized_cached_prefix():
     readouts, writes, gathers = [], [], []
 
     class Layer:
-        def project(self, x, positions):
+        def project(self, x, positions, *, is_decode=False):
             return q, fresh, suffix
 
         def attend_partial(self, query, latent, key, positions, history_positions, **options):

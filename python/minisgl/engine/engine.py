@@ -201,7 +201,17 @@ class Engine:
             getattr(config, "state_cache_strategy", "auto") == "extra_buffer"
             and self.checkpoint_quantum is None
         ):
-            raise ValueError("extra_buffer requires an available checkpoint/lease backend capability")
+            raise ValueError(
+                "extra_buffer requires an available checkpoint/lease backend capability"
+            )
+
+        # Layer-owned replicas are deliberately allocated after the cache budget.
+        try:
+            self.model.apply(lambda op: op.prepare_inference())
+        except BaseException as error:
+            if worker_owner is not None:
+                worker_owner.abort(error)
+            raise
 
         # ======================= Sampler initialization ========================
         self.sampler = Sampler(self.device, config.model_config.vocab_size)
@@ -554,7 +564,9 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("mxfp4_backend must be auto, torch, triton or flashinfer")
     if config.mxfp4_activation_precision not in ("auto", "bf16", "mxfp8"):
         raise ValueError("mxfp4_activation_precision must be auto, bf16 or mxfp8")
-    quantization = getattr(getattr(config.model_config, "hf_config", None), "quantization_config", None)
+    quantization = getattr(
+        getattr(config.model_config, "hf_config", None), "quantization_config", None
+    )
     native_mxfp4 = (
         isinstance(quantization, dict)
         and quantization.get("format") == "mxfp4-pack-quantized"
@@ -598,7 +610,8 @@ def _adjust_config(config: EngineConfig):
     ):
         override("state_memory_ratio", 0.9)  # Native fallback for prefix-cache state/KV bytes.
     if getattr(config, "state_cache_strategy", "auto") == "extra_buffer" and (
-        not config.model_config.has_recurrent_state or getattr(config, "cache_type", None) == "naive"
+        not config.model_config.has_recurrent_state
+        or getattr(config, "cache_type", None) == "naive"
     ):
         raise ValueError("extra_buffer requires recurrent prefix caching")
     if config.state_memory_ratio is not None:

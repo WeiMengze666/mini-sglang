@@ -66,6 +66,15 @@ class ContextParallel:
     def owns(self, positions):
         return positions.remainder(self.size) == self.rank
 
+    def gather_heads(self, local: torch.Tensor, *, dim=0) -> torch.Tensor:
+        """Concatenate contiguous TP head shards within this context group."""
+        if self.size == 1:
+            return local
+        gathered = self._comm.all_gather(local.contiguous()).view(self.size, *local.shape)
+        if dim == 0:
+            return gathered.flatten(0, 1)
+        return torch.cat(tuple(gathered.unbind(0)), dim=dim)
+
     def gather_interleaved(self, local: torch.Tensor, total: int) -> torch.Tensor:
         """Restore a cyclic token partition using its host-known global length."""
         if total < 0 or len(local) != max(0, (total + self.size - 1 - self.rank) // self.size):

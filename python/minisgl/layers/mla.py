@@ -1,4 +1,4 @@
-"""MLA projections and output gating."""
+"""MLA projections and layer-owned native decode weight plans."""
 
 from __future__ import annotations
 
@@ -9,23 +9,20 @@ from minisgl.distributed.context import ContextParallel
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
-from minisgl.layers.linear import Linear, headwise_linear
+from minisgl.layers.linear import Linear, headwise_linear, linear_bf16
 from minisgl.layers.norm import TorchRMSNorm
 
 
 class MLALayer(BaseOP):
     def __init__(self, config: MLAConfig) -> None:
         self._config = config
-        self._tp = TensorParallel()
-        self._cp = ContextParallel()
-        self._heads = local_size(
-            config.num_heads, get_parallel_layout().mla_decode.size, "MLA heads"
+        self._tp, self._cp = TensorParallel(), ContextParallel()
+        self._heads = local_size(config.num_heads, self._tp.size, "MLA heads")
+        self._decode_heads = local_size(
+            config.num_heads, get_parallel_layout().mla_decode.size, "MLA decode heads"
         )
-        self._output_heads = local_size(config.num_heads, self._tp.size, "MLA output heads")
-        self._nope = config.nope_dim
-        self._rope = config.rope_dim
-        self._value = config.value_dim
-        self._latent = config.latent_dim
+        self._nope, self._rope = config.nope_dim, config.rope_dim
+        self._value, self._latent = config.value_dim, config.latent_dim
         self._skip_rope = not config.use_rope
         qdim = self._heads * (self._nope + self._rope)
         if config.q_lora_rank is None:
@@ -39,19 +36,72 @@ class MLALayer(BaseOP):
         self.kv_b_proj = Linear(self._latent, self._heads * (self._nope + self._value))
         self._output_gate = config.output_gate
         if self._output_gate:
-            self.g_proj = Linear(config.hidden_size, self._output_heads * self._value)
-        self.o_proj = Linear(self._output_heads * self._value, config.hidden_size)
+            self.g_proj = Linear(config.hidden_size, self._heads * self._value)
+        self.o_proj = Linear(self._heads * self._value, config.hidden_size)
+        self._key_weight = self._value_weight = None
+        self._decode_q_weight = self._decode_key_weight = None
+        self._inference_prepared = False
 
-    def project(self, x, positions):
+    def after_load(self) -> None:
+        self._key_weight = self._value_weight = None
+        self._decode_q_weight = self._decode_key_weight = None
+        self._inference_prepared = False
+        if self.kv_b_proj.weight_format != "dense":
+            return
+        weight = self.kv_b_proj.weight
+        if weight.is_meta or weight.dtype not in (
+            torch.float16,
+            torch.bfloat16,
+            torch.float32,
+            torch.float64,
+        ):
+            return
+        weights = weight.view(self._heads, self._nope + self._value, self._latent)
+        key, value = weights.split((self._nope, self._value), dim=1)
+        # Match the native batched-GEMM layouts. These local copies belong to
+        # the loaded weights and are included in the pre-cache memory budget.
+        self._key_weight = key.transpose(1, 2).contiguous().transpose(1, 2)
+        self._value_weight = value.contiguous().transpose(1, 2)
+
+    def prepare_inference(self) -> None:
+        if self._inference_prepared:
+            return
+        if self._key_weight is not None:
+            if self._cp.size == 1:
+                self._decode_key_weight = self._key_weight
+            else:
+                query = self.q_proj if self._config.q_lora_rank is None else self.q_b_proj
+                if (
+                    query.weight_format == "dense"
+                    and query.bias is None
+                    and query.weight.dtype in (torch.float16, torch.bfloat16)
+                    and not query.weight.is_meta
+                ):
+                    self._decode_q_weight = self._cp.gather_heads(query.weight, dim=0)
+                self._decode_key_weight = self._cp.gather_heads(
+                    self._key_weight.contiguous(), dim=0
+                )
+        self._inference_prepared = True
+
+    def project(self, x, positions, *, is_decode=False):
         if self._config.q_lora_rank is None:
-            q = self.q_proj.forward(x)
+            query, source = self.q_proj, x
         else:
-            q = self.q_b_proj.forward(self.q_a_layernorm.forward(self.q_a_proj.forward(x)))
-        q = q.reshape(-1, self._heads, self._nope + self._rope)
+            query = self.q_b_proj
+            source = self.q_a_layernorm.forward(self.q_a_proj.forward(x))
+        if is_decode and self._decode_q_weight is not None:
+            q = linear_bf16(source, self._decode_q_weight)
+            heads = self._decode_heads
+        else:
+            q = query.forward(source)
+            heads = self._heads
+        q = q.reshape(-1, heads, self._nope + self._rope)
+        if is_decode and self._cp.size > 1 and self._decode_q_weight is None:
+            # Quantized or other unsupported projection formats keep their
+            # normal Linear executor; exchange activations, never reinterpret weights.
+            q = self._cp.gather_heads(q, dim=1)
         latent, key = self.kv_a_proj_with_mqa.forward(x).split((self._latent, self._rope), -1)
         latent = self.kv_a_layernorm.forward(latent)
-        # An unrotated shared suffix still participates in the attention score
-        # and its scale; NoPE does not remove these projection dimensions.
         if not self._skip_rope and self._rope:
             theta = getattr(self._config, "rope_theta", 10000.0)
             interleaved = getattr(self._config, "rope_interleave", True)
@@ -75,44 +125,39 @@ class MLALayer(BaseOP):
         *,
         attention=mla_attention,
         causal_layout=None,
-        context_sharded=True,
+        context_sharded=False,
     ):
-        """Attend cached history; full histories use only this rank's TP heads.
-
-        KV-sharded fallbacks retain replicated query heads and return LSE for
-        context exchange. Native paged decode instead returns compressed values,
-        whose value projection is deferred until after that exchange.
-        """
-        weight = self.kv_b_proj.weight
-        if not context_sharded and self._cp.size > 1:
+        """Expanded fallback attends a complete history with TP-local heads."""
+        if context_sharded and self._cp.size > 1:
+            raise ValueError("Expanded MLA fallback requires a complete KV history")
+        if q.shape[1] != self._heads:
+            if q.shape[1] != self._decode_heads:
+                raise ValueError("MLA query heads do not match the TP/DCP layout")
             q = q.chunk(self._cp.size, dim=1)[self._cp.rank]
-            weight = weight.view(self._heads, self._nope + self._value, self._latent)
-            weight = weight.chunk(self._cp.size, dim=0)[self._cp.rank].flatten(0, 1)
-        sharded = context_sharded and self._cp.size > 1
         output = attention(
             q,
             latent_history,
             key_history,
-            weight,
+            self.kv_b_proj.weight,
             positions,
             history_positions,
             nope_dim=self._nope,
             value_dim=self._value,
-            return_lse=sharded,
+            return_lse=False,
             causal_layout=causal_layout,
         )
-        if isinstance(output, MLAOutput):
-            return output
-        return MLAOutput(*output) if sharded else MLAOutput(output)
+        return output if isinstance(output, MLAOutput) else MLAOutput(output)
 
     def attend_paged_partial(self, q, pages, metadata, *, attention):
+        weight = self._decode_key_weight
+        if weight is None:
+            if self._cp.size > 1 or self.kv_b_proj.weight_format != "dense":
+                return None
+            weight = self.kv_b_proj.weight.view(
+                self._heads, self._nope + self._value, self._latent
+            )[:, : self._nope]
         return attention.decode(
-            q,
-            pages,
-            self.kv_b_proj.weight,
-            metadata,
-            nope_dim=self._nope,
-            value_dim=self._value,
+            q, pages, weight, metadata, nope_dim=self._nope, value_dim=self._value
         )
 
     def finish(self, x, partial: MLAOutput):
@@ -122,11 +167,12 @@ class MLALayer(BaseOP):
             else partial.values
         )
         if isinstance(partial, MLALatentOutput):
-            weight = self.kv_b_proj.weight.view(self._heads, self._nope + self._value, self._latent)
-            weight = weight[:, self._nope :]
-            if self._cp.size > 1:
-                weight = weight.chunk(self._cp.size, dim=0)[self._cp.rank]
-            output = headwise_linear(output.to(x.dtype), weight)
+            weight = self._value_weight
+            if weight is None:
+                weight = self.kv_b_proj.weight.view(
+                    self._heads, self._nope + self._value, self._latent
+                )[:, self._nope :].transpose(1, 2)
+            output = headwise_linear(output.to(x.dtype), weight.transpose(1, 2))
         output = output.to(x.dtype).flatten(-2)
         if self._output_gate:
             output = output * self.g_proj.forward(x).sigmoid()
@@ -151,7 +197,7 @@ class MLALayer(BaseOP):
         )
 
     def forward(self, x, positions, state: MLAState | None = None):
-        """Convenience CPU/reference path; serving uses project/attend + pooled cache."""
+        """Complete-history CPU/reference path; serving owns sharded pooled KV."""
         q, latent, key = self.project(x, positions)
         history_positions = positions
         if state is not None:
@@ -160,7 +206,5 @@ class MLALayer(BaseOP):
             history_positions = torch.cat((state.positions, positions))
         if latent.shape[0] > self._config.max_position_embeddings:
             raise ValueError("MLA context exceeds max_position_embeddings")
-        owned = self._cp.owns(history_positions)
-        latent, key, history_positions = latent[owned], key[owned], history_positions[owned]
         output = self.attend(x, q, latent, key, positions, history_positions)
         return output, MLAState(latent, key, history_positions)

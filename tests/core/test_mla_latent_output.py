@@ -58,7 +58,7 @@ def test_latent_readout_is_merged_before_local_value_projection(monkeypatch, cp_
     merged = torch.einsum("sth,sthl->thl", probabilities, partial.double())
     if cp_size > 1:
         merged = merged[:, rank * 2 : (rank + 1) * 2]
-    weights = layer.kv_b_proj.weight.view(cp_size * 2, 6, 5)[rank * 2 : (rank + 1) * 2, 3:]
+    weights = layer.kv_b_proj.weight.view(2, 6, 5)[:, 3:]
     values = torch.einsum("thl,hvl->thv", merged.to(dtype), weights).flatten(-2)
     if gated:
         values = values * torch.nn.functional.linear(x, layer.g_proj.weight).sigmoid()
@@ -108,7 +108,7 @@ def _gloo_worker(rank, init_file):
         logs[:, 0] = -torch.inf
         layer = MLALayer(MLAConfig(7, 8, 3, 2, 3, 5, None, 32))
         weights = torch.randn(8, 6, 5).bfloat16() * 0.1
-        layer.kv_b_proj.weight = weights.flatten(0, 1)
+        layer.kv_b_proj.weight = weights[rank * 2 : (rank + 1) * 2].flatten(0, 1)
         layer.o_proj.weight = torch.randn(7, 6).bfloat16() * 0.1
         # This test isolates context exchange; tensor-parallel reduction has its own gate.
         layer._tp = SimpleNamespace(size=4, all_reduce=lambda x: x)
@@ -163,9 +163,7 @@ def test_full_history_prefill_selects_local_heads_without_output_exchange(monkey
 
     def attention(query, cache, suffix, weight, query_positions, key_positions, **kwargs):
         torch.testing.assert_close(query, q[:, rank * 2 : (rank + 1) * 2], rtol=0, atol=0)
-        selected = layer.kv_b_proj.weight.view(cp_size * 2, 6, 5)[
-            rank * 2 : (rank + 1) * 2
-        ].flatten(0, 1)
+        selected = layer.kv_b_proj.weight
         torch.testing.assert_close(weight, selected, rtol=0, atol=0)
         assert cache is latent and suffix is key
         assert query_positions is positions and key_positions is history

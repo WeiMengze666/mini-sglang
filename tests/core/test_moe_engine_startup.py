@@ -47,6 +47,10 @@ def construction(monkeypatch):
             self.ready = True
             events.append("after_load")
 
+        def prepare_inference(self):
+            assert self.ready and "KV" in events and "graphs" not in events
+            events.append("late_prepare")
+
     class Model(BaseOP):
         def __init__(self):
             self.leaf = Leaf()
@@ -220,6 +224,7 @@ def test_preparation_follows_weights_and_releases_only_owned_ETP_before_budget(
         < f.events.index("prepare")
         < f.events.index("budget")
         < f.events.index("KV")
+        < f.events.index("late_prepare")
         < f.events.index("graphs")
     )
     if ep == 1:
@@ -359,7 +364,7 @@ def test_scheduler_passes_borrowed_owner_and_existing_CPU_group(monkeypatch, has
     )
     monkeypatch.setattr(scheduler, "CacheManager", lambda *args, **kwargs: object())
     monkeypatch.setattr(scheduler, "DecodeManager", lambda *args: object())
-    monkeypatch.setattr(scheduler, "PrefillManager", lambda *args: object())
+    monkeypatch.setattr(scheduler, "PrefillManager", lambda *args, **kwargs: object())
     monkeypatch.setattr(
         scheduler, "load_tokenizer", lambda *args, **kwargs: SimpleNamespace(eos_token_id=0)
     )
@@ -372,6 +377,9 @@ def test_scheduler_passes_borrowed_owner_and_existing_CPU_group(monkeypatch, has
         model_path="cpu-fixture",
         trust_remote_code=False,
         max_prefill_tokens=17,
+        chunked_prefill_size=17,
+        page_size=64,
+        enable_cache_overlap=True,
         tp_info=DistributedInfo(0, 1),
         offline_mode=True,
     )

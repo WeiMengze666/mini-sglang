@@ -196,7 +196,7 @@ def test_actual_backend_dispatches_one_batch_and_finishes_once(monkeypatch, cove
             return torch.zeros(len(q), 1, 128)
 
     class Layer:
-        def project(self, x, positions):
+        def project(self, x, positions, *, is_decode=False):
             calls.append(("project", len(x)))
             return torch.zeros(len(x), 1, 192), torch.zeros(len(x), 4), torch.zeros(len(x), 64)
 

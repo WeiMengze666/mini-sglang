@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "snapshot_utc": "2026-11-11T10:22:19.768027+00:00",
+  "status": "Isolated CPU-qualified topic; GPU smoke and serving performance pending",
+  "parent_commit": "f1cb40fc5c92055828c76daf7ad39e5b12d3e0ff",
+  "topic_branch": "kimi-k3-mla-weight-plan-20261111",
+  "default_promotion": false,
+  "runtime": {
+    "python_files": 143,
+    "runtime_files": 157,
+    "exact_to_frozen_candidate": true,
+    "runtime_digest": "b632c2cd2869e1b647a353b29b4d1be9c47d64e164bd61559110194c9a92dcab",
+    "source_digest": "136553c545bf8d7e04912af876c2562deb31d4146dffb3783d20cd106d6167d5",
+    "changed_sha256": {
+      "python/minisgl/attention/mla/backend.py": "2c69141393ab65d5a95df2e753ed3f3a519b7e66885b4a3e3edcebf110cdc3ca",
+      "python/minisgl/attention/mla/flashinfer.py": "ad86c872d0852a3195c543c642913f188a75cdd072c68c91afc6447e8c5eba62",
+      "python/minisgl/distributed/context.py": "360f85eff51683b1dfdf492082958951118b109df4e8dd3849bdc5130754b5ce",
+      "python/minisgl/engine/engine.py": "0c04c7d37872db2ef322b2404a38eff322f43cfe393ee89625ef87b753403ee1",
+      "python/minisgl/layers/base.py": "d1e64d85d3b1ddd4ea00882582c2e6b40b10e625ece5e7cfe948adc0422e697c",
+      "python/minisgl/layers/mla.py": "1047e0b2b65e85bffa83683124e2ce05f449847c85a131c949a47e559ddac9fc",
+      "python/minisgl/models/kimi_parallel.py": "97b4cda643c8ce69d3bb44c5868063ad0babfdb331f5a7b91dfbbf89207a0dda"
+    }
+  },
+  "lifecycle": [
+    "Original Q/Qb and KVb weights TP-local",
+    "after_load prepares native local Wk/Wv and invalidates replicas",
+    "Cache sized from actual allocated weights",
+    "Layer-owned prepare_inference hook after cache and before graphs",
+    "Decode dense16 Q/Wk replicas over existing DCP group; Wv stays local",
+    "Local prefill queries; unsupported Q uses normal Linear plus activation gather"
+  ],
+  "cpu": {
+    "passed": 285,
+    "skipped": 2,
+    "new_controls": 53,
+    "scope": "Necessary MLA/reference/stride/head-order/reload/query-format/checkpoint slicing and mocked real Engine lifecycle tests",
+    "publication_tests_rerun": false
+  },
+  "actual_model_metadata": {
+    "scope": "CPU meta construction from actual checkpoint config, no weights read/allocated and no CUDA init; byte counts derive from actual tensor shapes, not allocator compensation",
+    "model_layers": 93,
+    "mla_layers": 24,
+    "kda_layers": 69,
+    "q_b_shapes": [
+      [
+        2304,
+        1536
+      ]
+    ],
+    "kv_b_shapes": [
+      [
+        3072,
+        512
+      ]
+    ],
+    "local_original_q_bytes": 169869312,
+    "local_original_kv_b_bytes": 75497472,
+    "local_wk_wv_prebudget_bytes": 75497472,
+    "new_prebudget_total_bytes": 320864256,
+    "prior_replicated_q_kv_total_bytes": 1962934272,
+    "prebudget_reduction_bytes": 1642070016,
+    "postcache_q_wk_replica_bytes": 1660944384,
+    "cuda_initialized": false,
+    "distributed_initialized": false
+  },
+  "late_wk_stride": {
+    "source": "baa9bef srt/model_executor/model_runner.py:1141 gathers m.w_kc.contiguous() dim0; forward_mla.py:503-507 consumes w_kc_qrep directly",
+    "layout": "[DCP*H,nope,latent] row-major, matching this candidate",
+    "separate_stride_v2_needed": false
+  },
+  "evidence": {
+    "candidate_manifest": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-mla-native-weight-plan-prepared/manifest.json",
+      "sha256": "874b99d01af39fe6e5ea61d3c32e44718a1765bcbbce2f413b7a1270a5121457"
+    },
+    "source_pins": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-mla-native-weight-plan-prepared/source-pins.json",
+      "sha256": "0e766d87209ff41cf0dccfbd9feb72cc538b38c214e2492970140cd1b7518d73"
+    },
+    "cpu_xml": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-mla-native-weight-plan-prepared/cpu-v2.xml",
+      "sha256": "3d55de719aed2044a86680e729437352891fde7a945444424b19a927974ffbe5"
+    },
+    "cpu_log": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-mla-native-weight-plan-prepared/cpu-v2.log",
+      "sha256": "b085f45977c7ed988ade1e2a1e0b711487afa66de9ae0c99f457672e08c872f4"
+    },
+    "actual_metadata": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-mla-native-weight-plan-prepared/actual-config-meta.json",
+      "sha256": "e15f5081e62a14e87e48e19a3b860d0b67f2dbf572686e4a6286e94fd744a72a"
+    },
+    "independent_review": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-mla-native-weight-plan-independent-review.json",
+      "sha256": "79b5e0b9259bd76fe460e1f3c7b2408117f218c9326fc7b48f56d8852ee3421c"
+    },
+    "native_capacity": {
+      "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/mla-head-replication-capacity-review.json",
+      "sha256": "d35a6c2d649e25be77769647159e9e49d177578cdaa3e56c840d365943061a4a"
+    }
+  },
+  "scope_limits": [
+    "No GPU/runtime/performance qualification from CPU results",
+    "Pre-budget byte reduction is a lifetime change; late replicas add1660944384B, not a1.5GiB final-resident saving",
+    "Quantized Q fallback is covered; arbitrary quantized KVb support is not claimed",
+    "No memory compensation constant, model-name branch, new manager/config/numerical kernel",
+    "Frozen V1/batched/V2 sources remain independent"
+  ]
+}

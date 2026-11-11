@@ -1,8 +1,8 @@
 """Small, checkpoint-name-based tensor parallel contract for eager Kimi.
 
-Hidden states, routers and low-rank projections remain replicated. DCP widens
-MLA query/KV expansion heads within each group; EP assigns global expert IDs and
-splits each expert only over its remaining tensor-parallel ranks.
+Hidden states, routers and low-rank projections remain replicated. MLA weights
+stay TP-local; layers prepare DCP decode replicas after cache allocation.
+EP assigns global expert IDs and splits each expert over its remaining TP ranks.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def shard_spec(
                 return split(1, heads, "KDA heads", dim)
         else:
             heads = c.num_attention_heads
-            attention = {"partition": layout.mla_decode}
+            attention = {"partition": layout.tensor}
             if parameter in ("q_proj.weight", "q_b_proj.weight"):
                 return split(
                     0, heads, "MLA heads", c.qk_nope_head_dim + c.qk_rope_head_dim, **attention

@@ -161,7 +161,7 @@ class FlashInferMLAAdapter:
                 "lse_mode": "basee",
             },
         )
-        weights = weight.view(heads, nope_dim + value_dim, 512)
+        weights = weight.view(heads, -1, 512)
         query = torch.bmm(q[..., :nope_dim].transpose(0, 1), weights[:, :nope_dim]).transpose(0, 1)
         if native:
             output, lse = plan.run(
