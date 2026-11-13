@@ -1,9 +1,8 @@
 # Distributed backends
 
 `DistributedImpl` owns collective execution. Models use their parallel groups
-and do not select a transport. The default remains Torch/PyNCCL; optional
-providers can use mature hardware-specific implementations behind the same
-all-reduce, all-gather, capture and teardown interface.
+and do not select a transport. Torch/PyNCCL and optional native providers
+implement the same all-reduce, all-gather, capture and teardown interface.
 
 ## Native symmetric-memory collectives
 
@@ -21,6 +20,13 @@ symmetric-memory allocation, topology checks, algorithm selection, multicast and
 collective kernels. Unsupported all-reduce inputs and all-gather use Torch/NCCL
 on the same ordered ranks. TVM FFI launches follow the current Torch stream,
 including graph capture and subsequent pointer registration.
+
+
+The built-in native provider leaves its workspace cap and tuned thresholds at
+the SDK defaults (16 MiB for the pinned SDK, with SDK environment overrides).
+The generic factory's expected collective-size hint is separate from this
+workspace budget. Larger inputs use the existing same-rank NCCL fallback;
+architecture selection, graph registration and resource lifetime are unchanged.
 
 The provider has two initialization steps:
 
