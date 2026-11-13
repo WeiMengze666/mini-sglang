@@ -207,7 +207,9 @@ class KDAAttentionBackend(BaseAttnBackend):
                     layer, x, cache.recurrent, layer_id, indices, metadata
                 )
                 if result is not None:
-                    return layer.finish(x, result.output, normed=result.normed)
+                    return layer.finish(
+                        x, result.output, normed=result.normed, gate=result.gate
+                    )
             initial = cache.recurrent.get_kda_batch(layer_id, indices)
             if self.kernel.decode is not None and is_decode:
                 fused = layer.decode(x, initial, kernel=self.kernel)

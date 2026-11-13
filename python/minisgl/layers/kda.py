@@ -12,7 +12,7 @@ from minisgl.attention.kda import (
 from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
-from minisgl.layers.linear import Linear
+from minisgl.layers.linear import Linear, MergedLinear
 from minisgl.layers.norm import TorchRMSNorm
 
 
@@ -25,6 +25,7 @@ class KDALayer(BaseOP):
     def __init__(self, config: KDAConfig) -> None:
         self._config = config
         self._kernel_plans = {}
+        self._qkvg = None
         self._tp = TensorParallel()
         self._heads = local_size(config.num_heads, self._tp.size, "KDA heads")
         self._dim = config.head_dim
@@ -50,9 +51,25 @@ class KDALayer(BaseOP):
         self.dt_bias = torch.empty(width, dtype=torch.float32)
         self.o_norm = TorchRMSNorm(self._dim, config.rms_norm_eps)
         self.o_proj = Linear(width, hidden)
+        if self._full_gate and self.q_proj.weight.is_meta and self.q_proj.weight.dtype == torch.bfloat16:
+            MergedLinear.try_create(self._qkvg_projections())
+
+    def _qkvg_projections(self):
+        return {"q": self.q_proj, "k": self.k_proj, "v": self.v_proj, "gate": self.g_proj}
 
     def after_load(self):
         self._kernel_plans.clear()
+        self._qkvg = None
+        weight = getattr(self.q_proj, "weight", None)
+        if self._full_gate and isinstance(weight, torch.Tensor) and weight.dtype == torch.bfloat16:
+            self._qkvg = MergedLinear.try_create(self._qkvg_projections())
+
+    def project_qkvg(self, x):
+        """Offer one dense BF16 input projection to an explicit decode consumer."""
+        plan = self._qkvg
+        if plan is None or x.dtype != torch.bfloat16 or x.device != plan.weight.device:
+            return None
+        return plan.forward(x, output_dtype=x.dtype)
 
     def prepare_kernel(self, name, create):
         """Cache weight-dependent backend metadata until the next weight load."""
@@ -145,15 +162,16 @@ class KDALayer(BaseOP):
             raise TypeError("KDA decode backend must return KDADecodeResult or None")
         if result.state is None:
             raise ValueError("Functional KDA decode must return its updated state")
-        return self.finish(x, result.output, normed=result.normed), result.state
+        return self.finish(x, result.output, normed=result.normed, gate=result.gate), result.state
 
-    def finish(self, x, output, *, normed=False):
+    def finish(self, x, output, *, normed=False, gate=None):
         if not normed:
-            gate = (
-                self.g_proj.forward(x)
-                if self._full_gate
-                else self.g_b_proj.forward(self.g_a_proj.forward(x))
-            )
+            if gate is None:
+                gate = (
+                    self.g_proj.forward(x)
+                    if self._full_gate
+                    else self.g_b_proj.forward(self.g_a_proj.forward(x))
+                )
             output = gated_rms_norm(
                 output, gate.reshape_as(output), self.o_norm.weight, self.o_norm.eps
             )

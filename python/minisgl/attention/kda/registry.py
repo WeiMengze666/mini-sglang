@@ -71,12 +71,14 @@ class KDADecodeResult:
     ``normed`` is true when the backend already applied KDA's gated output
     normalization. The layer owns the output projection and collective.
     Functional decode returns state; indexed decode updates its owned pool and
-    leaves ``state`` unset.
+    leaves ``state`` unset. An optional output gate stays local to this result
+    when output normalization remains outside the recurrence kernel.
     """
 
     output: "torch.Tensor"
     state: "KDAState | None" = None
     normed: bool = False
+    gate: "torch.Tensor | None" = None
 
 
 class CheckpointPreparation(Protocol):

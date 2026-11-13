@@ -72,7 +72,7 @@ def test_indexed_callback_receives_shared_metadata_without_rebuilding_offsets():
         reqs=[SimpleNamespace(extend_len=1) for _ in range(2)],
         attn_metadata=metadata,
     )
-    layer = SimpleNamespace(finish=lambda x, output, normed: output)
+    layer = SimpleNamespace(finish=lambda x, output, normed, gate=None: output)
     x = torch.zeros(2, 3)
     torch.testing.assert_close(backend.forward_layer(layer, 7, x, batch, cache, None), x + 1)
     assert calls == [metadata.cu_seqlens_q]

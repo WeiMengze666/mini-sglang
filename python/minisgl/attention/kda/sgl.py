@@ -142,8 +142,8 @@ def _projection_plan(layer):
     )
 
 
-def project(layer, x):
-    """Use the SDK's skinny projection dispatch, retaining its aligned gate views."""
+def _project_forget_beta(layer, x):
+    """Offer the SDK's skinny gate dispatch without projecting Q, K or V."""
     weight = getattr(layer.f_b_proj, "weight", None)
     if (
         not x.is_cuda
@@ -155,22 +155,45 @@ def project(layer, x):
         or weight.dtype != x.dtype
         or not weight.is_contiguous()
     ):
-        return layer.project(x)
+        return None
     plan = _projection_plan(layer)
     if plan is None:
-        return layer.project(x)
+        return None
     gemm, stream = _projection_kernels()
     with stream():
         bfa = gemm(x, plan.weight)
         fa_width, beta_width = plan.widths
         forget = gemm(bfa[..., :fa_width], weight)
     return (
-        layer.q_proj.forward(x),
-        layer.k_proj.forward(x),
-        layer.v_proj.forward(x),
         forget.reshape(-1, layer._heads, layer._dim),
         bfa[..., fa_width : fa_width + beta_width],
     )
+
+
+def project(layer, x):
+    """Keep the public five-tensor projection ABI for prefill and providers."""
+    gates = _project_forget_beta(layer, x)
+    if gates is None:
+        return layer.project(x)
+    return (
+        layer.q_proj.forward(x), layer.k_proj.forward(x), layer.v_proj.forward(x), *gates
+    )
+
+
+def _project_decode(layer, x):
+    prepare = getattr(layer, "project_qkvg", None)
+    merged = prepare(x) if prepare is not None else None
+    if merged is None:
+        return project(layer, x), None
+    gates = _project_forget_beta(layer, x)
+    if gates is None:
+        gates = (
+            layer.f_b_proj.forward(layer.f_a_proj.forward(x)).reshape(
+                -1, layer._heads, layer._dim
+            ),
+            layer.b_proj.forward(x),
+        )
+    return (merged["q"], merged["k"], merged["v"], *gates), merged["gate"]
 
 
 @cache
@@ -217,9 +240,10 @@ def decode(layer, x, state):
             state.conv.permute(0, 3, 1, 2).flatten(2).clone(memory_format=torch.contiguous_format)
         )
         pool = state.recurrent.transpose(-1, -2).clone(memory_format=torch.contiguous_format)
-    q, k, v, forget, beta = project(layer, x)
+    projected, gate = _project_decode(layer, x)
+    q, k, v, forget, beta = projected
     mixed = torch.cat((q, k, v), dim=-1)
-    gate = layer.g_proj.forward(x)
+    gate = gate if gate is not None else layer.g_proj.forward(x)
     indices = torch.arange(batch, device=x.device, dtype=torch.int32)
     native, stream = _decode_kernels()
     forget = forget.flatten(1)
@@ -282,7 +306,8 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
             [op.weight.squeeze(1) for op in (layer.q_conv1d, layer.k_conv1d, layer.v_conv1d)]
         ),
     )
-    q, k, v, forget, beta = project(layer, x)
+    projected, gate = _project_decode(layer, x)
+    q, k, v, forget, beta = projected
     _, update_conv = conv_kernels()
     _, update_kda, stream = _kernels()
     with stream():
@@ -320,7 +345,7 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
                 use_qk_l2norm_in_kernel=True,
             )
             output = packed[:, 0]
-    return KDADecodeResult(output=output)
+    return KDADecodeResult(output=output, gate=gate)
 
 
 def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
