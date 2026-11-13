@@ -69,7 +69,10 @@ def prepare(*, tp_info: DistributedInfo, device: torch.device) -> None:
 
 
 def create_provider(*, tp_info, cpu_group, device_group, device, max_bytes):
-    """Adapt native collectives to the regular provider, with Torch fallback."""
+    """Adapt native collectives; the SDK owns workspace sizing and fallback.
+
+    max_bytes remains a generic factory hint, not the native workspace cap.
+    """
     for group in (cpu_group, device_group):
         if (dist.get_rank(group), dist.get_world_size(group)) != (tp_info.rank, tp_info.size):
             raise ValueError("MNNVL process group differs from tensor-parallel coordinates")
@@ -82,7 +85,7 @@ def create_provider(*, tp_info, cpu_group, device_group, device, max_bytes):
     from tvm_ffi import use_torch_stream
 
     with use_torch_stream():
-        comm = native.CustomAllReduceV2(cpu_group, device, max_size=max_bytes)
+        comm = native.CustomAllReduceV2(cpu_group, device)
     # The SDK's PDL staging copy uses wider vectors than its 16-byte entry
     # check on Blackwell. Views must meet the copy's alignment on every rank.
     alignment = 32 if torch.cuda.get_device_capability(device)[0] >= 10 else 16

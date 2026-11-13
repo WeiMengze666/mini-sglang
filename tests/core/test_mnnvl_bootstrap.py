@@ -159,8 +159,9 @@ def test_native_factory_delegates_collectives_capture_and_close(
     class Native:
         disabled = False
 
-        def __init__(self, group, device, *, max_size):
-            assert group is cpu and device == torch.device("cuda:0") and max_size == 4096
+        def __init__(self, group, device, **kwargs):
+            assert group is cpu and device == torch.device("cuda:0")
+            assert kwargs == {}  # The native SDK retains its default/environment cap.
 
         def should_custom_ar(self, tensor):
             return tensor.numel() == 2
