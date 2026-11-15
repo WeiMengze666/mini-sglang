@@ -1,0 +1,274 @@
+{
+  "schema": "canonical_16k_serving_snapshot_v1",
+  "as_of": "2026-11-16",
+  "artifact_root": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110",
+  "status": "valid_unprofiled_measurements_performance_parity_and_quality_open",
+  "scope": "Accepted historical unprofiled runs only; no Nsight33 metrics, no isolated causal or repeated-run significance claim.",
+  "parameters": {
+    "tp_size": 8,
+    "dcp_size": 8,
+    "ep_size": 1,
+    "max_prefill_tokens": 16384,
+    "chunked_prefill_size": 16384,
+    "context_length": 1048576,
+    "max_running_requests": 48,
+    "dataset_entries": 393,
+    "seed": 42,
+    "expert_activation": "MXFP8 via native FlashInfer for canonical Blackwell/default policy",
+    "KV": "FP8 E4M3",
+    "persistent_SSM": "BF16",
+    "mamba_radix_cache_strategy": "extra_buffer",
+    "mamba_full_memory_ratio": 0.31,
+    "explicit_warmup_requests": 48,
+    "explicit_warmup_max_tokens": 8,
+    "scenario_warmup_requests": 51
+  },
+  "software_stacks": {
+    "official_stable": {
+      "SDK_commit": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+      "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "packages": {
+        "sglang": "0.5.20",
+        "torch": "2.13.0",
+        "flashinfer-python": "0.6.18",
+        "sglang-kernel": "0.4.7",
+        "nvidia-cutlass-dsl": "4.6.2",
+        "apache-tvm-ffi": "0.1.11",
+        "transformers": "5.12.1",
+        "aiperf": null,
+        "torchcodec": "0.15.0",
+        "triton": "3.7.1"
+      }
+    },
+    "Mini_current": {
+      "SDK_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+      "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "packages": {
+        "sglang": "0.5.22",
+        "torch": "2.14.1+cu130",
+        "flashinfer-python": "0.7.1",
+        "sglang-kernel": "0.4.9",
+        "nvidia-cutlass-dsl": "4.8.0",
+        "apache-tvm-ffi": "0.1.11",
+        "transformers": "5.19.0",
+        "aiperf": "0.13.0",
+        "torchcodec": null,
+        "triton": "3.8.0"
+      }
+    }
+  },
+  "client": {
+    "aiperf": "0.13.0",
+    "same_benchmark_argv": true
+  },
+  "runs": {
+    "reference": {
+      "GPUq_job": 9,
+      "source_commit": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+      "software_stack": "official_stable",
+      "output_tokens_per_second": 328.86116470304825,
+      "avg_TTFT_ms": 3384.760267185273,
+      "avg_ITL_ms": 34.44796463555756,
+      "profiling_phase_records": {
+        "final_requests_completed": 421,
+        "final_requests_cancelled": 5,
+        "final_request_errors": 0
+      },
+      "configured_sending_seconds": 900.0,
+      "actual_export_window_seconds": 940.004577,
+      "raw_hashes": {
+        "canonical-stable-reference-serving-gpu-v2/reference/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json": "7056bce5d44bb02a01331066016f045f1708adb5d3d8408e9d46049cfb97281e",
+        "canonical-stable-reference-serving-gpu-v2/reference/run.json": "d4adf5e24785bcbaed3f6b968bc87d409e090855104c645f138d84231e061f34",
+        "canonical-stable-reference-serving-gpu-v2/reference/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/server_metrics_export.json": "6a0abe9ec7c09470defe93dc7abba79e76a8465633f6f1574b16b60eba12d403",
+        "canonical-stable-reference-serving-gpu-v2/reference/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export.jsonl": "e6799f82f49307136bd06b9684048cb8852628f2ba3847241d7296706a7d6b0d"
+      },
+      "acceptance_evidence": {
+        "kind": "accepted_reference_summary",
+        "path": "canonical-stable-reference-v2-review-tools/summary-reference-20261115T064747Z.json",
+        "sha256": "fabe8490979b35a288a739918c4f1058ffe0747414e8cf291385978d32f02b69"
+      }
+    },
+    "mini21": {
+      "GPUq_job": 21,
+      "source_commit": "607dd50ed7d42e3d5cf6447b5fc83b3c21352acb",
+      "software_stack": "Mini_current",
+      "output_tokens_per_second": 284.0802918723257,
+      "avg_TTFT_ms": 2350.925389238845,
+      "avg_ITL_ms": 43.623703111523795,
+      "profiling_phase_records": {
+        "final_requests_completed": 381,
+        "final_requests_cancelled": 10,
+        "final_request_errors": 0
+      },
+      "configured_sending_seconds": 900.0,
+      "actual_export_window_seconds": 940.001851,
+      "raw_hashes": {
+        "official-cache-policy-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json": "31b771a7a63a6c7dea335891605e2a0a8622b1c46130b593ec9c67a062625b51",
+        "official-cache-policy-serving-gpu-v1/mini/run.json": "490981a9b582fce60e56d31e2377db7aa07b19c3f2f1ffdca26a670969d9cbc8",
+        "official-cache-policy-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/server_metrics_export.json": "b700fb66dc26b27b5bb6dd20fad6b5fecd6af6fa8d73cb22f4e49dc31dcce637",
+        "official-cache-policy-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export.jsonl": "e9f05af05e7fdd0cc0a2cb1b8ba3846d4a20f3591ea6ceab0eefd46fa06faac0"
+      },
+      "acceptance_evidence": {
+        "kind": "root_result_review",
+        "path": "official-cache-policy-serving-v1-analysis/root-result-review.json",
+        "sha256": "4382b1891db5fb3949f63b5c94078bdfb3e31320c304294f1bce4948b2a743a9"
+      }
+    },
+    "mini25": {
+      "GPUq_job": 25,
+      "source_commit": "ad77135b1b91c0456fedea02f1ed5c396db207c4",
+      "software_stack": "Mini_current",
+      "output_tokens_per_second": 289.4016312689681,
+      "avg_TTFT_ms": 2705.043707505208,
+      "avg_ITL_ms": 42.416337528716305,
+      "profiling_phase_records": {
+        "final_requests_completed": 384,
+        "final_requests_cancelled": 6,
+        "final_request_errors": 0
+      },
+      "configured_sending_seconds": 900.0,
+      "actual_export_window_seconds": 940.001612,
+      "raw_hashes": {
+        "native-moe-pipeline-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json": "594d0fb3752c565f49b1d85efb2769986723b5df216306dc7251e3505d553552",
+        "native-moe-pipeline-serving-gpu-v1/mini/run.json": "53631f69b477dacac1eb7a8f8da5b97aa2b3ca61c69f01820ce425dfa500ab7a",
+        "native-moe-pipeline-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/server_metrics_export.json": "dcc1dea2c4536b53be957ebbb5e186ec25e558b0205f87c48e2f256dd5d35f1e",
+        "native-moe-pipeline-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export.jsonl": "6bf21ee80b7966fc104207d5832402d4a14ec04f38fdcb3af642c3625ddb57c2"
+      },
+      "acceptance_evidence": {
+        "kind": "root_result_review",
+        "path": "native-moe-pipeline-serving-v1-analysis/root-result-review.json",
+        "sha256": "090bb529555cc3ec70c4dfe9673aa0d89275933f8fa4546a53aff93de265a99f"
+      }
+    },
+    "mini27": {
+      "GPUq_job": 27,
+      "source_commit": "ee358425b3048db3825a1c26eb5c4773bf06041a",
+      "software_stack": "Mini_current",
+      "output_tokens_per_second": 294.48290108076327,
+      "avg_TTFT_ms": 2681.330538207792,
+      "avg_ITL_ms": 43.36318735697301,
+      "profiling_phase_records": {
+        "final_requests_completed": 385,
+        "final_requests_cancelled": 5,
+        "final_request_errors": 0
+      },
+      "configured_sending_seconds": 900.0,
+      "actual_export_window_seconds": 940.003644,
+      "raw_hashes": {
+        "native-moe-default-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json": "a85185212f5428a6ef7f60537b7707292ac5bf7269f9a5aaf0266d7ef28075d2",
+        "native-moe-default-serving-gpu-v1/mini/run.json": "f88336ad224be9f26a8b22dc2e3cc982d2739b0e035788c944f8b94aad6935af",
+        "native-moe-default-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/server_metrics_export.json": "f9381f3940f807f079753308b82470b7179e71158b9d7fadbda9802cc84f0de9",
+        "native-moe-default-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export.jsonl": "3c131e3d37099a0d57c9bbee7916246741f4978757f006d7fcda130114813dda"
+      },
+      "acceptance_evidence": {
+        "kind": "root_result_review",
+        "path": "native-moe-default-serving-v1-analysis/root-result-review.json",
+        "sha256": "cd3b870b4cfa7045b398d185dbe24900d0b86b8e488476b98705e007b034b241"
+      }
+    },
+    "mini30": {
+      "GPUq_job": 30,
+      "source_commit": "bdda6b8dc2fe5bd3e1672665360acd0cf43e9639",
+      "software_stack": "Mini_current",
+      "output_tokens_per_second": 296.7071640412173,
+      "avg_TTFT_ms": 2673.109015609254,
+      "avg_ITL_ms": 41.08363054255281,
+      "profiling_phase_records": {
+        "final_requests_completed": 389,
+        "final_requests_cancelled": 5,
+        "final_request_errors": 0
+      },
+      "configured_sending_seconds": 900.0,
+      "actual_export_window_seconds": 940.000896,
+      "raw_hashes": {
+        "native-attention-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json": "bbf196ca71fd05c505a0235cd3cc731b02c13fda8ff9e063d9495043fdc8a917",
+        "native-attention-serving-gpu-v1/mini/run.json": "6fb4b608282c0fe346b88ea8e6875638b440c92440247f40f8c9e82a18fd3d16",
+        "native-attention-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/server_metrics_export.json": "51bbfed9c1adfd3612a0674bc83533e215574427d1b4f4e63110df278633266b",
+        "native-attention-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export.jsonl": "209bb19df4b3a65530f2cd0f21eeee5a6d79b387f2410010c91ad867581115c4"
+      },
+      "acceptance_evidence": {
+        "kind": "root_result_review",
+        "path": "native-attention-serving-v1-analysis/root-result-review.json",
+        "sha256": "5371157af728e167fff416de3702d69c22dc6e2b1da64a8c3e245703c9eb4c62"
+      }
+    }
+  },
+  "latest": {
+    "source_commit": "bdda6b8dc2fe5bd3e1672665360acd0cf43e9639",
+    "source_tree": "cdad8604e8e534122419043f4cdc9c6f3abe2e10",
+    "percent_of_reference_TPS": 90.22262154582315,
+    "percent_change_vs27": 0.7553114127478722,
+    "p95_ITL_ms": {
+      "mini27": 78.44581576786416,
+      "mini30": 79.79387053224502
+    },
+    "p95_request_latency_ms": {
+      "mini27": 117254.78903899985,
+      "mini30": 126612.52808419996
+    },
+    "retained_adverse": "10s cancel-credit ERROR/session29 forced release; p95ITL and request latency worse vs27; common381 TTFT worse; quality open; differing pinned full software stacks. Common385 cached-token totals identical to27; not old cache problem.",
+    "quality": "Original128-token readability smoke and accepted native components only. No model quality matrix or strict per-token/full-vocabulary equality acceptance."
+  },
+  "timing_scope": "900s sending plus30s grace and10s cancellation-credit wait yields about940s export observation. Copy exported TPS; do not divide output tokens by nominal900s. Request-span benchmark_duration is a separate metric.",
+  "state_pool": {
+    "shared_axis": "Working, tracking and checkpoints share physical state slots; this is not a common byte arena for MLA KV and recurrent state.",
+    "actual_capacity": {
+      "all_eight_rank_recurrent_slots": 368,
+      "recurrent_slots_share": "working/tracking/checkpoints",
+      "state_budget_GiB": 9.95,
+      "request_table_capacity": 48,
+      "KV_logical_tokens": 19970048,
+      "KV_per_rank_KplusV_GiB": 32.14,
+      "DCP": 8,
+      "enable_unified_memory": false,
+      "graph_after_free_GiB": 21.71
+    },
+    "evidence": {
+      "path": "native-attention-serving-v1-analysis/software-precision-pool-log-evidence.json",
+      "sha256": "53169201da6232caa0ace27d78b869ec592b7db3390c070e0fdff15905dbefc9"
+    }
+  },
+  "EP_component32": {
+    "GPUq_job": 32,
+    "matrix": {
+      "EP": [
+        2,
+        8
+      ],
+      "N": [
+        1,
+        48
+      ],
+      "shared_experts": 2,
+      "logical_configurations": 4,
+      "rank_process_passes": 32
+    },
+    "scope": "Synthetic NCCL assembly component only; not whole-model quality, EP CUDA graphs, MNNVL or all-to-all transport qualification.",
+    "root_review": {
+      "path": "native-ep-assembly-component-gpu-v1-analysis/job32/root-result-review.json",
+      "sha256": "ff4b1bc69d57fd51a5ff94390d89476d52bfa1bffa6ded852d7ce9906bf54135"
+    }
+  },
+  "release_scope": {
+    "research_baseline": "607dd50ed7d42e3d5cf6447b5fc83b3c21352acb",
+    "measured_feature": "bdda6b8dc2fe5bd3e1672665360acd0cf43e9639",
+    "release_cleanup_base": "519eb91c4023a818bfb7c321a6749696bb33c33e",
+    "note": "The feature/release chain is reviewable; research baseline607 remains. This documentation does not promote a runtime or complete the target."
+  },
+  "provenance": {
+    "combined_summary": {
+      "path": "native-attention-serving-v1-analysis/final-serving-unprofiled-vs-reference-and21-and25-and27.json",
+      "sha256": "72d64475e5e08c51ef523d8e4d12cc44d916082c5779a6b7000fc4b8d8d11d58"
+    },
+    "root30": {
+      "path": "native-attention-serving-v1-analysis/root-result-review.json",
+      "sha256": "5371157af728e167fff416de3702d69c22dc6e2b1da64a8c3e245703c9eb4c62"
+    },
+    "FINAL30": {
+      "path": "native-attention-serving-v1-analysis/FINAL-REVIEW.json",
+      "sha256": "9634bd50e2619cf899ed7b5987ba00b9d1aed70a93309aafc44e1352c2de508d"
+    }
+  },
+  "quality_parity": "Open for the current canonical precision/source; historical BF16/Marlin/GSM8K records do not qualify bdda.",
+  "goal_complete": false
+}

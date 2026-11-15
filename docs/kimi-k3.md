@@ -1,9 +1,26 @@
 # Kimi-K3 text support
 
+## Current canonical 16K snapshot (2026-11-16)
+
+The [current serving table](kimi-k3-performance.md#current-canonical-16k-snapshot-2026-11-16)
+and [hashed evidence summary](validation/kimi-k3-canonical-16k-20261116.json)
+use TP8/DCP8/EP1, 16K prefill/chunks, native MXFP8 experts, FP8 KV and BF16
+persistent state. The latest unprofiled bdda result is
+296.71 output tokens/s
+(90.22% of official946's
+328.86); performance parity and final current-source quality remain open.
+The research baseline remains 607dd50; bdda/519 are reviewable feature/release
+commits. Nsight diagnostics do not enter the fair table.
+
+EP32 is only four synthetic NCCL configurations, 32 rank-process passes
+(EP2/8 × N1/48, shared2). It is not full-model, EP-graph, MNNVL or all-to-all
+qualification. Historical BF16/Marlin quality scores below do not qualify the
+current canonical precision or source.
+
 K3 composes reusable KDA, compressed MLA, attention residual and latent MoE
 operations. Model composition stays in `models/`; attention, cache ownership,
-expert compute and communication remain framework components. Code structure
-and correctness take priority over performance.
+expert compute and communication remain framework components. Performance work adapts mature official kernels through these
+boundaries while preserving precision and ownership semantics.
 
 ## Architecture and kernels
 
@@ -24,13 +41,27 @@ ownership; KDA remains sharded across the full TP group.
 
 `Linear` owns dense/packed storage. `moe/` selects expert compute from format
 and activation precision; routing and collectives use shared interfaces.
+The current canonical MXFP8 expert path uses native FlashInfer; it does not
+select the historical BF16-activation/Marlin path. Native precision policy is
+scoped and restored. Working, tracking and checkpoints lease the same physical
+state-slot axis, separate from the optional byte-arena storage strategy.
+
+## Historical validation and rollout notes
+
+> The following validation records and remaining-work statements describe
+> their original dated software/precision/configuration, including 32K and
+> BF16/Marlin experiments. Use the current 16K snapshot above for current
+> performance and acceptance status; historical content and anchors are retained.
+
+Historical/alternate precision path:
+
 There is no standalone quantization package. For the validated BF16 path,
 `attention-backend=auto` selects the native hybrid composition, and packed
 BF16 experts select Marlin. Native precision policy is scoped and restored.
 The actual eight-rank K3 audit observed no Mini numerical CUDA/Triton calls;
 Mini's PyNCCL FFI is a communication shim. Other/reference backends are separate.
 
-## Current validation
+### Current validation
 
 [Versioned evidence](validation/kimi-k3-native.json) records the baseline and
 pending work. The official reference is SGLang commit
@@ -59,7 +90,7 @@ Triton configurations; NVTX links them to Nsight's actual CUDA launch geometry.
 Weights, lookup tables and workspaces retain metadata; indexed pools save
 referenced state rows. GPU end-to-end trace validation remains pending.
 
-## Remaining work
+### Remaining work
 
 The [requested serving profile](kimi-k3-performance.md) is a separate target:
 TP8/DCP8/EP1, MXFP8 expert activations, FP8 KV and BF16 KDA state, 1M context,

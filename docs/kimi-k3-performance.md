@@ -1,14 +1,60 @@
 # Kimi-K3 serving performance target
 
-> Current configuration: use the SGLang-compatible names in
-> `benchmark/online/profiles/kimi-k3-sglang.json`, with both prefill budgets set to
-> 16384. Former Mini option names are removed, without compatibility aliases.
-> Historical runs below retain their original commands and measured results.
-> Optimization now prioritizes matching kernels, cache/pool/scheduling behavior
-> and performance, using readable-output/crash/state-boundary smoke. Full model
-> quality is qualified after performance convergence.
+## Current canonical 16K snapshot (2026-11-16)
 
-## Replacement-machine baseline (2026-11-11 CST)
+The [compact evidence summary](validation/kimi-k3-canonical-16k-20261116.json)
+records accepted **unprofiled** TP8/DCP8/EP1 runs: both prefill budgets 16384,
+context 1048576, concurrency 48, 393 dataset entries and seed 42. The canonical
+precision is native FlashInfer MXFP8 expert activations, FP8 E4M3 KV and BF16
+persistent KDA state. BF16-activation/Marlin results below are historical or a
+different precision path.
+
+| Run / source | Output tokens/s | Avg TTFT, ms | Avg ITL, ms |
+| --- | ---: | ---: | ---: |
+| Official9 / `94602c9` | 328.86 | 3384.76 | 34.45 |
+| Mini21 / `607dd50` | 284.08 | 2350.93 | 43.62 |
+| Mini25 / `ad77135` | 289.40 | 2705.04 | 42.42 |
+| Mini27 / `ee35842` | 294.48 | 2681.33 | 43.36 |
+| Mini30 / `bdda6b8` | 296.71 | 2673.11 | 41.08 |
+
+Mini30 reaches **90.22%** of the retained official
+point and gains **0.76%** over Mini27. Performance parity and
+current-source model quality remain open. These are combined, single-run
+results, without isolated causal attribution. Mini30's p95 ITL is
+79.79 ms versus
+78.45 ms in Mini27;
+p95 request latency is also worse
+(126612.53 versus
+117254.79 ms), despite the lower averages.
+
+The configured sending window is 900s; the exported observation is about 940s
+after 30s grace and 10s cancellation-credit wait. TPS uses the original exported
+denominator. All five runs report zero request errors; deadline cancellations
+and AIPerf's cancellation-credit `ERROR`/forced session completion remain
+retained adverse evidence. Explicit 48-request warmup and the 51-request scenario
+warmup are outside the primary window. Nsight diagnostic runs are excluded.
+
+The complete stacks differ: official946 uses SGLang 0.5.20, Torch 2.13,
+FlashInfer 0.6.18, kernel 0.4.7 and Cutlass DSL 4.6.2; Mini uses SDK baa/0.5.22,
+Torch 2.14.1+cu130, FlashInfer 0.7.1, kernel 0.4.9 and Cutlass DSL 4.8.0.
+The JSON preserves the full package inventories, source commits and accepted
+root-review/raw hashes. The research baseline remains 607dd50; bdda is the
+measured feature chain and 519eb91 carries release utility/docs cleanup.
+
+Working, tracking and checkpoints share a physical state-slot axis; the
+canonical configuration does not use a common byte arena for MLA KV and states.
+EP32 qualifies four synthetic NCCL configurations (EP2/8 × N1/48, shared2),
+with 32 rank-process passes. It does not qualify a whole EP model, EP graphs,
+MNNVL or all-to-all transport.
+
+## Historical reports
+
+> The dated reports below retain their original 32K/other configurations,
+> software, quality scope and then-pending work. Their numbers and pending
+> statements do not describe the current 16K bdda feature. Existing links and
+> anchors are retained.
+
+### Replacement-machine baseline (2026-11-11 CST)
 
 The [fresh canonical pair](validation/kimi-k3-replacement-baseline-20261110.json)
 completes the original 393-entry, concurrency-48, 900-second AIPerf scenario
@@ -74,7 +120,7 @@ Its105 CPU checks include native K3/Qwen parsers, EOS at the length cap,
 zero output, usage and tool-call priority. This fix has no numerical/cache
 changes, and is not attributed performance or quality gains from the old run.
 
-## Historical checked scope (2026-11-05 CST)
+### Historical checked scope (2026-11-05 CST)
 
 The latest qualified runtime `51420e6` completes the requested canonical profile
 at **276.90 output tokens/s**, 70.0% of the retained official 395.42 tokens/s point. The
@@ -150,7 +196,7 @@ sglang serve \
   --port 38080
 ```
 
-## Qualified indexed KDA
+### Qualified indexed KDA
 
 The [indexed KDA record](validation/native-indexed-kda.json) qualifies direct
 working-pool updates through the existing KDA kernel registry. The adapter uses
@@ -170,7 +216,7 @@ recorded below.
 The [prefill frontier change](validation/prefill-page-frontiers.json) has host
 scheduler/cache controls and the full-capacity GPU lifecycle qualification below.
 
-## Indexed runtime canonical serving
+### Indexed runtime canonical serving
 
 The [completed selected-runtime profile](validation/kimi-k3-indexed-serving.json)
 uses the exact 393-entry, concurrency-48, 900-second AIPerf workload and the
@@ -200,7 +246,7 @@ The same selected runtime scored 1283/1319 with no invalid answers or truncation
 The subsequent residual-bank runtime has separate qualification below; its
 results must not be attributed to this completed serving profile.
 
-## Aligned prefill and full-capacity cache checks
+### Aligned prefill and full-capacity cache checks
 
 [Eight-GPU cache qualification](validation/native-indexed-kda-cache.json) uses
 the selected indexed runtime with the canonical memory split, 312 cached states
@@ -221,7 +267,7 @@ The untraced canonical AIPerf result is recorded above. The retained initial
 failed GPU fixture used the wrong final-request predicate; its corrected run
 and host control are separately recorded.
 
-## Owned residual bank
+### Owned residual bank
 
 The [residual-bank record](validation/native-residual-bank.json) selects generic,
 forward-local storage for frozen block sums. The model supplies its bank capacity;
@@ -248,7 +294,7 @@ These are diagnostic model measurements. A canonical serving measurement of this
 runtime is now recorded separately below; the 265.61 tokens/s point above remains
 source e87.
 
-## Selected residual-bank serving
+### Selected residual-bank serving
 
 The [completed bank-runtime profile](validation/kimi-k3-residual-serving.json)
 keeps 393 entries, concurrency 48, 900 seconds and all original precision/resource
@@ -275,7 +321,7 @@ curve. Peak GPU memory was not sampled by this no-telemetry profile. Mini still
 has 48 working/312 cached states and 38152 logical KV pages; native has 372 shared
 slots and 39560 pages, under different ownership policies.
 
-## BF16 GEMM candidate
+### BF16 GEMM candidate
 
 The [generic GEMM candidate](validation/native-bf16-gemm.json) in commit
 `47e4961` delegated supported shapes to the official CuTe DSL/TGV SDK. Its
@@ -288,7 +334,7 @@ small isolated timing changes do not justify its worse task result. Source,
 tests and all responses remain available for diagnosis; this decision does
 not establish an arithmetic bug in the SDK or general model-quality loss.
 
-## Precision and parallel layout
+### Precision and parallel layout
 
 A model-level BF16 label is insufficient to establish parity. Record the actual
 resident tensor formats and execution path for both servers:
@@ -326,7 +372,7 @@ across eight GPUs, including MXFP8 expert inputs/BF16 output, FP8 MLA storage,
 DCP8, BF16/FP32 KDA state, ownership and graph replay. These checks qualify their
 listed operator contracts, rather than a full serving workload.
 
-## Measurement boundary
+### Measurement boundary
 
 Run both servers on the same hardware through gpuq. The replacement-machine
 work uses the restored queue; preserve process ownership and serialization. Keep development and CPU validation remote. Record the model/tokenizer revision, both source commits and
@@ -344,7 +390,7 @@ and cache metrics. An isolated kernel, an eager model loop, or a different
 precision/layout is useful diagnostic evidence but does not establish the
 requested serving performance ratio.
 
-## Frozen baseline and canonical workload
+### Frozen baseline and canonical workload
 
 The BF16 quality baseline is commit `eb3bd7b`: paired full GSM8K scores are
 1281/1319 for Mini and 1282/1319 for SGLang, with no invalid/truncated answers.
@@ -387,7 +433,7 @@ checked 386 actual captured AgentX payloads and their native-parser construction
 all preserved their requested output budgets. These are interface checks,
 separate from model and serving-performance acceptance.
 
-## Native S0 result
+### Native S0 result
 
 [Versioned result](validation/kimi-k3-aiperf-reference.json) freezes job 863,
 SGLang `baa9befa381511cd4d56f83980951e5a45fffc6d`, AIPerf 0.13.0, the canonical
@@ -442,7 +488,7 @@ AIPerf exports and normalize input-derived metrics to actual model tokens when
 comparing; output throughput and latency need no such adjustment. No prompt
 framing is removed to make usage counts match.
 
-## Mini R0 correctness and measurement status
+### Mini R0 correctness and measurement status
 
 The first runnable target-format Mini R0 is frozen at
 `07d94b5de00b883be81a45f6c6cc7c3d92d8de45`. Its bounded weight arenas load the
@@ -495,7 +541,7 @@ benchmark cleanup. Job 877 changes only the launcher; model source, server argv,
 precision and the 900-second AIPerf argv remain identical. Job 876 leaves no
 owned processes and contributes no performance number.
 
-## Prepared graph-coverage candidate
+### Prepared graph-coverage candidate
 
 R0 startup captures batches `[1, 2, 4, 8, 16, 24, 32, 40, 48]`. Its hybrid
 backend does not support padding, so other decode batch sizes execute eagerly.
@@ -511,7 +557,7 @@ request-capacity limits, explicit bucket selection and launcher cleanup. Its GPU
 and serving effect remain unmeasured. R0 continues from its frozen source and
 provides the comparison baseline before candidate performance acceptance.
 
-## Additional prefill precision gap
+### Additional prefill precision gap
 
 A further audit of native `baa9bef` finds that `TRTLLMMLABackend` uses the KV
 format for its ragged prefill Q/K/V as well: FP8 E4M3 inputs and a BF16 output
@@ -538,7 +584,7 @@ NVML cannot access GPU7 and marks the other seven devices with recovery action
 1–48 replay acceptance remain incomplete. See [the interruption evidence](validation/kimi-k3-gpu-interruption.json).
 The graph-only R1 gate remains prepared but unsubmitted.
 
-## Initial Mini R0 serving result
+### Initial Mini R0 serving result
 
 [Versioned R0 evidence](validation/kimi-k3-aiperf-mini-r0.json) records job 877,
 source `07d94b5`, the same canonical AIPerf argv/resolved workload as S0, package
@@ -576,7 +622,7 @@ and graph policy, measure that candidate, then evaluate generic ratio-based
 state/KV capacity and checkpoint ownership/policy improvements. The post-run
 audit finds no owned R0 server processes remaining.
 
-## Prepared generic cache-budget candidate
+### Prepared generic cache-budget candidate
 
 R0 has eight checkpoint slots and an implicit four-checkpoint limit per radix
 path. The R3 candidate adds optional `--state-memory-ratio 0.31` in place of
@@ -600,7 +646,7 @@ performance acceptance yet. Device recovery and the pending R2 correctness and
 serving measurements come first; native lazy extra-buffer ownership and mature
 communication integration still remain to be completed.
 
-## Failure context for resumed qualification
+### Failure context for resumed qualification
 
 The GSM8K validation runner now writes `failure-rankN.json` before cleanup when
 evaluation raises an exception. It records the current case IDs and immutable cases hash, completed
@@ -619,7 +665,7 @@ job880 still reports a missing device and `Reboot` recovery actions; its NVML ga
 stops before CUDA initialization. No corrected whole-model or serving acceptance
 is established by these diagnostics.
 
-## Routing ABI precision and CPU-only continuation
+### Routing ABI precision and CPU-only continuation
 
 The FlashInfer expert adapter now preserves BF16 or FP32 route weights rather
 than forcing every input to FP32. This is an SDK boundary rule shared by models;
@@ -663,7 +709,7 @@ runs the official peer probe before group creation, then constructs the native
 communicator with Mini-owned groups. Eight-device eager/graph communication
 qualification passed; whole-model quality and serving performance remain pending.
 
-## Device recovery qualification
+### Device recovery qualification
 
 The [recovery record](validation/kimi-k3-device-recovery.json) confirms all eight
 B300 devices are visible again with NVML recovery action `None`. Each rank passed
@@ -681,7 +727,7 @@ whole-model quality or serving acceptance. The user temporarily authorized direc
 GPU execution while GPUq is unavailable; each stage has an owned-process ledger,
 launch manifest and retained exit status. No direct run is recorded as a GPUq job.
 
-## Comparing retained AIPerf exports
+### Comparing retained AIPerf exports
 
 `benchmark/online/summarize_aiperf.py` reads completed, submission-valid exports
 and rejects mismatched benchmark arguments or resolved workload settings. Only
@@ -709,7 +755,7 @@ duplicate exports. The helper also reproduced the original S0/R0 throughput and
 completion/cancellation counts from their unmodified exports. This reporting
 validation is separate from the pending new serving measurements.
 
-## Scope of task contract comparison
+### Scope of task contract comparison
 
 The task comparator now reports `declared_execution_contract_matches` and leaves
 `kernel_precision_path_verified` unknown. Matching declared model/MoE/KV/state
@@ -720,7 +766,7 @@ them as recorded, with that scope. The scorer, task protocol and accuracy values
 are unchanged. Forty related CPU checks passed after this reporting clarification.
 
 
-## R2 recovery qualification and fresh official baseline
+### R2 recovery qualification and fresh official baseline
 
 The complete [R2 record](validation/kimi-k3-r2-recovery.json) uses frozen source
 `743a4f53e79d9c6cf844bed7b02aecf68e965e6c`. It scores 1279/1319 versus the retained
@@ -755,7 +801,7 @@ serving acceptance remain open. The native communication provider is opt-in and
 is not included in this frozen R2 measurement.
 
 
-## Native MoE preparation candidate
+### Native MoE preparation candidate
 
 The [component-qualified candidate](validation/native-moe-preparation.json)
 keeps raw router scores and model-level grouping/scoring choices in
@@ -774,7 +820,7 @@ and changing scores/activations across graph replays. Full CPU regression passes
 918 tests with 695 skips. This candidate has no full-model quality or serving
 acceptance yet and was not used in the frozen R2 serving attempt.
 
-## Long-prefill allocation failure and initialization fix
+### Long-prefill allocation failure and initialization fix
 
 The restored R2 serving failure was reproduced with 65,537 synthetic input IDs,
 32K chunks, all graph sizes 1–48 and the original dtype/memory settings. After
@@ -793,7 +839,7 @@ cache-lifecycle and serving validation remain pending. Worker exits now wake
 pending frontend requests and make readiness/new requests return 503, avoiding
 the HTTP wait observed in the failed serving attempt.
 
-## Production long-prefix and automatic state-budget check
+### Production long-prefix and automatic state-budget check
 
 The [production qualification](validation/kimi-k3-long-prefix-budget.json) at
 `1100408fa88b41de0cc593c309a15a319b24c85c` passes on all eight GPUs. Under the
@@ -812,7 +858,7 @@ and the canonical serving measurement remain open. Archived qualification trees
 are pinned by their launch manifests and source hashes; an enclosing checkout's
 HEAD does not identify an archived package.
 
-## Updated fused-routing whole-model result
+### Updated fused-routing whole-model result
 
 The [R4 result](validation/kimi-k3-r4-quality.json) completes all 1,319 task
 examples at frozen model source `1100408fa88b41de0cc593c309a15a319b24c85c`:
@@ -834,7 +880,7 @@ unpartitioned attention, empty/corrupt inputs and changing strided graph inputs;
 the complete CPU/Gloo suite passes 938 tests with 706 skips. Whole-model native
 communication, cache-capacity pressure and serving checks are still pending.
 
-### Native communication and full-cache lifecycle
+#### Native communication and full-cache lifecycle
 
 The `385d797` candidate passed whole-model TP8/DCP8 pressure with the opt-in
 native MNNVL provider, native DCP LSE combine, FP8 KV, BF16 declared KDA state
@@ -852,7 +898,7 @@ or native shared-pool memory-policy equivalence. Native-communication full
 GSM8K evaluation and the exact canonical AIPerf comparison are the next gates.
 
 
-## Replacement-server recovery (2026-11-10)
+### Replacement-server recovery (2026-11-10)
 
 The [replacement-server record](validation/kimi-k3-machine-recovery-20261110.json)
 separates recovery from final acceptance: 1077 CPU/Gloo tests passed (798 skipped),
