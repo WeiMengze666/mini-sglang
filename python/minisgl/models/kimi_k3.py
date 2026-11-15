@@ -45,13 +45,15 @@ class KimiDecoderLayer(BaseOP):
             self.mlp_res_norm = TorchRMSNorm(config.hidden_size, config.rms_norm_eps)
             self.mlp_res_proj = Linear(config.hidden_size, 1)
 
-    def _attention(self, x, batch, cache, page_table, backend=None):
-        return backend.forward_layer(self.self_attn, self._layer_id, x, batch, cache, page_table)
+    def _attention(self, x, batch, cache, page_table, backend=None, *, residual=None):
+        return backend.forward_layer(
+            self.self_attn, self._layer_id, x, batch, cache, page_table, residual=residual
+        )
 
     def forward(self, head, bank, batch, cache, page_table, backend=None):
         if self._block_size is None:
             x = self.input_layernorm.forward(head)
-            head = head + self._attention(x, batch, cache, page_table, backend)
+            head = self._attention(x, batch, cache, page_table, backend, residual=head)
             return head + self.mlp.forward(self.post_attention_layernorm.forward(head))
 
         x = attention_residual(
@@ -65,8 +67,9 @@ class KimiDecoderLayer(BaseOP):
         writes_block = self._layer_id % self._block_size == 0
         if writes_block:
             bank.append(head)
-        out = self._attention(x, batch, cache, page_table, backend)
-        head = out if writes_block else head + out
+        head = self._attention(
+            x, batch, cache, page_table, backend, residual=None if writes_block else head
+        )
         x = attention_residual(
             head, bank, self.mlp_res_norm, self.mlp_res_proj, self.post_attention_layernorm
         )

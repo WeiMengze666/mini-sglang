@@ -39,7 +39,9 @@ class DistributedImpl(ABC):
         """Whether this backend can gather this tensor without fallback."""
         return True
 
-    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+    def reserve_output(
+        self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
+    ):
         """Collectively reserve stable provider-owned output storage, or decline.
 
         Call in the same order on every group member during preparation, after
@@ -49,6 +51,8 @@ class DistributedImpl(ABC):
         copy retained aliases before reuse, without growing the reservation.
         The optional all_reduce_residual output_key names this reservation;
         all group members must supply the same key and corresponding slice.
+        enabled is caller readiness: every rank still participates, and any
+        disabled member declines preparation for the whole group.
         """
         return None
 
@@ -129,9 +133,15 @@ class FallbackDistributedImpl(DistributedImpl):
         backend = self.primary if self._supports(self.primary, "all_to_all", x) else self.fallback
         return backend.all_to_all(x)
 
-    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
-        result = self.primary.reserve_output(key, shape, dtype)
-        return self.fallback.reserve_output(key, shape, dtype) if result is None else result
+    def reserve_output(
+        self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
+    ):
+        result = self.primary.reserve_output(key, shape, dtype, enabled=enabled)
+        return (
+            self.fallback.reserve_output(key, shape, dtype, enabled=enabled)
+            if result is None
+            else result
+        )
 
     def supports_all_reduce_residual(
         self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
@@ -283,8 +293,10 @@ class DistributedCommunicator:
     def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
         return self._backend().all_to_all(x)
 
-    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
-        return self._backend().reserve_output(key, shape, dtype)
+    def reserve_output(
+        self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
+    ):
+        return self._backend().reserve_output(key, shape, dtype, enabled=enabled)
 
     def all_reduce_residual(
         self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None

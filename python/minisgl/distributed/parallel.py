@@ -35,9 +35,13 @@ class TensorParallel:
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
         return self._comm.all_gather(x) if self.size > 1 else x
 
-    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+    def reserve_output(
+        self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
+    ):
         """Prepare provider-owned output storage for multi-rank execution."""
-        return self._comm.reserve_output(key, shape, dtype) if self.size > 1 else None
+        return (
+            self._comm.reserve_output(key, shape, dtype, enabled=enabled) if self.size > 1 else None
+        )
 
     def all_reduce_residual(
         self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None

@@ -109,6 +109,10 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
     select an algorithm, and no collective error is retried.
     """
 
+    # The adapted native AR/res consumer writes BF16 only; decline other
+    # reservations through the existing group availability agreement.
+    _reserved_output_dtypes = (torch.bfloat16,)
+
     @cached_property
     def _residual_ops(self):
         return importlib.import_module("sglang.kernels.ops.communication.all_reduce_residual")

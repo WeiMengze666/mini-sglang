@@ -81,6 +81,7 @@ class Engine:
         self.worker_owner = worker_owner
         self.ctx = Context(config.logical_page_size)
         self.ctx.bf16_precision = resolve_bf16_precision(config.bf16_precision)
+        self.ctx.max_forward_len = config.max_forward_len
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)

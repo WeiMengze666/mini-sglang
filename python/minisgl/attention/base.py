@@ -57,7 +57,7 @@ class BaseAttnBackend(ABC):
     def finish_capture(self, batch) -> None:
         """Release any temporary cache ownership used to warm/capture a graph."""
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
         """Execute a stateful projection layer, when supported by the backend."""
         raise NotImplementedError("This backend only supports Q/K/V attention")
 
@@ -103,9 +103,11 @@ class PrefillDecodeAttnBackend(BaseAttnBackend):
         self.prefill_backend = prefill_backend
         self.decode_backend = decode_backend
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
         backend = self.prefill_backend if batch.is_prefill else self.decode_backend
-        return backend.forward_layer(layer, layer_id, x, batch, cache, page_table)
+        return backend.forward_layer(
+            layer, layer_id, x, batch, cache, page_table, residual=residual
+        )
 
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, layer_id: int, batch: Batch
@@ -148,12 +150,12 @@ class HybridAttnBackend(BaseAttnBackend):
     def checkpoint_quantum(self, batch=None):
         return self.kda_backend.checkpoint_quantum(batch)
 
-    def _call(self, kind, batch, method, *args):
+    def _call(self, kind, batch, method, *args, **kwargs):
         metadata = batch.attn_metadata
         assert isinstance(metadata, HybridAttnMetadata)
         batch.attn_metadata = getattr(metadata, kind)
         try:
-            return getattr(getattr(self, kind + "_backend"), method)(*args)
+            return getattr(getattr(self, kind + "_backend"), method)(*args, **kwargs)
         finally:
             setattr(metadata, kind, batch.attn_metadata)
             batch.attn_metadata = metadata
@@ -162,10 +164,19 @@ class HybridAttnBackend(BaseAttnBackend):
         for kind in ("kda", "mla"):
             self._call(kind, batch, method, batch)
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
         kind = "kda" if self.is_kda_layer(layer_id) else "mla"
         return self._call(
-            kind, batch, "forward_layer", layer, layer_id, x, batch, cache, page_table
+            kind,
+            batch,
+            "forward_layer",
+            layer,
+            layer_id,
+            x,
+            batch,
+            cache,
+            page_table,
+            residual=residual,
         )
 
     def forward(self, q, k, v, layer_id, batch):

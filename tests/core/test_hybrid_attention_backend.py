@@ -22,12 +22,12 @@ class Backend(BaseAttnBackend):
         )
         self.events.append((self.name, "prepare"))
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
         assert batch.attn_metadata.name == self.name
         self.events.append((self.name, layer_id))
         if self.fail:
             raise RuntimeError("kernel failed")
-        return x + layer_id
+        return x + layer_id if residual is None else x + layer_id + residual
 
     def forward(self, q, k, v, layer_id, batch):
         return self.forward_layer(None, layer_id, q, batch, None, None)
@@ -162,3 +162,17 @@ def test_removed_backend_names_are_rejected(name):
 
     with pytest.raises(ArgumentTypeError, match="Unsupported Attention Backend"):
         validate_attn_backend(name)
+
+
+def test_phase_and_layer_wrappers_forward_explicit_residual():
+    events = []
+    backend = PrefillDecodeAttnBackend(make_backend(events), make_backend(events))
+    residual = torch.full((1,), 7.0)
+    for is_prefill, layer_id in ((True, 0), (True, 1), (False, 0), (False, 1)):
+        batch = SimpleNamespace(is_prefill=is_prefill)
+        backend.prepare_metadata(batch)
+        metadata = batch.attn_metadata
+        result = backend.forward_layer(
+            None, layer_id, torch.zeros(1), batch, None, None, residual=residual
+        )
+        assert result.item() == 7 + layer_id and batch.attn_metadata is metadata

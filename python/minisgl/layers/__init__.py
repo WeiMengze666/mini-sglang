@@ -10,7 +10,6 @@ from .base import BaseOP, OPList, StateLessOP
 from .embedding import ParallelLMHead, VocabParallelEmbedding
 from .linear import (
     LinearColParallelMerged,
-    LinearOProj,
     LinearQKVMerged,
     LinearReplicated,
     LinearRowParallel,
@@ -33,7 +32,6 @@ __all__ = [
     "ParallelLMHead",
     "LinearColParallelMerged",
     "LinearRowParallel",
-    "LinearOProj",
     "LinearQKVMerged",
     "RMSNorm",
     "RMSNormFused",

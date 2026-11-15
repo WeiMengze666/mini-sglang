@@ -225,7 +225,7 @@ def test_actual_backend_dispatches_one_batch_and_finishes_once(monkeypatch, cove
             )
             return result if isinstance(result, MLAOutput) else MLAOutput(result)
 
-        def finish(self, x, result):
+        def finish(self, x, result, *, residual=None):
             calls.append(("finish", len(x)))
             return result.values
 

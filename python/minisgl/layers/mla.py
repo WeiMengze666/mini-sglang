@@ -9,7 +9,7 @@ from minisgl.distributed.context import ContextParallel
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
-from minisgl.layers.linear import Linear, headwise_linear, linear_bf16
+from minisgl.layers.linear import Linear, LinearRowParallel, headwise_linear, linear_bf16
 from minisgl.layers.norm import TorchRMSNorm
 
 
@@ -37,7 +37,12 @@ class MLALayer(BaseOP):
         self._output_gate = config.output_gate
         if self._output_gate:
             self.g_proj = Linear(config.hidden_size, self._heads * self._value)
-        self.o_proj = Linear(self._heads * self._value, config.hidden_size)
+        self.o_proj = LinearRowParallel(
+            self._heads * self._value * self._tp.size,
+            config.hidden_size,
+            output_key="attention.output",
+            tp=self._tp,
+        )
         self._key_weight = self._value_weight = None
         self._decode_q_weight = self._decode_key_weight = None
         self._inference_prepared = False
@@ -160,7 +165,7 @@ class MLALayer(BaseOP):
             q, pages, weight, metadata, nope_dim=self._nope, value_dim=self._value
         )
 
-    def finish(self, x, partial: MLAOutput):
+    def finish(self, x, partial: MLAOutput, *, residual=None):
         output = (
             self._cp.exchange(partial.values, partial.lse)
             if partial.lse is not None and self._cp.size > 1
@@ -176,7 +181,7 @@ class MLALayer(BaseOP):
         output = output.to(x.dtype).flatten(-2)
         if self._output_gate:
             output = output * self.g_proj.forward(x).sigmoid()
-        return self._tp.all_reduce(self.o_proj.forward(output))
+        return self.o_proj.forward(output, residual=residual)
 
     def attend(
         self,
@@ -188,15 +193,17 @@ class MLALayer(BaseOP):
         history_positions,
         *,
         attention=mla_attention,
+        residual=None,
     ):
         return self.finish(
             x,
             self.attend_partial(
                 q, latent_history, key_history, positions, history_positions, attention=attention
             ),
+            residual=residual,
         )
 
-    def forward(self, x, positions, state: MLAState | None = None):
+    def forward(self, x, positions, state: MLAState | None = None, *, residual=None):
         """Complete-history CPU/reference path; serving owns sharded pooled KV."""
         q, latent, key = self.project(x, positions)
         history_positions = positions
@@ -206,5 +213,5 @@ class MLALayer(BaseOP):
             history_positions = torch.cat((state.positions, positions))
         if latent.shape[0] > self._config.max_position_embeddings:
             raise ValueError("MLA context exceeds max_position_embeddings")
-        output = self.attend(x, q, latent, key, positions, history_positions)
+        output = self.attend(x, q, latent, key, positions, history_positions, residual=residual)
         return output, MLAState(latent, key, history_positions)

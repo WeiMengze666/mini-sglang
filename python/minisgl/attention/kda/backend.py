@@ -163,7 +163,7 @@ class KDAAttentionBackend(BaseAttnBackend):
             raise
         metadata.checkpoints = prepared
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
         metadata = batch.attn_metadata
         if getattr(batch, "checkpoint_plan", ()):
             try:
@@ -193,7 +193,7 @@ class KDAAttentionBackend(BaseAttnBackend):
                 if output is None and getattr(batch, "checkpoint_plan", ()):
                     raise ValueError("Validated checkpoint prefill cannot silently fall back")
                 if output is not None:
-                    return layer.finish(x, output)
+                    return layer.finish(x, output, residual=residual)
             except BaseException as error:
                 self._abort_checkpoints(batch, error)
                 raise
@@ -208,11 +208,11 @@ class KDAAttentionBackend(BaseAttnBackend):
                 )
                 if result is not None:
                     return layer.finish(
-                        x, result.output, normed=result.normed, gate=result.gate
+                        x, result.output, normed=result.normed, gate=result.gate, residual=residual
                     )
             initial = cache.recurrent.get_kda_batch(layer_id, indices)
             if self.kernel.decode is not None and is_decode:
-                fused = layer.decode(x, initial, kernel=self.kernel)
+                fused = layer.decode(x, initial, kernel=self.kernel, residual=residual)
                 if fused is not None:
                     result, final = fused
                     cache.recurrent.set_kda_batch(layer_id, indices, final)
@@ -228,7 +228,7 @@ class KDAAttentionBackend(BaseAttnBackend):
                 is_decode=is_decode,
             )
             cache.recurrent.set_kda_batch(layer_id, indices, final)
-            return layer.finish(x, output[:, 0])
+            return layer.finish(x, output[:, 0], residual=residual)
         outputs, offset = [], 0
         for req in batch.reqs:
             rows = slice(offset, offset + req.extend_len)
@@ -242,7 +242,7 @@ class KDAAttentionBackend(BaseAttnBackend):
             cache.set_kda_state(layer_id, req.table_idx, state)
             outputs.append(output)
             offset += req.extend_len
-        return layer.finish(x, torch.cat(outputs))
+        return layer.finish(x, torch.cat(outputs), residual=residual)
 
     def forward(self, q, k, v, layer_id, batch):
         raise NotImplementedError("KDA uses projected gates and recurrent state")

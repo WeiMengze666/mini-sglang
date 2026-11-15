@@ -73,7 +73,7 @@ def test_one_token_prefill_keeps_prefill_kernel_contract(
     backend = KDAAttentionBackend(SimpleNamespace(), spec, cache=cache)
 
     class Layer:
-        def decode(self, x, state, *, kernel):
+        def decode(self, x, state, *, kernel, residual=None):
             events.append("decode")
             assert state == "initial"
             return kernel.decode(self, x, state)
@@ -88,7 +88,7 @@ def test_one_token_prefill_keeps_prefill_kernel_contract(
             assert projected.shape == (2, 1, 3) and state == "initial"
             return projected + 1, "updated"
 
-        def finish(self, x, output):
+        def finish(self, x, output, *, residual=None):
             events.append("finish")
             return output
 

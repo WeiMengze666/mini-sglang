@@ -94,6 +94,9 @@ def test_reserve_identity_alias_and_close_order(host):
         output = provider.reserve_output("projection", (64, 7168), torch.bfloat16)
     assert provider.reserve_output("projection", (64, 7168), torch.bfloat16) is output
     assert events == ["agreement", "allocate", "agreement", "rendezvous", "agreement", "agreement"]
+    assert provider.reserve_output("projection", (64, 7168), torch.bfloat16, enabled=False) is None
+    assert provider._outputs["projection"][0] is output
+    assert provider.reserve_output("projection", (64, 7168), torch.bfloat16) is output
     alias = output[2:50]
     assert provider._output_mc_ptr(alias) == (1 << 40) + 2 * 7168 * 2
     assert provider._output_mc_ptr(cuda_tensor(48, 7168)) is None
@@ -524,8 +527,17 @@ def _reservation_failure_worker(rank, init_path, failure, results):
         if rank == 0 and failure == "closed":
             provider._closed = True
         shape = (0, 16) if rank == 0 and failure == "invalid" else (8, 16)
-        provider.reserve_output("output", shape, torch.bfloat16)
-        results.put((rank, "unexpected success", rendezvous_count, "output" in provider._outputs))
+        output = provider.reserve_output(
+            "output", shape, torch.bfloat16, enabled=not (failure == "mixed_enabled" and rank == 0)
+        )
+        results.put(
+            (
+                rank,
+                "declined" if output is None else "unexpected success",
+                rendezvous_count,
+                "output" in provider._outputs,
+            )
+        )
     except Exception as exc:
         results.put((rank, str(exc), rendezvous_count, bool(provider and provider._outputs)))
     finally:
@@ -537,6 +549,7 @@ def _reservation_failure_worker(rank, init_path, failure, results):
     "failure, expected, rendezvous_count",
     [
         ("allocation", "allocation failed on rank 0", 0),
+        ("mixed_enabled", "declined", 0),
         ("mapping_exception", "mapping failed on rank 0", 1),
         ("mapping_zero", "mapping failed on rank 0", 1),
         ("reuse_new", "reuse/new state differs", 0),
@@ -586,7 +599,7 @@ def test_tensor_parallel_reservation_facade(monkeypatch, world_size):
     output = torch.empty(8, 16, dtype=torch.bfloat16)
     calls = []
 
-    def reserve(key, shape, dtype):
+    def reserve(key, shape, dtype, *, enabled=True):
         calls.append((key, shape, dtype))
         return output
 
@@ -600,3 +613,9 @@ def test_tensor_parallel_reservation_facade(monkeypatch, world_size):
         assert actual is None and calls == []
     else:
         assert actual is output and calls == [("slot", (8, 16), torch.bfloat16)]
+
+
+def test_unsupported_consumer_dtype_declines_before_allocation(host):
+    provider, events, _ = host
+    assert provider.reserve_output("unsupported", (8, 16), torch.float32) is None
+    assert events == ["agreement"] and provider._outputs == {}

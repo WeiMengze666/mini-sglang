@@ -7,7 +7,6 @@ from minisgl.layers import (
     BaseOP,
     GatedActivation,
     LinearColParallelMerged,
-    LinearOProj,
     LinearQKVMerged,
     LinearReplicated,
     LinearRowParallel,
@@ -112,7 +111,7 @@ class RopeAttn(BaseOP):
             q_norm=self.q_norm,
             k_norm=self.k_norm,
         )
-        self.o_proj = LinearOProj(
+        self.o_proj = LinearRowParallel(
             head_dim * config.num_qo_heads,
             config.hidden_size,
             has_bias=False,

@@ -26,7 +26,7 @@ def test_mla_store_policy_follows_its_executor(monkeypatch, native_mla):
         def attend_partial(self, q, *args, **kwargs):
             return MLAOutput(q)
 
-        def finish(self, x, partial):
+        def finish(self, x, partial, *, residual=None):
             return partial.values
 
     class NativeBackend(MLAAttentionBackend):
@@ -155,7 +155,7 @@ def test_prefill_uses_unquantized_current_rows_and_dequantized_cached_prefix():
             assert not options["context_sharded"]
             return MLAOutput(query)
 
-        def finish(self, x, partial):
+        def finish(self, x, partial, *, residual=None):
             return partial.values
 
     def gather(layer_id, locations):

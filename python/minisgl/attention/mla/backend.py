@@ -51,7 +51,7 @@ class MLAAttentionBackend(BaseAttnBackend):
             )
         batch.attn_metadata = metadata
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table):
+    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
         is_decode = getattr(batch, "is_decode", False)
         positions = batch.positions[: len(x)]
         queries, new_latent, new_key = layer.project(x, positions, is_decode=is_decode)
@@ -68,7 +68,7 @@ class MLAAttentionBackend(BaseAttnBackend):
                 queries, cache.mla.paged_storage(layer_id), paged, attention=self.attention
             )
             if partial is not None:
-                return layer.finish(x, partial)
+                return layer.finish(x, partial, residual=residual)
         cp = ContextParallel()
         if not is_decode and batch.attn_metadata.prefill is not None:
             attend_batch = functools.partial(
@@ -88,7 +88,7 @@ class MLAAttentionBackend(BaseAttnBackend):
                 attention=attend_batch,
             )
             if partial_output is not None and partial_output.values is not None:
-                return layer.finish(x, partial_output)
+                return layer.finish(x, partial_output, residual=residual)
         outputs, offset = [], 0
         for req in batch.reqs:
             rows = slice(offset, offset + req.extend_len)
@@ -138,7 +138,7 @@ class MLAAttentionBackend(BaseAttnBackend):
             torch.cat([part.values for part in outputs]),
             torch.cat([part.lse for part in outputs]) if outputs[0].lse is not None else None,
         )
-        return layer.finish(x, partial)
+        return layer.finish(x, partial, residual=residual)
 
     def forward(self, q, k, v, layer_id, batch):
         raise NotImplementedError("MLA uses latent KV projections")

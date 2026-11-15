@@ -12,7 +12,7 @@ from minisgl.attention.kda import (
 from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
-from minisgl.layers.linear import Linear, MergedLinear
+from minisgl.layers.linear import Linear, LinearRowParallel, MergedLinear
 from minisgl.layers.norm import TorchRMSNorm
 
 
@@ -50,8 +50,14 @@ class KDALayer(BaseOP):
         self.A_log = torch.empty(self._heads, dtype=torch.float32)
         self.dt_bias = torch.empty(width, dtype=torch.float32)
         self.o_norm = TorchRMSNorm(self._dim, config.rms_norm_eps)
-        self.o_proj = Linear(width, hidden)
-        if self._full_gate and self.q_proj.weight.is_meta and self.q_proj.weight.dtype == torch.bfloat16:
+        self.o_proj = LinearRowParallel(
+            width * self._tp.size, hidden, output_key="attention.output", tp=self._tp
+        )
+        if (
+            self._full_gate
+            and self.q_proj.weight.is_meta
+            and self.q_proj.weight.dtype == torch.bfloat16
+        ):
             MergedLinear.try_create(self._qkvg_projections())
 
     def _qkvg_projections(self):
@@ -145,7 +151,7 @@ class KDALayer(BaseOP):
             recurrent = recurrent.reshape(batch, self._heads, self._dim, self._dim)
         return output, KDAState(torch.stack(histories, dim=-3), recurrent)
 
-    def decode(self, x, state=None, *, kernel: KDAKernelSpec | None = None):
+    def decode(self, x, state=None, *, kernel: KDAKernelSpec | None = None, residual=None):
         """Try a complete fused one-token backend, then return ``None``.
 
         The backend owns only its supported kernel and state update.  This
@@ -162,9 +168,11 @@ class KDALayer(BaseOP):
             raise TypeError("KDA decode backend must return KDADecodeResult or None")
         if result.state is None:
             raise ValueError("Functional KDA decode must return its updated state")
-        return self.finish(x, result.output, normed=result.normed, gate=result.gate), result.state
+        return self.finish(
+            x, result.output, normed=result.normed, gate=result.gate, residual=residual
+        ), result.state
 
-    def finish(self, x, output, *, normed=False, gate=None):
+    def finish(self, x, output, *, normed=False, gate=None, residual=None):
         if not normed:
             if gate is None:
                 gate = (
@@ -175,7 +183,7 @@ class KDALayer(BaseOP):
             output = gated_rms_norm(
                 output, gate.reshape_as(output), self.o_norm.weight, self.o_norm.eps
             )
-        return self._tp.all_reduce(self.o_proj.forward(output.flatten(-2)))
+        return self.o_proj.forward(output.flatten(-2), residual=residual)
 
     def forward(
         self,
@@ -184,8 +192,9 @@ class KDALayer(BaseOP):
         state: KDAState | None = None,
         *,
         kernel: KDAKernelSpec | None = None,
+        residual=None,
     ):
         kernel = get_kda_kernel("torch") if kernel is None else kernel
         projected = self.project(x) if kernel.project is None else kernel.project(self, x)
         output, state = self.update(*projected, state, kernel=kernel)
-        return self.finish(x, output), state
+        return self.finish(x, output, residual=residual), state

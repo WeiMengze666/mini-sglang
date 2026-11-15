@@ -34,6 +34,9 @@ class MNNVLAllReduceProvider:
     collectives use the same process group through ordinary Torch/NCCL calls.
     """
 
+    # Generic storage is unrestricted; concrete consumers declare their ABI.
+    _reserved_output_dtypes = None
+
     def __init__(
         self,
         comm,
@@ -56,13 +59,17 @@ class MNNVLAllReduceProvider:
         self._capturing = False
         self._closed = False
 
-    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+    def reserve_output(
+        self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
+    ):
         """Collective preparation, including reuse and rejected requests."""
         if self.output_group is None or self.device is None or self.device.type != "cuda":
             return None
 
         error = None
-        if not isinstance(dtype, torch.dtype):
+        if not isinstance(enabled, bool):
+            error = ("value", "Output reservation enabled must be a bool")
+        elif not isinstance(dtype, torch.dtype):
             error = ("value", "Output reservation dtype must be a torch dtype")
         elif (
             not isinstance(key, str)
@@ -84,8 +91,11 @@ class MNNVLAllReduceProvider:
             if tuple(tensor.shape) != tuple(shape) or tensor.dtype != dtype:
                 error = ("value", "Cannot resize or change dtype of a reserved output")
         action = "error" if error else "reuse" if previous is not None else "new"
-        available = not getattr(self.comm, "disabled", False) and getattr(
-            self.comm, "has_multicast", False
+        available = (
+            enabled
+            and not getattr(self.comm, "disabled", False)
+            and getattr(self.comm, "has_multicast", False)
+            and (self._reserved_output_dtypes is None or dtype in self._reserved_output_dtypes)
         )
         # Every call agrees before returning, including cache hits and local
         # validation errors. A rank must never reuse while a peer rendezvouses.
@@ -236,9 +246,11 @@ class MNNVLDistributedImpl(DistributedImpl):
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
         return self.provider.all_gather(x)
 
-    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+    def reserve_output(
+        self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
+    ):
         reserve = getattr(self.provider, "reserve_output", None)
-        return reserve(key, shape, dtype) if reserve is not None else None
+        return reserve(key, shape, dtype, enabled=enabled) if reserve is not None else None
 
     def supports_all_reduce_residual(
         self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None

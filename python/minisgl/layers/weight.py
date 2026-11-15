@@ -258,22 +258,7 @@ def replace_quantized_linears(
                 if matches:
                     if validate is not None:
                         validate(name, child)
-                    # Preserve custom forward methods (e.g. vocab TP reduction)
-                    # rather than silently discarding them during replacement.
-                    if type(child) is not Linear:
-                        raise NotImplementedError(
-                            f"Packed execution for {type(child).__name__} is unsupported"
-                        )
-                    weight = child.weight
-                    replacement = Linear(
-                        weight.shape[1],
-                        weight.shape[0],
-                        child.bias is not None,
-                        weight_format="mxfp4",
-                        device=weight.device,
-                        dtype=weight.dtype,
-                        chunk_rows=chunk_rows,
-                    )
+                    replacement = child.new_with_weight_format("mxfp4", chunk_rows=chunk_rows)
                     replacement.bias = child.bias
                     if isinstance(op, OPList):
                         op.set_op(key, replacement)

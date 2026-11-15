@@ -145,8 +145,8 @@ def test_explicit_gate_reaches_finish_without_reprojection(monkeypatch):
     layer.load_weights(payload_for(layer).items(), device=torch.device("cpu"))
     monkeypatch.setattr(layer.g_proj, "forward", lambda value: pytest.fail("gate recomputed"))
     monkeypatch.setattr(kda_module, "gated_rms_norm", lambda out, gate, weight, eps: out + gate)
-    monkeypatch.setattr(layer.o_proj, "forward", lambda value: value)
-    layer._tp = SimpleNamespace(all_reduce=lambda value: value)
+    monkeypatch.setattr(layer.o_proj, "forward", lambda value, *, residual=None: value)
+    layer._tp = SimpleNamespace(all_reduce=lambda value, *, residual=None: value)
     x = torch.zeros(2, 8, dtype=torch.bfloat16)
     gate = torch.ones_like(x)
     output = layer.finish(x, x.reshape(2, 2, 4), gate=gate)
@@ -164,7 +164,7 @@ def test_indexed_result_gate_is_forwarded_as_the_same_object():
     )
     backend = KDAAttentionBackend(SimpleNamespace(), spec, cache=cache)
     seen = []
-    def finish(x, output, normed, *, gate):
+    def finish(x, output, normed, *, gate, residual=None):
         seen.append(gate)
         return output
     layer = SimpleNamespace(finish=finish)
