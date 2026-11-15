@@ -10,9 +10,14 @@ from minisgl.utils import div_even
 from .base import BaseOP
 from .weight import decode_mxfp4
 
+# Torch has no declared lower bound here; advertise only a present out ABI.
+_LINEAR_OUT = getattr(torch.ops.aten.linear, "out", None)
 
-def _linear(x, weight, bias):
-    # Use the task-qualified PyTorch/cuBLAS dense path.
+
+def _linear(x, weight, bias, *, out=None):
+    # The same mature ATen linear dispatcher, with an explicit destination.
+    if out is not None:
+        return _LINEAR_OUT(x, weight, bias, out=out)
     return F.linear(x, weight, bias)
 
 
@@ -288,7 +293,62 @@ class Linear(BaseOP):
         self._backend = backend
         self._activation_precision = activation_precision
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def supports_out(self, dtype: torch.dtype) -> bool:
+        """Whether loaded weights support same-dtype dense inference output.
+
+        This metadata-only capability does not allocate storage. The direct-out
+        call additionally requires 2D inputs and an exact contiguous destination
+        on the same device, with storage separate from inputs and parameters.
+        """
+        return (
+            _LINEAR_OUT is not None
+            and self.weight_format == "dense"
+            and not self.weight.is_meta
+            and self.weight.shape == (self._output_size, self._input_size)
+            and self.weight.device.type in ("cpu", "cuda")
+            and self.weight.dtype == dtype
+            and dtype in (torch.float16, torch.bfloat16, torch.float32, torch.float64)
+            and not self.weight.requires_grad
+            and (
+                self.bias is None
+                or (
+                    self.bias.dtype == dtype
+                    and self.bias.shape == (self._output_size,)
+                    and self.bias.device == self.weight.device
+                    and not self.bias.requires_grad
+                )
+            )
+        )
+
+    def forward(self, x: torch.Tensor, *, out: torch.Tensor | None = None) -> torch.Tensor:
+        if out is not None:
+            if not self.supports_out(x.dtype):
+                raise NotImplementedError(
+                    "Caller-owned output requires supported dense inference weights"
+                )
+            if x.ndim != 2 or x.shape[1] != self._input_size:
+                raise ValueError(
+                    "Caller-owned linear output requires a 2D input with the configured width"
+                )
+            if out.shape != (x.shape[0], self._output_size):
+                raise ValueError("Caller-owned linear output must have the exact projection shape")
+            if x.device != self.weight.device or out.device != x.device or out.dtype != x.dtype:
+                raise ValueError(
+                    "Caller-owned linear output must preserve input dtype and local device"
+                )
+            if not out.is_contiguous():
+                raise ValueError("Caller-owned linear output must be contiguous")
+            if x.requires_grad or out.requires_grad:
+                raise ValueError("Caller-owned linear output is inference-only")
+            if any(
+                torch._C._overlaps(out, source)
+                for source in (x, self.weight, self.bias)
+                if source is not None
+            ):
+                raise ValueError(
+                    "Caller-owned linear output must use separate storage from inputs and parameters"
+                )
+            return _linear(x, self.weight, self.bias, out=out)
         if self.weight_format == "dense":
             return _linear(x, self.weight, self.bias)
         return self._forward_mxfp4(x)
