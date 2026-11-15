@@ -183,7 +183,7 @@ class MLALayer(BaseOP):
         )
         return output if isinstance(output, MLAOutput) else MLAOutput(output)
 
-    def attend_paged_partial(self, q, pages, metadata, *, attention):
+    def attend_paged_partial(self, q, pages, metadata, *, attention, kv_write=None):
         weight = self._decode_key_weight
         if weight is None:
             if self._cp.size > 1 or self.kv_b_proj.weight_format != "dense":
@@ -192,7 +192,13 @@ class MLALayer(BaseOP):
                 self._heads, self._nope + self._value, self._latent
             )[:, : self._nope]
         return attention.decode(
-            q, pages, weight, metadata, nope_dim=self._nope, value_dim=self._value
+            q,
+            pages,
+            weight,
+            metadata,
+            nope_dim=self._nope,
+            value_dim=self._value,
+            **({"kv_write": kv_write} if kv_write is not None else {}),
         )
 
     def finish(self, x, partial: MLAOutput, *, residual=None):

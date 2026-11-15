@@ -58,3 +58,45 @@ def store_mla(latent, key, locations, pages, storage, *, page_size, cp_size, cp_
                 DCP_WORLD_SIZE=1,
                 **launch,
             )
+
+
+@cache
+def _concat_query_kernels():
+    from sglang.kernels.ops.attention import set_mla_kv_concat_q
+    from tvm_ffi import use_torch_stream
+
+    return set_mla_kv_concat_q, use_torch_stream
+
+
+def store_mla_and_concat_query(storage, locations, latent, key, query, suffix, *, cp_size, cp_rank):
+    """One official FP8 KV-write/query-concat launch, or a pre-write decline.
+
+    The SDK handles virtual cyclic locations and SATFINITE E4M3 conversion.
+    No location remapping, temporary cache, or post-launch fallback is involved.
+    """
+    tensors = (storage, locations, latent, key, query, suffix)
+    if (
+        not all(value.is_cuda and value.device == storage.device for value in tensors)
+        or storage.dtype != torch.float8_e4m3fn
+        or storage.ndim != 2
+        or storage.shape[1] != 576
+        or locations.ndim != 1
+        or query.ndim != 3
+        or suffix.shape != (*query.shape[:2], 64)
+        or query.shape != (len(locations), query.shape[1], 512)
+    ):
+        return None
+    sdk, stream = _concat_query_kernels()
+    if not sdk.covered_fp8(storage, locations, latent, key, query, suffix):
+        return None
+    with stream():
+        return sdk.set_mla_kv_concat_q_fp8(
+            storage,
+            locations,
+            latent,
+            key,
+            query,
+            suffix,
+            dcp_world_size=cp_size,
+            dcp_rank=cp_rank,
+        )

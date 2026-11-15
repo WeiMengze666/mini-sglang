@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import torch
 from minisgl.core import get_global_ctx
 from minisgl.distributed.context import ContextParallel
+from minisgl.kvcache.mla_pool import MLACacheWrite
 
 from ..base import BaseAttnBackend, SequenceAttnMetadata
 from . import CausalLayout, MLAPagedMetadata, mla_attention
@@ -63,20 +64,31 @@ class MLAAttentionBackend(BaseAttnBackend):
         is_decode = getattr(batch, "is_decode", False)
         positions = batch.positions[: len(x)]
         queries, new_latent, new_key = layer.project(x, positions, is_decode=is_decode)
-        cache.store_mla(
+        write = MLACacheWrite(
+            cache,
             layer_id,
             new_latent,
             new_key,
             batch.out_loc[: len(x)],
-            implementation=self.cache_implementation,
+            self.cache_implementation,
         )
         paged = batch.attn_metadata.decode
+        deferred = paged is not None and getattr(self.attention, "supports_kv_write", False)
+        if not deferred:
+            write.store()
         if paged is not None:
             partial = layer.attend_paged_partial(
-                queries, cache.mla.paged_storage(layer_id), paged, attention=self.attention
+                queries,
+                cache.mla.paged_storage(layer_id),
+                paged,
+                attention=self.attention,
+                **({"kv_write": write} if deferred else {}),
             )
             if partial is not None:
                 return layer.finish(x, partial, residual=residual)
+        if deferred:
+            # None guarantees that the selected decoder has not written any KV.
+            write.store()
         cp = ContextParallel()
         if not is_decode and batch.attn_metadata.prefill is not None:
             attend_batch = functools.partial(

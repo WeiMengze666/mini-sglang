@@ -2,9 +2,47 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
 import torch
 from minisgl.attention.mla import MLAPagedMetadata
 from minisgl.distributed.context import ContextParallel
+
+if TYPE_CHECKING:
+    from .hybrid_pool import HybridCache
+
+
+@dataclass(frozen=True)
+class MLACacheWrite:
+    """One forward's projected KV rows; an accepted decode consumes this write.
+
+    A decoder returns None only before consuming it. The caller then owns the
+    ordinary store. This value never persists in graph or cache metadata.
+    """
+
+    cache: "HybridCache"
+    layer_id: int
+    latent: torch.Tensor
+    key: torch.Tensor
+    locations: torch.Tensor
+    implementation: str
+
+    def store(self):
+        self.cache.store_mla(
+            self.layer_id,
+            self.latent,
+            self.key,
+            self.locations,
+            implementation=self.implementation,
+        )
+
+    def fused_query(self, query, suffix):
+        if self.implementation != "sgl":
+            return None
+        return self.cache.mla.store_and_concat_query(
+            self.layer_id, self.latent, self.key, self.locations, query, suffix
+        )
 
 
 def _check(condition, message, error=ValueError):
@@ -120,7 +158,7 @@ class MLACache:
             cp_rank=self._cp.rank,
         )
 
-    def _locations(self, locations: torch.Tensor) -> torch.Tensor:
+    def _validate_locations(self, locations: torch.Tensor) -> None:
         if locations.ndim != 1 or locations.dtype not in (torch.int32, torch.int64):
             raise ValueError("Cache locations must be a one-dimensional integer tensor")
         _check(
@@ -128,7 +166,34 @@ class MLACache:
             "MLA cache location is out of range",
             IndexError,
         )
+
+    def _locations(self, locations: torch.Tensor) -> torch.Tensor:
+        self._validate_locations(locations)
         return locations.to(device=self.device, dtype=torch.long)
+
+    def store_and_concat_query(self, layer_id, latent, key, locations, query, suffix):
+        """Offer the mature FP8 writer for dense rows and virtual cyclic locations.
+
+        Arena pages keep their existing stride-aware store. The fused SDK owns
+        the E4M3 SATFINITE conversion; it is not an aten cast equivalence claim.
+        """
+        if self.arena is not None or (self.latent_dim, self.rope_dim) != (512, 64):
+            return None
+        from minisgl.kernel.mla import store_mla_and_concat_query
+
+        self._validate_locations(locations)
+        if latent.shape != (len(locations), 512) or key.shape != (len(locations), 64):
+            raise ValueError("MLA token/cache shapes differ; do not write padded tokens")
+        return store_mla_and_concat_query(
+            self._mla[self._full_layers[layer_id]],
+            locations,
+            latent,
+            key,
+            query,
+            suffix,
+            cp_size=self._cp.size,
+            cp_rank=self._cp.rank,
+        )
 
     def store_mla(
         self,

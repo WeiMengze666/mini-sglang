@@ -66,6 +66,9 @@ class _MLAPlan:
 
 
 class FlashInferMLAAdapter:
+    # A successful decode consumes the optional write; None never does.
+    supports_kv_write = True
+
     def __init__(self, *, kv_dtype: torch.dtype | None = None):
         self.kv_dtype = kv_dtype
         self._expanded_workspace = None
@@ -136,6 +139,7 @@ class FlashInferMLAAdapter:
         nope_dim,
         value_dim,
         scale=None,
+        kv_write=None,
     ):
         """Attend a whole decode batch directly over the cache's physical pages.
 
@@ -181,9 +185,20 @@ class FlashInferMLAAdapter:
         )
         weights = weight.view(heads, -1, 512)
         query = torch.bmm(q[..., :nope_dim].transpose(0, 1), weights[:, :nope_dim]).transpose(0, 1)
+        fused_query = (
+            kv_write.fused_query(query, q[..., nope_dim:])
+            if native and kv_write is not None
+            else None
+        )
+        if kv_write is not None and fused_query is None:
+            kv_write.store()
+        # After a write is consumed, errors propagate; no None or retry follows.
         if native:
             output, lse = plan.run(
-                (query, q[..., nope_dim:]), combined, nope_dim=nope_dim, scale=softmax_scale
+                (query, q[..., nope_dim:]) if fused_query is None else fused_query,
+                combined,
+                nope_dim=nope_dim,
+                scale=softmax_scale,
             )
             return MLALatentOutput(output, lse)
         query = F.pad(query, (0, 0, 0, padded_heads - heads))

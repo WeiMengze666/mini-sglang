@@ -55,7 +55,11 @@ class CuTeMLADecodePlan:
         # The official NoPE FP8 path concatenates in producer precision, then
         # converts both query components to the KV dtype with unit scale.
         with use_torch_stream():
-            query = concat_mla_absorb_q_general(*query).to(pages.dtype)
+            if isinstance(query, torch.Tensor):
+                if query.shape[-1] != 576 or query.dtype != pages.dtype:
+                    raise ValueError("Prepared MLA query must match the cache payload dtype/width")
+            else:
+                query = concat_mla_absorb_q_general(*query).to(pages.dtype)
             output, lse = trtllm_batch_decode_with_kv_cache_mla(
                 query=query.unsqueeze(1),
                 kv_cache=pages.unsqueeze(1),

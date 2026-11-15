@@ -177,3 +177,36 @@ def test_native_scheduling_bound_is_local_and_positive(monkeypatch, cp, rank, gl
         assert call["causal_seqlens_kv_global"].tolist() == [global_length]
     else:
         assert call["causal_seqlens_kv_global"] is None
+
+
+def test_prepared_query_is_forwarded_without_concat_or_cast(monkeypatch):
+    calls = []
+
+    def run(**options):
+        calls.append(options)
+        q = options["query"]
+        return torch.zeros((*q.shape[:-1], 512)), torch.zeros(q.shape[:-1])
+
+    monkeypatch.setitem(
+        sys.modules, "flashinfer.decode", SimpleNamespace(trtllm_batch_decode_with_kv_cache_mla=run)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "sglang.kernels.ops.attention.utils",
+        SimpleNamespace(
+            concat_mla_absorb_q_general=lambda *args: pytest.fail(
+                "prepared query was concatenated twice"
+            )
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "tvm_ffi", SimpleNamespace(use_torch_stream=nullcontext))
+    plan = CuTeMLADecodePlan(torch.empty(1, dtype=torch.uint8))
+    plan.prepare(metadata([1], [[0]]), {})
+    q = torch.zeros(1, 12, 576).to(torch.float8_e4m3fn)
+    pages = torch.zeros(1, 64, 576).to(torch.float8_e4m3fn)
+    plan.run(q, pages, nope_dim=128, scale=1.0)
+    assert calls[0]["query"].data_ptr() == q.data_ptr()
+    assert calls[0]["query"].dtype == q.dtype
+    with pytest.raises(ValueError, match="dtype/width"):
+        plan.run(q.bfloat16(), pages, nope_dim=128, scale=1.0)
+    assert len(calls) == 1
