@@ -72,6 +72,9 @@ def _worker(rank, init_file):
                 restored = cp.gather_interleaved(local, total)
                 torch.testing.assert_close(restored, full[:, :, 1], rtol=0, atol=0)
     finally:
+        from minisgl.distributed.impl import destroy_distributed
+
+        destroy_distributed()
         info._TP_INFO = None
         configure_parallel()
         dist.destroy_process_group()

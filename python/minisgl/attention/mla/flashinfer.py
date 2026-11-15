@@ -75,6 +75,24 @@ class FlashInferMLAAdapter:
         self._graph_sizes = set()
         self._max_pages = 0
 
+    def decode_partial_spec(self, records, *, dtype):
+        """Declare the native paged producer, not the final value projection.
+
+        decode accepts BF16 queries; its native MLA API allocates BF16 latent
+        output and both plans explicitly request natural-log FP32 LSE.
+        """
+        from minisgl.attention.config import MLAConfig
+        from minisgl.distributed.fi_dcp import AttentionExchangeSpec
+
+        configs = [config for _, config in records if isinstance(config, MLAConfig)]
+        if (
+            dtype != torch.bfloat16
+            or not configs
+            or any((config.latent_dim, config.rope_dim) != (512, 64) for config in configs)
+        ):
+            return None
+        return AttentionExchangeSpec(torch.bfloat16, 512, "e")
+
     def init_graphs(self, batch_sizes, max_pages, device):
         # Plans are materialized during warmup once dtype/shape capabilities are
         # known. Graphs share one decode workspace; prefill owns a separate one.

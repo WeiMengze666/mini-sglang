@@ -3,45 +3,119 @@
 import torch
 import torch.distributed as dist
 
+from .fi_dcp import AttentionExchangeSpec, FlashInferDCPExchange, native_candidate
 from .impl import DistributedCommunicator, TorchDistributedImpl
 from .layout import get_parallel_layout
 
 
-def init_context_parallel(*, backend=None, device: torch.device | None = None):
+class _ContextGroup(TorchDistributedImpl):
+    def __init__(self, group, *, members, tp_members, cpu_group, device):
+        super().__init__(group, owns_group=True)
+        self.members, self.tp_members = tuple(members), tuple(tp_members)
+        self.cpu_group, self.device = cpu_group, device  # Borrow TP Gloo.
+        self.spec = self.transport = None
+        self.prepared = self.closed = False
+
+    def prepare_exchange(self, spec, *, enabled=True):
+        if self.closed or self.prepared:
+            raise RuntimeError("Context exchange preparation is once per worker group")
+        if (
+            self.device is not None
+            and self.device.type == "cuda"
+            and torch.cuda.is_current_stream_capturing()
+        ):
+            raise RuntimeError("Prepare context exchange before graph capture")
+        candidate, error = None, None
+        try:
+            signature = spec.signature() if spec is not None else None
+            if enabled and self.cpu_group is not None:
+                candidate = native_candidate(
+                    spec, self.device, tp_size=len(self.tp_members), cp_size=len(self.members)
+                )
+        except Exception as exc:
+            signature, error = None, f"{type(exc).__name__}: {exc}"
+        local = (self.members, signature, candidate is not None, error)
+        rows = [local]
+        if self.cpu_group is not None:
+            rows = [None] * len(self.tp_members)
+            dist.all_gather_object(rows, local, group=self.cpu_group)
+            rows = [row for rank, row in zip(self.tp_members, rows) if rank in self.members]
+        if any(row[0] != self.members or row[1] != signature or row[3] for row in rows):
+            raise RuntimeError("Context exchange startup agreement failed")
+        self.prepared = True
+        if not all(row[2] for row in rows):
+            return False
+        transport = FlashInferDCPExchange(
+            candidate,
+            self.group,
+            rank=dist.get_rank(self.group),
+            size=len(self.members),
+            device=self.device,
+        )
+        self.spec, self.transport = spec, transport
+        return True
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        if self.transport is not None:
+            self.transport.close()  # Logical close; FI memory lasts for the worker.
+        super().close()  # Own CP device PG only, never borrowed TP Gloo.
+
+
+def init_context_parallel(*, backend=None, device: torch.device | None = None, cpu_group=None):
     """Every TP rank creates subgroups in the same order, once at startup."""
     layout = get_parallel_layout()
-    previous = DistributedCommunicator.groups.pop("context", None)
+    previous = DistributedCommunicator.groups.get("context")
+    if isinstance(previous, _ContextGroup) and previous.transport is not None:
+        raise RuntimeError("Native context resources require a fresh worker, not reinitialization")
+    DistributedCommunicator.groups.pop("context", None)
     if previous is not None:
         previous.close()
     if layout.dcp_size == 1:
         return
+    tp_members = list(range(layout.tensor.size))
+    if cpu_group is not None:
+        if str(dist.get_backend(cpu_group)).lower() != "gloo":
+            raise ValueError("Context preparation requires borrowed TP Gloo")
+        tp_members = dist.get_process_group_ranks(cpu_group)
+        if (
+            len(tp_members) != layout.tensor.size
+            or tp_members[layout.tensor.rank] != dist.get_rank()
+        ):
+            raise ValueError("TP Gloo ordering must match ParallelLayout.tensor")
     for start in range(0, layout.tensor.size, layout.dcp_size):
-        ranks = list(range(start, start + layout.dcp_size))
+        ranks = tp_members[start : start + layout.dcp_size]
         group = dist.new_group(ranks, backend=backend)
-        if layout.tensor.rank in ranks:
-            implementation = TorchDistributedImpl(group)
+        if tp_members[layout.tensor.rank] in ranks:
+            implementation = _ContextGroup(
+                group, members=ranks, tp_members=tp_members, cpu_group=cpu_group, device=device
+            )
             if device is not None:
                 implementation.warmup(device)
             DistributedCommunicator.enable(implementation, group="context")
 
 
-def merge_attention(output, lse):
+def merge_attention(output, lse, *, lse_base="e"):
     """Combine [shards,...,value] partial outputs using natural-log LSE.
 
     A shard with no visible keys contributes zero, including rows where every
     shard is empty. Arithmetic stays FP32 until the caller's output projection.
     """
+    if lse_base not in ("e", "2"):
+        raise ValueError("LSE base must be e or 2")
     if output.is_cuda:
         from minisgl.kernel.dcp import combine_partial_attention
 
-        combined = combine_partial_attention(output, lse)
+        combined = combine_partial_attention(output, lse, is_lse_base_on_e=lse_base == "e")
         if combined is not None:
             return combined
     maximum = lse.amax(0)
     # Avoid -inf - -inf only for all-empty rows. Invalid active LSE must
     # propagate instead of silently removing that shard's contribution.
     maximum = maximum.masked_fill(torch.isneginf(maximum), 0)
-    weights = (lse - maximum).exp()
+    weights = (lse - maximum).exp() if lse_base == "e" else (lse - maximum).exp2()
     weights = weights / weights.sum(0).clamp_min(torch.finfo(weights.dtype).tiny)
     # Empty softmax rows may have undefined outputs. Zero weight alone cannot
     # discard them: IEEE arithmetic keeps NaN * 0 as NaN.
@@ -91,19 +165,37 @@ class ContextParallel:
             .reshape(-1, *local.shape[1:])[:total]
         )
 
-    def exchange(self, output, lse):
+    def prepare_exchange(self, spec: AttentionExchangeSpec | None, *, enabled=True):
+        if self.size == 1:
+            return False
+        return self._comm._backend().prepare_exchange(spec, enabled=enabled)
+
+    def exchange(self, output, lse, *, lse_base="e"):
         """Send each destination its normal TP head slice, then merge KV shards."""
+        if lse_base not in ("e", "2"):
+            raise ValueError("LSE base must be e or 2")
         if self.size == 1:
             return output
         tokens, heads, values = output.shape
         if heads % self.size or lse.shape != (tokens, heads):
             raise ValueError("DCP partial attention shapes do not match the head layout")
+        owner = self._comm._backend()
+        if isinstance(owner, _ContextGroup) and owner.transport is not None:
+            if (
+                output.dtype != owner.spec.dtype
+                or values != owner.spec.value_dim
+                or lse.dtype != torch.float32
+                or lse_base != owner.spec.lse_base
+            ):
+                raise ValueError("Prepared DCP producer does not match its declared spec")
+            received, received_lse = owner.transport.exchange(output, lse)
+            return merge_attention(received, received_lse, lse_base=lse_base)
         # Destination is the leading axis, so one all-to-all carries O and LSE.
         packed = torch.cat((output.float(), lse[..., None]), -1)
         send = packed.view(tokens, self.size, heads // self.size, values + 1)
         send = send.transpose(0, 1).contiguous()
         received = self._comm.all_to_all(send)
-        return merge_attention(received[..., :values], received[..., values])
+        return merge_attention(received[..., :values], received[..., values], lse_base=lse_base)
 
 
 def create_expert_cpu_group(layout, tp_cpu_group):

@@ -124,7 +124,9 @@ def construction(monkeypatch):
         engine,
         "create_attention_backend",
         lambda *args: SimpleNamespace(
-            prepare_model=lambda records: None, checkpoint_quantum=lambda: None
+            prepare_model=lambda records: None,
+            checkpoint_quantum=lambda: None,
+            prepare_communication=lambda **kwargs: None,
         ),
     )
     monkeypatch.setattr(engine, "Sampler", lambda *args: SimpleNamespace())
@@ -487,3 +489,43 @@ def test_nonfresh_worker_keeps_FI_untuned_but_borrows_runtime_abort(construction
     assert not f.contexts and "prepare" not in f.events
     assert f.pool_args[-1]["device_abort"] == owner.abort
     assert "graphs" in f.events and not f.destroyed
+
+
+def test_context_communication_failure_uses_fatal_pregraph_guard(construction, monkeypatch):
+    f = construction
+    error = RuntimeError("native context initialization failed")
+    calls = []
+
+    class OwnedAbort(BaseException):
+        pass
+
+    def fail(*, dtype):
+        assert dtype == torch.bfloat16
+        calls.append("native_context")
+        raise error
+
+    def abort(value):
+        assert value is error
+        calls.append("owned_abort")
+        raise OwnedAbort
+
+    monkeypatch.setattr(
+        f.engine,
+        "create_attention_backend",
+        lambda *args: SimpleNamespace(
+            prepare_model=lambda records: None,
+            checkpoint_quantum=lambda: None,
+            prepare_communication=fail,
+        ),
+    )
+    gather = torch.distributed.all_gather_object
+
+    def before_native_only(*args, **kwargs):
+        assert "native_context" not in calls, "native failure entered another CPU agreement"
+        return gather(*args, **kwargs)
+
+    monkeypatch.setattr(torch.distributed, "all_gather_object", before_native_only)
+    with pytest.raises(OwnedAbort):
+        Engine(f.config(), worker_owner=SimpleNamespace(fresh_worker=False, abort=abort))
+    assert calls == ["native_context", "owned_abort"]
+    assert "KV" in f.events and "late_prepare" not in f.events and "graphs" not in f.events

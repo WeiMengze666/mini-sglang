@@ -50,6 +50,9 @@ class BaseAttnBackend(ABC):
     def prepare_model(self, attention_configs) -> None:
         """Bind optional immutable global-layer configurations before graph setup."""
 
+    def prepare_communication(self, *, dtype: torch.dtype) -> None:
+        """Prepare selected decode communication once, before graph warmup."""
+
     def checkpoint_quantum(self, batch=None) -> int | None:
         """Optional all-layer prefill tracking capability; no reservation or writes."""
         return None
@@ -80,6 +83,9 @@ class BaseAttnBackend(ABC):
 
 
 class PrefillDecodeAttnBackend(BaseAttnBackend):
+    def prepare_communication(self, *, dtype: torch.dtype):
+        self.decode_backend.prepare_communication(dtype=dtype)
+
     def prepare_model(self, attention_configs):
         self.prefill_backend.prepare_model(attention_configs)
         if self.decode_backend is not self.prefill_backend:
@@ -146,6 +152,9 @@ class HybridAttnBackend(BaseAttnBackend):
         self.kda_backend.prepare_model(attention_configs)
         if self.mla_backend is not self.kda_backend:
             self.mla_backend.prepare_model(attention_configs)
+
+    def prepare_communication(self, *, dtype: torch.dtype):
+        self.mla_backend.prepare_communication(dtype=dtype)
 
     def checkpoint_quantum(self, batch=None):
         return self.kda_backend.checkpoint_quantum(batch)
