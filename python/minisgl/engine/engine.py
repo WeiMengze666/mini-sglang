@@ -77,6 +77,7 @@ class Engine:
 
         torch.manual_seed(42)
         self.stream = torch.cuda.Stream()
+        self.result_copy_stream = torch.cuda.Stream(device=self.device)
         torch.cuda.set_stream(self.stream)
         self.dtype = config.dtype
         self.worker_owner = worker_owner
@@ -498,9 +499,14 @@ class Engine:
             req.complete_one()
 
         next_tokens_gpu = self.sampler.sample(logits[: batch.size], args).to(torch.int32)
-        next_tokens_cpu = next_tokens_gpu.to("cpu", non_blocking=True)
-        copy_done_event = torch.cuda.Event()
-        copy_done_event.record(self.stream)
+        # ForwardOutput owns the sampled IDs; record_stream also protects an
+        # early-dropped result from allocator reuse while its D2H is in flight.
+        self.result_copy_stream.wait_stream(self.stream)
+        with torch.cuda.stream(self.result_copy_stream):
+            next_tokens_gpu.record_stream(self.result_copy_stream)
+            next_tokens_cpu = next_tokens_gpu.to("cpu", non_blocking=True)
+            copy_done_event = torch.cuda.Event()
+            copy_done_event.record(self.result_copy_stream)
         return ForwardOutput(next_tokens_gpu, next_tokens_cpu, copy_done_event)
 
     def shutdown(self) -> None:

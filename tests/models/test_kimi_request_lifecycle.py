@@ -24,7 +24,7 @@ from minisgl.message import (
 from minisgl.scheduler.cache import CacheManager
 from minisgl.scheduler.decode import DecodeManager
 from minisgl.scheduler.prefill import PrefillManager
-from minisgl.scheduler.scheduler import Scheduler
+from minisgl.scheduler.scheduler import ForwardData, Scheduler
 from minisgl.scheduler.table import TableManager
 from minisgl.tokenizer.detokenize import DetokenizeManager
 
@@ -288,7 +288,8 @@ def test_abort_reclaims_real_scheduler_resources_and_sends_terminal(scheduler, s
         scheduler.normal_loop()
     elif stage == "inflight":
         inputs = scheduler._schedule_next_batch()
-        data = (inputs, scheduler._forward(inputs))
+        output = scheduler._forward(inputs)
+        data = ForwardData(inputs, output, tuple(req.cached_len for req in inputs.batch.reqs))
     scheduler._process_one_msg(AbortBackendMsg(7))
     terminal = scheduler.replies[-1]
     assert terminal == DetokenizeMsg(7, None, True)
@@ -356,7 +357,10 @@ def frontend():
         sent.append(msg)
 
     state = FrontendManager(
-        SimpleNamespace(model_path="fixture"), SimpleNamespace(put=put), None, initialized=True
+        SimpleNamespace(model_path="fixture", enable_cache_report=False),
+        SimpleNamespace(put=put),
+        None,
+        initialized=True,
     )
     state.sent = sent
     return state
