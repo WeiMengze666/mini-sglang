@@ -17,15 +17,28 @@ def manager(monkeypatch, request):
     overlap = request.param
     monkeypatch.setattr("minisgl.scheduler.scheduler.logger.debug_rank0", lambda *args: None)
     states = RecurrentStatePool(
-        (0,), 2, 1, 2, 3, torch.float32, "cpu",
-        max_cached_states=8, max_staged_states=4 if overlap else 2,
+        (0,),
+        2,
+        1,
+        2,
+        3,
+        torch.float32,
+        "cpu",
+        state_slot_capacity=(2) + (8) + (4 if overlap else 2),
+        tracking_buffers=(4 if overlap else 2) // (2),
     )
     pool = SimpleNamespace(
-        recurrent=states, arena=None, supports_overlap=overlap,
+        recurrent=states,
+        arena=None,
+        supports_overlap=overlap,
         stage_state=lambda table, uid, length: states.snapshot(
-            table, uid, staged=True, expected_len=length,
+            table,
+            uid,
+            staged=True,
+            expected_len=length,
         ),
-        release_staged=states.release_staged, release_request=states.release_request,
+        release_staged=states.release_staged,
+        release_request=states.release_request,
     )
     ctx = core.Context(page_size=2)
     ctx.kv_cache = pool
@@ -40,7 +53,9 @@ def ensure_pages(manager, req, length):
     new = (length + manager.page_size - 1) // manager.page_size
     if new > old:
         values = manager._page_to_token(manager._allocate(new - old))
-        manager.page_table[req.table_idx, old * manager.page_size:new * manager.page_size] = values
+        manager.page_table[req.table_idx, old * manager.page_size : new * manager.page_size] = (
+            values
+        )
     req._allocated_pages = new
 
 
@@ -77,7 +92,9 @@ def scheduler_for(manager, req):
     scheduler.finished_reqs, scheduler.aborted_reqs = set(), set()
     scheduler.inflight_reqs = {req.uid: req}
     scheduler.stop_token_ids = set()
-    scheduler.decode_manager = SimpleNamespace(remove_req=lambda req: None, abort_req=lambda uid: req)
+    scheduler.decode_manager = SimpleNamespace(
+        remove_req=lambda req: None, abort_req=lambda uid: req
+    )
     scheduler.prefill_manager = SimpleNamespace(abort_req=lambda uid: None)
     scheduler.table_manager = SimpleNamespace(free=lambda slot: None)
     scheduler.send_result = lambda result: None
@@ -96,7 +113,10 @@ def test_decode_private_ring_rotates_at_full_scratch_quota(manager):
         for req in reqs:
             assert [cp.length for cp in manager._tracking[req.table_idx, req.uid]] == expected
         assert set(manager.prefix_cache.checkpoints) == original
-        assert len(manager.pool.recurrent._staged) <= manager.pool.recurrent.max_staged_states
+        assert (
+            len(manager.pool.recurrent._staged)
+            <= manager.pool.recurrent.capacity * manager.pool.recurrent.tracking_buffers
+        )
     assert not manager.should_cache(False, 16)
     assert manager.should_cache(True, 16)
 
@@ -107,7 +127,9 @@ def test_finished_selector_latest_previous_and_uid_isolation(manager):
     track(manager, req, 12)
     assert manager.finished_checkpoint(req, 12).length == 12
     previous = manager.finished_checkpoint(req, 11)
-    assert (previous.length if previous else None) == (10 if manager.pool.supports_overlap else None)
+    assert (previous.length if previous else None) == (
+        10 if manager.pool.supports_overlap else None
+    )
     assert manager.finished_checkpoint(req, 9) is None
     assert manager.finished_checkpoint(SimpleNamespace(table_idx=0, uid=999), 20) is None
 
@@ -122,7 +144,8 @@ def test_finish_donates_once_and_retains_prefill_prefix(manager):
     data = ForwardData(
         SimpleNamespace(batch=Batch([req], "decode")),
         (None, torch.zeros(1, dtype=torch.int32), SimpleNamespace(synchronize=lambda: None)),
-        (12,), (),
+        (12,),
+        (),
     )
     scheduler._process_last_data(data, staged={})
     assert not manager.has_tracking and not manager.pool.recurrent._staged
@@ -167,7 +190,9 @@ def test_normal_decode_loop_uses_private_stage_and_completion(manager):
     forward = SimpleNamespace(batch=Batch([req], "decode"))
     scheduler._schedule_next_batch = lambda: forward
     scheduler._forward = lambda value: (
-        None, torch.zeros(1, dtype=torch.int32), SimpleNamespace(synchronize=lambda: None),
+        None,
+        torch.zeros(1, dtype=torch.int32),
+        SimpleNamespace(synchronize=lambda: None),
     )
     scheduler.normal_loop()
     assert [cp.length for cp in manager._tracking[req.table_idx, req.uid]] == [10]
@@ -180,17 +205,22 @@ def test_overlap_copy_failure_keeps_private_state_until_fatal(manager):
     scheduler = scheduler_for(manager, req)
     cp = manager._tracking[req.table_idx, req.uid][-1]
     events = []
+
     def fatal(error):
         events.append("fatal")
         raise error
+
     manager.pool.recurrent.fail_device = fatal
     scheduler.engine = SimpleNamespace(kv_cache=manager.pool)
+
     def broken():
         raise RuntimeError("injected completion failure")
+
     data = ForwardData(
         SimpleNamespace(batch=Batch([req], "decode")),
         (None, torch.zeros(1, dtype=torch.int32), SimpleNamespace(synchronize=broken)),
-        (10,), (),
+        (10,),
+        (),
     )
     with pytest.raises(RuntimeError, match="completion"):
         scheduler._process_last_data(data, staged={})
@@ -248,9 +278,11 @@ def test_owned_decode_forward_failure_aborts_before_working_release(manager):
     pool = object.__new__(HybridCache)
     pool.recurrent = manager.pool.recurrent
     events = []
+
     def fatal(error):
         events.append("fatal")
         raise error
+
     pool.recurrent.device_abort = fatal
     with pytest.raises(RuntimeError, match="model failure"):
         with pool.forward_batch(Batch([req], "decode")):
@@ -270,12 +302,16 @@ def test_serial_scheduling_failure_does_not_reclaim_live_tracking(manager):
     scheduler.receive_msg = lambda **kwargs: []
     scheduler.engine = SimpleNamespace(kv_cache=manager.pool)
     events = []
+
     def fatal(error):
         events.append("fatal")
         raise error
+
     manager.pool.recurrent.fail_device = fatal
+
     def broken():
         raise RuntimeError("scheduling failure")
+
     scheduler._schedule_next_batch = broken
     with pytest.raises(RuntimeError, match="scheduling failure"):
         scheduler.normal_loop()
@@ -290,9 +326,11 @@ def test_lazy_free_error_respects_worker_ownership(owned):
         pass
 
     events = []
+
     def fatal(error):
         events.append("fatal")
         raise FatalSentinel()
+
     states = SimpleNamespace(device_abort=fatal if owned else None, fail_device=fatal)
     manager = object.__new__(CacheManager)
     manager.pool = SimpleNamespace(recurrent=states)

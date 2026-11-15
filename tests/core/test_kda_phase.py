@@ -45,7 +45,7 @@ def test_batch_phase_reaches_native_recurrence_with_bf16_state(monkeypatch, leng
         set_kda_state=lambda layer_id, slot, state: states.__setitem__(slot, state),
     )
     monkeypatch.setattr(layer, "project", lambda x: (x, x, x, x.view(-1, 1, 2), x[:, :1]))
-    monkeypatch.setattr(layer, "finish", lambda x, output: output.flatten(-2))
+    monkeypatch.setattr(layer, "finish", lambda x, output, *, residual=None: output.flatten(-2))
     monkeypatch.setattr(registry, "_supports_cuda_recurrence", lambda q: True)
     # Disable optional complete-decode hooks: this specifically exercises the
     # portable recurrence dispatch used when full fusion is not covered.

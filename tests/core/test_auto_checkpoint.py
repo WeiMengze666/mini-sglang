@@ -149,7 +149,7 @@ def test_separate_cold_admission_and_disabled_scheduler_plan_have_no_scratch(mon
     manager = make_manager(monkeypatch, False)
     req = admit(manager, end=130)
     assert manager.pool.recurrent._owners[req.table_idx] == req.uid
-    assert manager.pool.recurrent.max_staged_states == 0
+    assert manager.pool.recurrent.tracking_buffers == 0
     assert not manager.coordinates_checkpoints(Batch([req], "prefill"))
     manager._checkpoint_quantum = 64
     assert manager.coordinates_checkpoints(Batch([req], "prefill"))
@@ -278,7 +278,7 @@ def test_bound_native_capability_and_single_metadata_attachment(case, monkeypatc
     elif unsupported == "device":
         monkeypatch.setattr(flashinfer, "_checkpoint_device_supported", lambda device: False)
     elif unsupported == "no_cache":
-        case.states.max_cached_states = 0
+        case.states.checkpoint_enabled = False
     quantum = case.backend.checkpoint_quantum(case.batch)
     expected = 64 if unsupported is None and case.states.state_dtype == torch.bfloat16 else None
     assert quantum == expected
@@ -309,9 +309,11 @@ def test_generic_nonFI_checkpoint_capability128_without_FI_import(case, monkeypa
         return 128
 
     prepared = []
+
     def prepare(batch, metadata, layers, config, device, page_size, *, cache):
         prepared.append(cache)
         return SimpleNamespace(plans=tuple(batch.checkpoint_plan), quantum=128)
+
     case.backend.kernel = replace(
         get_kda_kernel("torch"),
         prepare_checkpoints=prepare,

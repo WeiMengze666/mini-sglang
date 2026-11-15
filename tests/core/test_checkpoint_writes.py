@@ -19,7 +19,7 @@ SUPPORTED = SimpleNamespace(checkpoint_quantum=lambda batch: 4)
 def make_manager(monkeypatch, unified):
     arena = UnifiedMemory(64, 256, 256, "cpu") if unified else None
     states = RecurrentStatePool(
-        LAYERS, 3, 1, 2, 3, torch.float32, "cpu", max_cached_states=3, arena=arena
+        LAYERS, 3, 1, 2, 3, torch.float32, "cpu", state_slot_capacity=(3) + (3) + (0), arena=arena
     )
     pool = SimpleNamespace(
         recurrent=states,
@@ -243,17 +243,17 @@ def test_same_uid_reuse_has_new_generation_and_old_frontier_cannot_seal(manager)
     states.release_request(0, 10)
 
 
-def test_capacity_is_cached_budget_not_additional_staging(manager):
+def test_checkpoint_reservations_exhaust_one_common_pool(manager):
     admit(manager)
     states = manager.pool.recurrent
-    assert states.max_staged_states == 0
-    states.max_cached_states = 1
-    first = states.reserve_checkpoint(0, 10, 4, end_len=11)
-    assert first is not None
-    assert states.reserve_checkpoint(0, 10, 8, end_len=11) is None
-    assert len(states._checkpoints) == 1
-    states.abort_checkpoint(first)
-    states.max_cached_states = 0
+    plans = []
+    while (plan := states.reserve_checkpoint(0, 10, 4, end_len=11)) is not None:
+        plans.append(plan)
+    assert len(plans) == states.slot_capacity - 1
+    assert states.available_checkpoint_slots == 0
+    for plan in plans:
+        states.abort_checkpoint(plan)
+    states.checkpoint_enabled = False  # explicit static strategy disable fixture
     assert states.reserve_checkpoint(0, 10, 8, end_len=11) is None
     assert not states._checkpoints
 
@@ -262,7 +262,6 @@ def test_pressure_never_evicts_locked_tree_checkpoint(manager):
     req = admit(manager, end=4)
     allocate_pages(manager, req)
     states = manager.pool.recurrent
-    states.max_cached_states = 1
     states.begin_request(0, 10, 0)
     finish(states, req)
     manager.cache_req(req, finished=False)
@@ -270,7 +269,10 @@ def test_pressure_never_evicts_locked_tree_checkpoint(manager):
     protected = manager.prefix_cache.match_prefix(req.input_ids).cuda_handle
     manager.lock(protected)
     states.reserve_request(1, 20)
-    assert states.reserve_checkpoint(1, 20, 4, end_len=7) is None
+    private = []
+    while (plan := states.reserve_checkpoint(1, 20, 4, end_len=7)) is not None:
+        private.append(plan)
+    assert private and states.available_tracking_slots == 0
     manager.prefix_cache.release_checkpoint_memory(1 << 30)
     assert tree_slot in states._checkpoints
     manager.unlock(protected)
@@ -327,15 +329,15 @@ def test_known_fork_requires_global_lcm_and_relative_kernel_alignment(manager):
 def test_arena_pressure_skips_without_leaking_or_releasing_working_state():
     arena = UnifiedMemory(1, 256, 256, "cpu")
     states = RecurrentStatePool(
-        LAYERS, 1, 1, 2, 3, torch.float32, "cpu", max_cached_states=3, arena=arena
+        LAYERS, 1, 1, 2, 3, torch.float32, "cpu", state_slot_capacity=(1) + (3) + (0), arena=arena
     )
     states.reserve_request(0, 10)
-    original = arena.state_view(("request", 0)).clone()
+    original = arena.state_view(states._state_key(states._working_slots[0])).clone()
     assert arena.free_bytes == 0
     assert states.reserve_checkpoint(0, 10, 4, end_len=7) is None
     assert not states._pending and not states._checkpoints
-    assert states._owners == [10] and arena.has_state(("request", 0))
-    assert torch.equal(arena.state_view(("request", 0)), original)
+    assert states._owners == [10] and arena.has_state(states._state_key(states._working_slots[0]))
+    assert torch.equal(arena.state_view(states._state_key(states._working_slots[0])), original)
     arena.check_integrity()
     states.release_request(0, 10)
     assert arena.free_bytes == 256
@@ -350,7 +352,7 @@ def state_pool(arena, *, capacity=2):
         3,
         torch.float32,
         "cpu",
-        max_cached_states=4,
+        state_slot_capacity=(capacity) + (4) + (0),
         arena=arena,
     )
 
@@ -365,7 +367,7 @@ def test_borrowed_checkpoint_cannot_silently_relocate_and_publish_wrong_state():
     old = states.snapshot(0, 10)
     plan = states.reserve_checkpoint(0, 10, 8, end_len=11)
     states.begin_request(0, 10, 1)
-    original_row = arena.state_index(("checkpoint", plan.generation))
+    original_row = arena.state_index(states._state_key(states._checkpoint_storage[plan.generation]))
     refused = False
     with states.borrow_checkpoint(plan, 0) as (conv, recurrent):
         try:
@@ -377,7 +379,10 @@ def test_borrowed_checkpoint_cannot_silently_relocate_and_publish_wrong_state():
         recurrent.fill_(16)
     if refused:
         assert old.slot in states._checkpoints  # rejection precedes pool bookkeeping
-        assert arena.state_index(("checkpoint", plan.generation)) == original_row
+        assert (
+            arena.state_index(states._state_key(states._checkpoint_storage[plan.generation]))
+            == original_row
+        )
         states.drop_checkpoint(old)  # compaction becomes safe after the borrow
     with states.borrow_checkpoint(plan, 2) as (conv, recurrent):
         conv.fill_(8)
@@ -438,14 +443,16 @@ def test_shared_arena_guard_constrains_other_pool_release_and_admission():
     with states.borrow_checkpoint(plan, 0):
         with pytest.raises(RuntimeError, match="borrow"):
             other.release_request(1, 20)
-        assert other._owners[1] == 20 and arena.has_state(("request", 1))
+        assert other._owners[1] == 20 and arena.has_state(other._state_key(other._working_slots[1]))
         with pytest.raises(RuntimeError, match="borrow"):
-            arena.free_state(("request", 1))
+            arena.free_state(other._state_key(other._working_slots[1]))
     other.release_request(1, 20)
     with states.borrow_checkpoint(plan, 2):
         with pytest.raises(RuntimeError, match="borrow"):
             other.reserve_request(1, 30)
-        assert other._owners[1] is None and not arena.has_state(("request", 1))
+        assert other._owners[1] is None and not arena.has_state(
+            other._state_key(other._working_slots[1])
+        )
     other.reserve_request(1, 30)
     other.release_request(1, 30)
     states.abort_checkpoint(plan)
@@ -487,7 +494,7 @@ def test_nested_different_plan_failure_defers_only_aborted_state_free():
     first = states.reserve_checkpoint(0, 10, 8, end_len=11)
     for slot, uid in [(0, 10), (1, 20)]:
         states.begin_request(slot, uid, 0)
-    failed_key = ("checkpoint", failed.generation)
+    failed_key = states._state_key(states._checkpoint_storage[failed.generation])
     before = arena.free_bytes
     with states.borrow_checkpoint(first, 0) as (conv, recurrent):
         with pytest.raises(ValueError, match="inner kernel"):
@@ -501,7 +508,7 @@ def test_nested_different_plan_failure_defers_only_aborted_state_free():
         with pytest.raises(RuntimeError, match="released"):
             states.adopt_staged(failed.checkpoint)
         with pytest.raises(RuntimeError, match="borrow"):
-            arena.free_state(("request", 1))
+            arena.free_state(states._state_key(states._working_slots[1]))
         conv.fill_(8)
         recurrent.fill_(16)
     assert not arena.has_state(failed_key)
@@ -580,7 +587,10 @@ def test_optional_checkpoint_never_admits_or_consumes_working_budget(occupied):
     free = arena.free_bytes
     assert states.reserve_checkpoint(0, 10, 4, end_len=7) is None
     assert states._owners == [None] and not states._checkpoints and not states._pending
-    assert not arena.has_state(("request", 0)) and arena.free_bytes == free
+    assert (
+        not arena.has_state(states._state_key(states._working_slots[0]))
+        and arena.free_bytes == free
+    )
     arena.check_integrity()
 
 
@@ -624,15 +634,16 @@ def test_explicit_abort_inside_borrow_cannot_publish_and_reclaims_after_exit():
     free = arena.free_bytes
     plan = states.reserve_checkpoint(0, 10, 8, end_len=11)
     states.begin_request(0, 10, 0)
+    key = states._state_key(states._checkpoint_storage[plan.generation])
     with pytest.raises(RuntimeError, match="stale"):
         with states.borrow_checkpoint(plan, 0) as (conv, _):
             states.abort_checkpoint(plan)
-            assert arena.has_state(("checkpoint", plan.generation))
+            assert arena.has_state(key)
             assert plan.generation not in states._pending
             with pytest.raises(RuntimeError, match="released"):
                 states.adopt_staged(plan.checkpoint)
             conv.fill_(99)  # still pinned storage, never reused until exit
-    assert not arena.has_state(("checkpoint", plan.generation))
+    assert not arena.has_state(key)
     assert not arena._deferred_state_frees and arena.free_bytes == free
     states.release_request(0, 10)
     arena.check_integrity()

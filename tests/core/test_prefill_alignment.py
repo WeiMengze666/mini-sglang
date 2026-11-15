@@ -65,7 +65,9 @@ def test_mixed_prefill_budget_keeps_restorable_intermediate_states(monkeypatch):
         return empty(*args, **kwargs)
 
     monkeypatch.setattr(torch, "empty", cpu_empty)
-    states = RecurrentStatePool((0,), 3, 1, 2, 3, torch.float32, "cpu", max_cached_states=32)
+    states = RecurrentStatePool(
+        (0,), 3, 1, 2, 3, torch.float32, "cpu", state_slot_capacity=(3) + (32) + (0)
+    )
     pool = SimpleNamespace(arena=None, recurrent=states, release_request=states.release_request)
     ctx = core.Context(page_size=8)
     ctx.kv_cache = pool

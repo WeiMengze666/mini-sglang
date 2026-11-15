@@ -162,7 +162,7 @@ class Engine:
             dtype=self.dtype,
             kv_dtype=config.cache_dtype,
             max_running_req=config.max_running_req,
-            max_cached_states=self.cached_state_capacity,
+            state_slot_capacity=self.state_slot_capacity,
             unified_memory=config.enable_unified_memory,
             enable_cache_overlap=config.enable_cache_overlap,
             state_dtype=config.recurrent_state_dtype,
@@ -222,6 +222,7 @@ class Engine:
         logger.info_rank0(f"Free memory after initialization: {mem_GB(post_free_memory)}")
 
         # ======================= Graph capture initialization ========================
+        max_graph_batch = _graph_batch_capacity(config.max_running_req, num_tokens, self.kv_cache)
         self.dummy_req = Req(
             input_ids=torch.tensor([0], dtype=torch.int32, device="cpu"),
             table_idx=config.max_running_req,
@@ -247,7 +248,7 @@ class Engine:
                 max_seq_len=aligned_max_seq_len,
                 vocab_size=config.model_config.vocab_size,
                 dummy_req=self.dummy_req,
-                max_batch_size=min(config.max_running_req, num_tokens),
+                max_batch_size=max_graph_batch,
             )
         except BaseException:
             self._precision_scope.close()
@@ -379,10 +380,10 @@ class Engine:
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
         layout = config.model_config.cache_config
         new_free_memory = self._sync_get_memory()[0 if layout is not None else 1]
-        self.cached_state_capacity = 0
+        self.state_slot_capacity = None
         num_pages = config.num_page_override
         if layout is not None:
-            from minisgl.kvcache.config import cached_state_capacity
+            from minisgl.kvcache.config import state_slot_capacity
 
             cache_per_page = layout.cache_bytes_per_page(
                 config.cache_dtype, config.logical_page_size
@@ -400,49 +401,36 @@ class Engine:
             # token budget after subtracting each rank's own state reservation.
             before = self._initial_free_memory
             available = int(config.memory_ratio * before) - (before - self._local_free_memory)
-            cached = 0
-            overlap = getattr(config, "enable_cache_overlap", False)
             ratio = getattr(config, "state_memory_ratio", None)
+            total_slots = None
             if ratio is not None:
                 state_budget = available
                 if unified:
                     pages = available // cache_per_page if num_pages is None else num_pages + 1
                     state_budget = min(available, pages * cache_per_page)
                 try:
-                    cached = cached_state_capacity(
-                        state_budget,
-                        state_bytes,
-                        config.max_running_req,
-                        ratio=ratio,
-                        scratch_slots=(2 if overlap else 1) * config.max_running_req,
-                    )
+                    total_slots = state_slot_capacity(state_budget, state_bytes, ratio=ratio)
                 except MemoryError:
-                    cached = 0  # all ranks must reach the capacity collective
-                capacity = torch.tensor(cached, device="cpu", dtype=torch.int64)
+                    total_slots = 0  # all ranks must reach the capacity collective
+                capacity = torch.tensor(total_slots, device="cpu", dtype=torch.int64)
                 torch.distributed.all_reduce(
                     capacity, op=torch.distributed.ReduceOp.MIN, group=self.tp_cpu_group
                 )
-                cached = int(capacity.item())
-                if cached < 1:
-                    raise MemoryError(
-                        "State budget on a TP rank cannot hold request state, scratch and a checkpoint"
-                    )
-            scratch = (2 if overlap else 1) * config.max_running_req if cached else 0
-            state_slots = (
-                config.max_running_req + cached + scratch
-                if ratio is not None
-                else config.state_slot_budget
-            )
+                total_slots = int(capacity.item())
+                if total_slots < 1:
+                    raise MemoryError("State budget on a TP rank cannot hold a physical state slot")
+            state_slots = config.max_running_req if total_slots is None else total_slots
             fixed_state = 0 if unified else state_slots * state_bytes
             budget = torch.tensor(available - fixed_state, device="cpu", dtype=torch.int64)
             torch.distributed.all_reduce(
                 budget, op=torch.distributed.ReduceOp.MIN, group=self.tp_cpu_group
             )
             available = int(budget.item())
-            self.cached_state_capacity = cached
+            self.state_slot_capacity = total_slots
             logger.info(
-                f"Recurrent state capacity: {config.max_running_req} working, {cached} cached, "
-                f"{scratch} overlap scratch; budget {mem_GB(state_slots * state_bytes)}"
+                f"Recurrent state pool: {state_slots} shared slots for working, tracking "
+                f"and checkpoints; request table capacity {config.max_running_req}; "
+                f"budget {mem_GB(state_slots * state_bytes)}"
             )
             max_pages = available // cache_per_page - 1  # dummy page
             if num_pages is None:
@@ -695,3 +683,19 @@ def _adjust_config(config: EngineConfig):
     if "trtllm" in config.attention_backend and config.page_size not in [16, 32, 64]:
         override("page_size", 64)
         logger.warning_rank0("Page size is overridden to 64 for TRTLLM backend")
+
+
+def _graph_batch_capacity(max_running_req: int, num_tokens: int, cache) -> int:
+    """Bound capture by cold-request demand without reserving startup leases."""
+    maximum = min(max_running_req, num_tokens)
+    states = getattr(cache, "recurrent", None)
+    if states is not None:
+        demand = 1 + states.tracking_buffers
+        state_maximum = states.slot_capacity // demand
+        if state_maximum < 1:
+            raise MemoryError(
+                f"Recurrent state capacity {states.slot_capacity} cannot admit one cold "
+                f"request requiring {demand} slots"
+            )
+        maximum = min(maximum, state_maximum)
+    return maximum

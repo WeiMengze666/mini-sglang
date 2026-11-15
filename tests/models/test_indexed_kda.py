@@ -55,7 +55,7 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
         4,
         torch.bfloat16,
         "cuda",
-        max_cached_states=2,
+        state_slot_capacity=(capacity) + (2) + (0),
         state_dtype=torch.bfloat16,
         arena=arena,
     )
@@ -67,6 +67,7 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
         state.recurrent.normal_(std=0.02)
         pool.finish_request(table, table + 100, 13)
     checkpoint = pool.snapshot(tables[0], tables[0] + 100, expected_len=13)
+    pool.adopt_staged(checkpoint)
     for table in tables:
         pool.begin_request(table, table + 100, 13)
     indices = pool.batch_indices(tables)

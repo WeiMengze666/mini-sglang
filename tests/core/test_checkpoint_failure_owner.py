@@ -24,7 +24,7 @@ def _child(kind, folder):
         3,
         torch.bfloat16,
         "cpu",
-        max_cached_states=1,
+        state_slot_capacity=(1) + (1) + (0),
         state_dtype=torch.bfloat16,
     )
     states.reserve_request(0, 10)
@@ -75,7 +75,7 @@ def _child(kind, folder):
         original(plan)
         # Dense checkpoints reuse preallocated storage; inject the actual
         # slot/view reservation seam instead of an unused tensor allocator.
-        states._allocate_checkpoint_storage = fault
+        states._slot_views = fault
         states.reserve_checkpoint(0, 10, 64, end_len=67)
     else:
         scheduler = object.__new__(Scheduler)
@@ -114,7 +114,9 @@ def _child(kind, folder):
     (folder / "CONTINUED").write_text("fatal callback returned to runtime")
 
 
-@pytest.mark.parametrize("kind", ["borrow", "metadata", "event", "allocation", "callback_returns", "callback_raises"])
+@pytest.mark.parametrize(
+    "kind", ["borrow", "metadata", "event", "allocation", "callback_returns", "callback_raises"]
+)
 def test_real_owned_CPU_exit_precedes_inner_lease_unwind_and_collectives(tmp_path, kind):
     proc = mp.get_context("spawn").Process(target=_child, args=(kind, str(tmp_path)))
     proc.start()
@@ -146,7 +148,9 @@ def test_embedding_no_owner_disables_automatic_capability_but_still_binds_model(
 
 
 def test_failed_event_without_owner_retains_explicit_manual_lease():
-    states = RecurrentStatePool((0,), 1, 1, 2, 3, torch.bfloat16, "cpu", max_cached_states=1)
+    states = RecurrentStatePool(
+        (0,), 1, 1, 2, 3, torch.bfloat16, "cpu", state_slot_capacity=(1) + (1) + (0)
+    )
     states.reserve_request(0, 10)
     plan = states.reserve_checkpoint(0, 10, 64, end_len=67)
     scheduler = object.__new__(Scheduler)

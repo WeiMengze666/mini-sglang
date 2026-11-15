@@ -23,36 +23,40 @@ class HybridPrefixCache(RadixPrefixCache):
 
     @property
     def reclaimable_state_bytes(self):
+        if self.states.arena is None:
+            return 0
+        pinned = {handle.node.uuid for handle, _ in self._state_locks.values()}
         return (
-            len(self.checkpoints) * self.states.arena.state_bytes
-            if self.states.arena is not None
-            else 0
+            sum(node_id not in pinned for node_id in self.checkpoints)
+            * self.states.arena.state_bytes
         )
 
     def __init__(self, device, states: RecurrentStatePool, max_states_per_path: int | None = None):
         super().__init__(device)
         if (
             max_states_per_path is not None and max_states_per_path < 1
-        ) or states.max_cached_states < 1:
+        ) or not states.checkpoint_enabled:
             raise ValueError("Hybrid prefix caching requires positive checkpoint capacity")
         self.states = states
         self.max_states_per_path = max_states_per_path
         self.checkpoints: dict[int, tuple[RadixTreeNode, StateCheckpoint]] = {}
-        self._pending_restores: dict[int, tuple[int, int]] = {}
+        self._state_locks: dict[int, tuple[RadixCacheHandle, int]] = {}
 
     def lock_handle(self, handle, unlock=False, *, for_restore=True):
+        anchored = isinstance(handle, RadixCacheHandle) and bool(handle.cached_len)
+        entry = self._state_locks.get(id(handle)) if anchored else None
+        if unlock and anchored and (entry is None or entry[0] is not handle):
+            raise RuntimeError("Recurrent state unlock requires its matching handle receipt")
         super().lock_handle(handle, unlock)
-        if isinstance(handle, HybridCacheHandle) and handle.cached_len:
-            if unlock:
-                self._unpin_state(handle)
-            elif for_restore:
-                count = self._pending_restores.get(id(handle), (0, 0))[1]
-                self._pending_restores[id(handle)] = (handle.node.uuid, count + 1)
-
-    def _unpin_state(self, handle):
-        entry = self._pending_restores.pop(id(handle), None)
-        if entry is not None and entry[1] > 1:
-            self._pending_restores[id(handle)] = (entry[0], entry[1] - 1)
+        if not anchored:
+            return
+        if unlock:
+            if entry[1] == 1:
+                self._state_locks.pop(id(handle))
+            else:
+                self._state_locks[id(handle)] = (handle, entry[1] - 1)
+        else:
+            self._state_locks[id(handle)] = (handle, 1 if entry is None else entry[1] + 1)
 
     def match_prefix(self, input_ids):
         node, matched = self._tree_walk(input_ids)
@@ -72,14 +76,21 @@ class HybridPrefixCache(RadixPrefixCache):
 
     def restore_state(self, table_idx, uid, handle):
         if handle.cached_len:
+            entry = self._state_locks.get(id(handle))
+            if entry is None or entry[0] is not handle:
+                raise RuntimeError("Recurrent restore requires a live source lock receipt")
             checkpoint = self.checkpoints[handle.node.uuid][1]
             if checkpoint.length != handle.cached_len:
                 raise RuntimeError("Recurrent checkpoint and radix prefix lengths differ")
-            arena = self.states.arena
-            if arena is not None:
-                self._release_checkpoint_memory(arena.state_bytes, exclude=handle.node.uuid)
-            self.states.restore(table_idx, uid, checkpoint)
-            self._unpin_state(handle)
+            while True:
+                try:
+                    self.states.restore(table_idx, uid, checkpoint)
+                    break
+                except MemoryError:
+                    # Atomic admission leaves the source untouched. Its receipt
+                    # stays held through COW and the continuing request lifetime.
+                    if not self._evict_checkpoint(exclude=handle.node.uuid):
+                        raise
 
     def release_checkpoint_memory(self, required_bytes):
         self._release_checkpoint_memory(required_bytes)
@@ -95,7 +106,7 @@ class HybridPrefixCache(RadixPrefixCache):
         return self._evict_checkpoint()
 
     def _evict_checkpoint(self, exclude=None):
-        pinned = {node_id for node_id, _ in self._pending_restores.values()}
+        pinned = {handle.node.uuid for handle, _ in self._state_locks.values()}
         node = min(
             (
                 node
@@ -107,7 +118,7 @@ class HybridPrefixCache(RadixPrefixCache):
         )
         if node is None:
             return False
-        # Restored readers own private state; only a queued restore pins this slot.
+        # Active state-component receipts protect their anchor even after COW.
         self._drop(node)
         return True
 
@@ -117,9 +128,7 @@ class HybridPrefixCache(RadixPrefixCache):
             self.states.drop_checkpoint(entry[1])
             self.checkpoints.pop(node.uuid)
 
-    def cache_state(self, req, handle, *, checkpoint=None, cached_len=None):
-        # A state cannot be rewound to an earlier page boundary. Checkpoint only
-        # exactly aligned committed states and replay the remaining tail later.
+    def cache_state(self, req, handle, *, checkpoint=None, cached_len=None, finished=False):
         length = req.cached_len if cached_len is None else cached_len
         if handle.cached_len != length or not length:
             return
@@ -127,10 +136,8 @@ class HybridPrefixCache(RadixPrefixCache):
             raise RuntimeError("Staged checkpoint and radix frontier lengths differ")
         node = handle.node
         if node.uuid in self.checkpoints:
-            return
-        # KV readers already own a private restored state. Only an outstanding
-        # restore must keep its tree checkpoint alive until the copy is queued.
-        pinned = {node_id for node_id, _ in self._pending_restores.values()}
+            return  # caller retains the unused track until its normal release
+        pinned = {anchor.node.uuid for anchor, _ in self._state_locks.values()}
         path, parent = [], node
         while not parent.is_root():
             if parent.uuid in self.checkpoints:
@@ -141,18 +148,22 @@ class HybridPrefixCache(RadixPrefixCache):
             if not candidates:
                 return
             self._drop(min(candidates, key=lambda n: n.timestamp))
-        if len(self.checkpoints) >= self.states.max_cached_states:
-            if not self.evict_checkpoint():
+        snapshot = checkpoint
+        while True:
+            try:
+                if snapshot is None:
+                    snapshot = self.states.snapshot(req.table_idx, req.uid, expected_len=length)
+                # Ongoing requests reserve a replacement before donating their
+                # tracking row. Finished requests need no replacement.
+                self.states.adopt_staged(snapshot, finished=finished)
+                break
+            except MemoryError:
+                if self.evict_checkpoint():
+                    continue
+                if checkpoint is None and snapshot is not None:
+                    self.states.release_staged(snapshot)
                 return
-        try:
-            snapshot = checkpoint or self.states.snapshot(
-                req.table_idx, req.uid, expected_len=length
-            )
-            self.states.adopt_staged(snapshot)
-        except MemoryError:
-            # KV and working state take precedence over an optional checkpoint.
-            return
-        self.checkpoints[node.uuid] = (node, snapshot)  # donate: transfer the slot, no copy
+        self.checkpoints[node.uuid] = (node, snapshot)
 
     def _remove_node(self, node):
         self._drop(node)

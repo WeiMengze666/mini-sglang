@@ -49,7 +49,9 @@ def request(prompt, generated, uid, table, *, append_latest=True, output=10000):
 def setup(monkeypatch, *, count=2, pages=4, append_latest=True, output=8):
     monkeypatch.setattr(core, "_GLOBAL_CTX", core.Context(page_size=4))
     table = torch.full((3, 20000), -777, dtype=torch.int32)
-    states = RecurrentStatePool((0,), 3, 1, 4, 4, torch.bfloat16, "cpu", max_cached_states=2)
+    states = RecurrentStatePool(
+        (0,), 3, 1, 4, 4, torch.bfloat16, "cpu", state_slot_capacity=(3) + (2) + (0)
+    )
     pool = S(release_request=states.release_request)
     cache = CacheManager(pages, 4, table, "naive", pool=pool)
     tm = TableManager(3, table)

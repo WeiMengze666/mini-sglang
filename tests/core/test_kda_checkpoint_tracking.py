@@ -29,7 +29,7 @@ def case(monkeypatch, request):
         4,
         torch.bfloat16,
         "cpu",
-        max_cached_states=3,
+        state_slot_capacity=(2) + (3) + (0),
         state_dtype=request.param,
     )
     cache = SimpleNamespace(recurrent=states, device=torch.device("cpu"), supports_overlap=False)
@@ -165,7 +165,7 @@ def native_spies(case, monkeypatch):
         k_conv1d=SimpleNamespace(weight=torch.zeros(width, 1, 4, dtype=torch.bfloat16)),
         v_conv1d=SimpleNamespace(weight=torch.zeros(width, 1, 4, dtype=torch.bfloat16)),
         prepare_kernel=lambda name, create: create(),
-        finish=lambda x, output: output,
+        finish=lambda x, output, *, residual=None: output,
     )
     monkeypatch.setattr(sgl, "_kernels", lambda: (None, None, nullcontext))
     monkeypatch.setattr(
@@ -441,7 +441,7 @@ def test_real_k3_configs_keep_global96_while_tp8_pool_and_layer_use_local12(
         4,
         torch.bfloat16,
         "cpu",
-        max_cached_states=1,
+        state_slot_capacity=(1) + (1) + (0),
         state_dtype=state_dtype,
     )
     cache = SimpleNamespace(recurrent=states, device=torch.device("cpu"), supports_overlap=False)

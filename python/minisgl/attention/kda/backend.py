@@ -87,7 +87,7 @@ class KDAAttentionBackend(BaseAttnBackend):
             not self.checkpoint_layer_configs
             or self.kernel.prepare_checkpoints is None
             or query is None
-            or states.max_cached_states <= 0
+            or not states.checkpoint_enabled
             or getattr(self.kvcache, "arena", None) is not None
             or (
                 self.kvcache.supports_overlap

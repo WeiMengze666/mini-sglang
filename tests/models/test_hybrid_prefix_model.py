@@ -24,7 +24,7 @@ def test_restored_prefix_logits_and_compaction(unified):
         2,
         torch.float32,
         torch.device("cpu"),
-        max_cached_states=2,
+        state_slot_capacity=(2) * (3 if False else 2) + (2),
         unified_memory=unified,
     )
     if unified:
@@ -33,6 +33,7 @@ def test_restored_prefix_logits_and_compaction(unified):
     prefix, suffix = [1, 2, 3, 4, 5], [9, 12]
     model.forward_batch(batch_for(prefix, "cpu"), cache, table)
     checkpoint = cache.recurrent.snapshot(0, 10)
+    cache.recurrent.adopt_staged(checkpoint)
     cache.release_request(0, 10)  # moves the snapshot into the gap in unified mode
     cache.recurrent.restore(1, 20, checkpoint)
     table[1, : len(prefix)] = table[0, : len(prefix)]

@@ -51,30 +51,35 @@ class RecurrentStatePool:
         conv_kernel_size,
         dtype,
         device,
-        max_cached_states=0,
+        state_slot_capacity=None,
         arena=None,
-        max_staged_states=0,
+        tracking_buffers=0,
         *,
         state_dtype=torch.float32,
         device_abort: Callable[[BaseException], NoReturn] | None = None,
     ):
         if state_dtype not in (torch.float32, torch.bfloat16):
             raise ValueError("Recurrent state storage supports float32 or bfloat16")
+        if capacity < 1 or tracking_buffers not in (0, 1, 2):
+            raise ValueError("Invalid recurrent request or tracking capacity")
         self._layers = {layer: i for i, layer in enumerate(layer_ids)}
-        self.capacity = capacity
-        self.device_abort = device_abort
-        self.arena = arena
+        self.capacity = capacity  # request-table capacity, independent of physical slots
+        self.slot_capacity = capacity if state_slot_capacity is None else state_slot_capacity
+        if self.slot_capacity < 1:
+            raise ValueError("Recurrent physical slot capacity must be positive")
+        self.checkpoint_enabled = bool(self._layers) and state_slot_capacity is not None
+        self.tracking_buffers = tracking_buffers if self.checkpoint_enabled else 0
+        self.device_abort, self.arena = device_abort, arena
         self._recurrent_shape = (len(self._layers), heads, dim, dim)
         self._conv_shape = (len(self._layers), 3, heads * dim, conv_kernel_size - 1)
-        self._conv_dtype = dtype
-        self._state_dtype = state_dtype
-        # Logical K,V and channel/history views over native-friendly storage.
-        # Kernel adapters can update indexed rows without repacking the pool.
+        self._conv_dtype, self._state_dtype = dtype, state_dtype
+        # One physical slot axis for working, tracking and immutable checkpoints.
+        # Logical views retain the existing kernel-facing channel/history and K,V order.
         self._recurrent = (
             None
             if arena is not None
-            else torch.zeros(
-                (len(self._layers), capacity, heads, dim, dim),
+            else torch.empty(
+                (len(self._layers), self.slot_capacity, heads, dim, dim),
                 dtype=state_dtype,
                 device=device,
             ).transpose(-1, -2)
@@ -82,91 +87,208 @@ class RecurrentStatePool:
         self._conv = (
             None
             if arena is not None
-            else torch.zeros(
-                (
-                    len(self._layers),
-                    capacity,
-                    conv_kernel_size - 1,
-                    3,
-                    heads * dim,
-                ),
+            else torch.empty(
+                (len(self._layers), self.slot_capacity, conv_kernel_size - 1, 3, heads * dim),
                 dtype=dtype,
                 device=device,
             ).permute(0, 1, 3, 4, 2)
         )
-        self._owners: list[int | None] = [None] * capacity
+        self._owners = [None] * capacity
         self._processed_lens = [0] * capacity
         self._active = [False] * capacity
-        self.max_cached_states = max_cached_states
-        self._checkpoints: dict[int, tuple[torch.Tensor, torch.Tensor] | None] = {}
+        self._working_slots = [None] * capacity
+        self._tracking_slots = [[] for _ in range(capacity)]
+        self._free_state_slots = list(reversed(range(self.slot_capacity)))
+        self._checkpoints = {}
+        self._checkpoint_lengths = {}
         self._next_checkpoint = 0
-        self.max_staged_states = max_staged_states
-        self._staged: set[int] = set()
-        self._pending: dict[int, _PendingCheckpoint] = {}
-        # Physical storage is bounded at startup; generation IDs never alias
-        # an old lease even when a released physical row is reused.
-        slots = max_cached_states + max_staged_states
-        self._checkpoint_conv = (
-            None
-            if arena is not None
-            else torch.empty(
-                (slots, len(self._layers), conv_kernel_size - 1, 3, heads * dim),
-                dtype=dtype,
-                device=device,
-            ).permute(0, 1, 3, 4, 2)
+        self._staged = set()
+        self._pending = {}
+        self._checkpoint_storage = {}
+        self._request_checkpoints = {}
+        self._deferred_checkpoint_storage = {}
+        self._arena_deferred_slots = set()
+
+    def _state_key(self, slot):
+        return ("state_slot", self, slot)
+
+    def _slot_views(self, slot):
+        if self.arena is not None:
+            return self._views(self._state_key(slot))
+        return self._conv[:, slot], self._recurrent[:, slot]
+
+    def _drain_arena_releases(self):
+        # The arena owns physical deferral until its last global borrower exits.
+        # Reconcile metadata only after it has actually removed the common key.
+        for slot in tuple(self._arena_deferred_slots):
+            if not self.arena.has_state(self._state_key(slot)):
+                self._arena_deferred_slots.remove(slot)
+                self._free_state_slots.append(slot)
+
+    def _allocate_slots(self, count):
+        self._drain_arena_releases()
+        if len(self._free_state_slots) < count:
+            raise MemoryError("Recurrent shared state slots exhausted")
+        selected = list(reversed(self._free_state_slots[-count:])) if count else []
+        allocated = []
+        try:
+            if self.arena is not None:
+                self.arena._check_mutable()
+                for slot in selected:
+                    self.arena.allocate_state(self._state_key(slot))
+                    allocated.append(slot)
+        except MemoryError:
+            # These are the last appended arena rows; reverse rollback moves no owner.
+            for slot in reversed(allocated):
+                self.arena.free_state(self._state_key(slot))
+            raise
+        except BaseException as error:
+            if self.device_abort is not None:
+                self.fail_device(error)
+            raise
+        for slot in selected:
+            assert self._free_state_slots.pop() == slot
+        return selected
+
+    def _release_slot(self, slot):
+        if slot in self._free_state_slots or slot in self._arena_deferred_slots:
+            raise RuntimeError("Recurrent physical slot released twice")
+        if self.arena is not None and self.arena.has_state(self._state_key(slot)):
+            try:
+                if self.arena._view_borrows:
+                    self.arena._free_state_after_borrow(self._state_key(slot))
+                    self._arena_deferred_slots.add(slot)
+                    return
+                self.arena.free_state(self._state_key(slot))
+            except BaseException as error:
+                if self.device_abort is not None:
+                    self.fail_device(error)
+                raise
+        self._free_state_slots.append(slot)
+
+    def _reserved_tracking(self, slot):
+        return any(slot in slots for slots in self._tracking_slots)
+
+    def _release_unreserved(self, slot):
+        if not self._reserved_tracking(slot):
+            self._release_slot(slot)
+
+    def request_slot_demand(self, table_idx, uid):
+        self._slot(table_idx)
+        if self._owners[table_idx] == uid:
+            return 0
+        if self._owners[table_idx] is not None:
+            raise RuntimeError("Recurrent request table belongs to another owner")
+        return 1 + self.tracking_buffers
+
+    def _allocate_request_slots(self, table_idx, uid):
+        need = self.request_slot_demand(table_idx, uid)
+        if not need:
+            return False
+        slots = self._allocate_slots(need)  # atomic working + both overlap destinations
+        self._working_slots[table_idx] = slots[0]
+        self._tracking_slots[table_idx] = slots[1:]
+        return True
+
+    def _discard_new_request_slots(self, table_idx):
+        slots = [self._working_slots[table_idx], *self._tracking_slots[table_idx]]
+        self._working_slots[table_idx] = None
+        self._tracking_slots[table_idx] = []
+        # These rows were appended together. Reverse rollback does not move
+        # another arena owner and performs no device tensor cleanup.
+        for slot in reversed(slots):
+            self._release_slot(slot)
+
+    def _new_checkpoint(self, table_idx, uid, length, staged):
+        busy = set(self._checkpoint_storage.values()) | set(
+            self._deferred_checkpoint_storage.values()
         )
-        self._checkpoint_recurrent = (
-            None
-            if arena is not None
-            else torch.empty(
-                (slots, len(self._layers), heads, dim, dim),
-                dtype=state_dtype,
-                device=device,
-            ).transpose(-1, -2)
+        physical = next(
+            (slot for slot in self._tracking_slots[table_idx] if slot not in busy), None
         )
-        self._free_checkpoint_slots = list(reversed(range(slots)))
-        self._checkpoint_storage: dict[int, int] = {}
-        self._deferred_checkpoint_storage: dict[int, int] = {}
+        if physical is None:
+            physical = self._allocate_slots(1)[0]
+        try:
+            views = None if self.arena is not None else self._slot_views(physical)
+        except BaseException as error:
+            if self.device_abort is not None:
+                self.fail_device(error)
+            if physical not in self._tracking_slots[table_idx]:
+                self._release_slot(physical)
+            raise
+        generation = self._next_checkpoint
+        self._next_checkpoint += 1
+        checkpoint = StateCheckpoint(generation, length)
+        self._checkpoint_storage[generation] = physical
+        self._checkpoint_lengths[generation] = length
+        self._checkpoints[generation] = views
+        self._request_checkpoints[generation] = (table_idx, uid)
+        if staged:
+            self._staged.add(generation)
+        return checkpoint
+
+    def _validate_checkpoint(self, checkpoint):
+        if self._checkpoint_lengths.get(checkpoint.slot) != checkpoint.length:
+            raise RuntimeError("Recurrent checkpoint is stale, released, or has another frontier")
+
+    @property
+    def state_usage(self):
+        self._drain_arena_releases()
+        working = {slot for slot in self._working_slots if slot is not None}
+        tracking = {slot for slots in self._tracking_slots for slot in slots}
+        private = {self._checkpoint_storage[g] for g in self._request_checkpoints}
+        tree = {
+            slot
+            for g, slot in self._checkpoint_storage.items()
+            if g not in self._request_checkpoints
+        }
+        deferred = set(self._deferred_checkpoint_storage.values()) | self._arena_deferred_slots
+        deferred -= working | tracking | private | tree
+        private -= tracking
+        owned = working | tracking | private | tree | deferred
+        free = set(self._free_state_slots)
+        if owned & free or len(owned) + len(free) != self.slot_capacity:
+            raise RuntimeError("Recurrent shared slot ownership ledger is inconsistent")
+        return {
+            "total": self.slot_capacity,
+            "free": len(free),
+            "working": len(working),
+            "tracking": len(tracking),
+            "private_checkpoint": len(private),
+            "tree_checkpoint": len(tree),
+            "deferred_release": len(deferred),
+            "pending_writes": len(self._pending),
+        }
 
     @property
     def available_checkpoint_slots(self):
-        return self.max_cached_states - (len(self._checkpoints) - len(self._staged))
+        self._drain_arena_releases()
+        return len(self._free_state_slots)
 
     @property
     def available_tracking_slots(self):
-        return self.max_staged_states - len(self._staged)
+        self._drain_arena_releases()
+        busy = set(self._checkpoint_storage.values()) | set(
+            self._deferred_checkpoint_storage.values()
+        )
+        return len(self._free_state_slots) + sum(
+            slot not in busy for slots in self._tracking_slots for slot in slots
+        )
 
     @property
     def supports_checkpoint_overlap(self):
         return (
             self.arena is None
-            and self.max_staged_states >= 2 * self.capacity
+            and self.checkpoint_enabled
+            and self.tracking_buffers == 2
             and self.device_abort is not None
         )
 
     @property
     def allocated_bytes(self):
         if self.arena is not None:
-            return 0  # The shared arena owner accounts for its whole buffer.
-        return sum(
-            t.numel() * t.element_size()
-            for t in (
-                self._conv,
-                self._recurrent,
-                self._checkpoint_conv,
-                self._checkpoint_recurrent,
-            )
-        )
-
-    def _allocate_checkpoint_storage(self, generation):
-        if self.arena is not None:
-            self.arena.allocate_state(("checkpoint", generation))
-            return None
-        if not self._free_checkpoint_slots:
-            raise MemoryError("Recurrent physical checkpoint capacity exhausted")
-        slot = self._free_checkpoint_slots.pop()
-        self._checkpoint_storage[generation] = slot
-        return self._checkpoint_conv[slot], self._checkpoint_recurrent[slot]
+            return 0
+        return sum(t.numel() * t.element_size() for t in (self._conv, self._recurrent))
 
     @property
     def conv_dtype(self):
@@ -192,18 +314,28 @@ class RecurrentStatePool:
         return conv, recurrent
 
     def _working(self, table_idx):
-        if self.arena is not None:
-            return self._views(("request", table_idx))
-        return self._conv[:, table_idx], self._recurrent[:, table_idx]
-
-    def _allocate_working(self, table_idx):
-        if self.arena is not None and not self.arena.has_state(("request", table_idx)):
-            self.arena.allocate_state(("request", table_idx))
+        physical = self._working_slots[table_idx]
+        if physical is None:
+            raise RuntimeError("Request has no working state lease")
+        return self._slot_views(physical)
 
     def reserve_request(self, table_idx, uid):
-        """Reserve an empty working slot at admission, before budgeting KV pages."""
-        self.begin_request(table_idx, uid, 0)
-        self._active[table_idx] = False
+        """Reserve all destinations, initialize, then publish request ownership."""
+        self._slot(table_idx)
+        if self._owners[table_idx] == uid:
+            return
+        self._allocate_request_slots(table_idx, uid)
+        try:
+            conv, recurrent = self._working(table_idx)
+            recurrent.zero_()
+            conv.zero_()
+        except BaseException as error:
+            if self.device_abort is not None:
+                self.fail_device(error)
+            self._discard_new_request_slots(table_idx)
+            raise
+        self._owners[table_idx] = uid
+        self._processed_lens[table_idx] = 0
 
     def fail_device(self, error: BaseException) -> NoReturn:
         """A borrowed worker owner must exit before resource contexts unwind."""
@@ -212,41 +344,20 @@ class RecurrentStatePool:
         self.device_abort(error)
 
     def reserve_checkpoint(self, table_idx, uid, length, *, end_len, staged=False):
-        """Reserve a cached or tracking lease without copying working state.
-
-        An unadmitted request is skipped without reserving a working slot.
-        Optional reuse may be skipped under pressure. Existing tree checkpoints
-        and their restore locks are never evicted by this operation.
-        """
         self._slot(table_idx)
-        if self._owners[table_idx] is None:
+        if not self.checkpoint_enabled or self._owners[table_idx] is None:
             return None
         if self._owners[table_idx] != uid or self._active[table_idx]:
             raise RuntimeError("Checkpoint reservation requires an idle request owner")
         start = self._processed_lens[table_idx]
         if not start < length <= end_len:
             raise ValueError("Checkpoint frontier must be inside the next forward")
-        available = self.available_tracking_slots if staged else self.available_checkpoint_slots
-        if available <= 0:
-            return None
-        if self.arena is not None:
-            self.arena._check_mutable()
-        slot = self._next_checkpoint
-        self._next_checkpoint += 1
         try:
-            saved = self._allocate_checkpoint_storage(slot)
+            checkpoint = self._new_checkpoint(table_idx, uid, length, staged)
         except MemoryError:
             return None
-        except BaseException as error:
-            if self.device_abort is not None:
-                self.fail_device(error)
-            raise
-        checkpoint = StateCheckpoint(slot, length)
         plan = CheckpointWrite(checkpoint, table_idx, uid, start, end_len)
-        self._checkpoints[slot] = saved
-        self._pending[slot] = _PendingCheckpoint(plan)
-        if staged:
-            self._staged.add(slot)
+        self._pending[checkpoint.slot] = _PendingCheckpoint(plan)
         return plan
 
     def _pending_checkpoint(self, plan):
@@ -281,7 +392,7 @@ class RecurrentStatePool:
         views = (
             nullcontext(saved)
             if self.arena is None
-            else self.arena.borrow_state(("checkpoint", plan.generation))
+            else self.arena.borrow_state(self._state_key(self._checkpoint_storage[plan.generation]))
         )
         layer = self._layers[layer_id]
         pending.borrowed.add(layer_id)
@@ -305,9 +416,7 @@ class RecurrentStatePool:
         finally:
             pending.borrowed.discard(layer_id)
             if not pending.borrowed and plan.generation in self._deferred_checkpoint_storage:
-                self._free_checkpoint_slots.append(
-                    self._deferred_checkpoint_storage.pop(plan.generation)
-                )
+                self._release_unreserved(self._deferred_checkpoint_storage.pop(plan.generation))
 
     def seal_checkpoint(self, plan):
         """Seal only after the complete model forward and every state layer succeed."""
@@ -323,18 +432,10 @@ class RecurrentStatePool:
         """Discard only this caller's pending/sealed lease, never a donated slot."""
         pending = self._pending.get(plan.generation)
         if pending is not None and pending.plan == plan:
-            if self.arena is not None:
-                self.arena._free_state_after_borrow(("checkpoint", plan.generation))
             self._forget_checkpoint(plan.checkpoint)
 
-    def snapshot(
-        self, table_idx: int, uid: int, *, staged=False, expected_len=None
-    ) -> StateCheckpoint:
-        """Copy committed state on the forward stream into a caller-owned slot.
-
-        The request keeps mutating its working slot. Donate transfers only this
-        checkpoint's index to the tree; there is no second state copy.
-        """
+    def snapshot(self, table_idx, uid, *, staged=False, expected_len=None):
+        """Copy a committed frontier into a request-owned tracking destination."""
         self._slot(table_idx)
         if self._owners[table_idx] != uid or self._active[table_idx]:
             raise RuntimeError("Snapshot requires committed request state")
@@ -342,49 +443,60 @@ class RecurrentStatePool:
             raise ValueError("Cannot snapshot an empty recurrent state")
         if expected_len is not None and self._processed_lens[table_idx] != expected_len:
             raise RuntimeError("Snapshot does not match the completed forward frontier")
-        used = len(self._staged) if staged else len(self._checkpoints) - len(self._staged)
-        capacity = self.max_staged_states if staged else self.max_cached_states
-        if used >= capacity:
-            raise MemoryError("Recurrent checkpoint capacity exhausted")
-        slot = self._next_checkpoint
-        self._next_checkpoint += 1
-        conv, recurrent = self._working(table_idx)
-        saved = self._allocate_checkpoint_storage(slot)
-        self._checkpoints[slot] = saved
+        if not self.checkpoint_enabled:
+            raise MemoryError("Recurrent checkpoint storage is not configured")
+        checkpoint = self._new_checkpoint(table_idx, uid, self._processed_lens[table_idx], staged)
         try:
-            target_conv, target_recurrent = (
-                saved if self.arena is None else self._views(("checkpoint", slot))
+            conv, recurrent = self._working(table_idx)
+            target_conv, target_recurrent = self._slot_views(
+                self._checkpoint_storage[checkpoint.slot]
             )
             target_conv.copy_(conv)
             target_recurrent.copy_(recurrent)
         except BaseException as error:
             if self.device_abort is not None:
                 self.fail_device(error)
-            self.drop_checkpoint(StateCheckpoint(slot, self._processed_lens[table_idx]))
+            self.drop_checkpoint(checkpoint)
             raise
-        if staged:
-            self._staged.add(slot)
-        return StateCheckpoint(slot, self._processed_lens[table_idx])
+        return checkpoint
 
-    def adopt_staged(self, checkpoint):
-        if checkpoint.slot not in self._checkpoints:
-            raise RuntimeError("Cannot publish a released checkpoint")
+    def adopt_staged(self, checkpoint, *, finished=False):
+        self._validate_checkpoint(checkpoint)
+        if self.arena is not None:
+            self.arena._check_mutable()
         pending = self._pending.get(checkpoint.slot)
-        if pending is not None:
-            if pending.plan.checkpoint != checkpoint or not pending.sealed:
-                raise RuntimeError("Cannot publish an unsealed checkpoint")
-        if checkpoint.slot in self._staged and self.available_checkpoint_slots <= 0:
-            raise MemoryError("Recurrent tree checkpoint capacity exhausted")
+        if pending is not None and (pending.plan.checkpoint != checkpoint or not pending.sealed):
+            raise RuntimeError("Cannot publish an unsealed checkpoint")
+        owner = self._request_checkpoints.get(checkpoint.slot)
+        if owner is not None:
+            table_idx, uid = owner
+            if self._owners[table_idx] != uid:
+                raise RuntimeError("Checkpoint request owner changed before donation")
+            physical = self._checkpoint_storage[checkpoint.slot]
+            tracks = self._tracking_slots[table_idx]
+            if physical in tracks:
+                index = tracks.index(physical)
+                if finished:
+                    tracks.pop(index)
+                else:
+                    # Allocate before changing ANY donor owner or generation.
+                    replacement = self._allocate_slots(1)[0]
+                    tracks[index] = replacement
+            self._request_checkpoints.pop(checkpoint.slot)
         self._pending.pop(checkpoint.slot, None)
         self._staged.discard(checkpoint.slot)
 
     def release_staged(self, checkpoint):
-        if checkpoint.slot in self._staged or checkpoint.slot in self._pending:
+        if (
+            checkpoint.slot in self._staged
+            or checkpoint.slot in self._pending
+            or checkpoint.slot in self._request_checkpoints
+        ):
             self.drop_checkpoint(checkpoint)
 
-    def restore(self, table_idx: int, uid: int, checkpoint: StateCheckpoint) -> None:
-        """Copy shared state into a private working slot before any mutation."""
+    def restore(self, table_idx, uid, checkpoint):
         self._slot(table_idx)
+        self._validate_checkpoint(checkpoint)
         if self._active[table_idx]:
             raise RuntimeError("Cannot restore during an unfinished forward")
         if self._owners[table_idx] not in (None, uid):
@@ -392,45 +504,47 @@ class RecurrentStatePool:
         pending = self._pending.get(checkpoint.slot)
         if pending is not None and not pending.sealed:
             raise RuntimeError("Cannot restore an unsealed checkpoint")
-        saved = self._checkpoints[checkpoint.slot]
-        self._allocate_working(table_idx)
-        conv, recurrent = (
-            saved if self.arena is None else self._views(("checkpoint", checkpoint.slot))
-        )
-        target_conv, target_recurrent = self._working(table_idx)
+        fresh = self._allocate_request_slots(table_idx, uid)
         try:
+            # Arena mutations precede all view acquisition.
+            conv, recurrent = self._slot_views(self._checkpoint_storage[checkpoint.slot])
+            target_conv, target_recurrent = self._working(table_idx)
             target_conv.copy_(conv)
             target_recurrent.copy_(recurrent)
         except BaseException as error:
             if self.device_abort is not None:
                 self.fail_device(error)
+            if fresh:
+                self._discard_new_request_slots(table_idx)
             raise
         self._owners[table_idx] = uid
         self._processed_lens[table_idx] = checkpoint.length
 
     def _forget_checkpoint(self, checkpoint):
+        self._validate_checkpoint(checkpoint)
         pending = self._pending.get(checkpoint.slot)
         self._checkpoints.pop(checkpoint.slot)
+        self._checkpoint_lengths.pop(checkpoint.slot)
+        self._request_checkpoints.pop(checkpoint.slot, None)
         self._staged.discard(checkpoint.slot)
         self._pending.pop(checkpoint.slot, None)
-        physical = self._checkpoint_storage.pop(checkpoint.slot, None)
-        if physical is not None:
-            if pending is not None and pending.borrowed:
-                self._deferred_checkpoint_storage[checkpoint.slot] = physical
-            else:
-                self._free_checkpoint_slots.append(physical)
+        physical = self._checkpoint_storage.pop(checkpoint.slot)
+        if pending is not None and pending.borrowed:
+            self._deferred_checkpoint_storage[checkpoint.slot] = physical
+        else:
+            self._release_unreserved(physical)
 
-    def drop_checkpoint(self, checkpoint: StateCheckpoint) -> None:
+    def drop_checkpoint(self, checkpoint):
         if checkpoint.slot in self._checkpoints:
             if self.arena is not None:
-                self.arena.free_state(("checkpoint", checkpoint.slot))
+                self.arena._check_mutable()
             self._forget_checkpoint(checkpoint)
 
     def _slot(self, table_idx: int) -> None:
         if not 0 <= table_idx < self.capacity:
             raise IndexError("Hybrid request-state slot is out of range")
 
-    def begin_request(self, table_idx: int, uid: int, cached_len: int) -> None:
+    def begin_request(self, table_idx, uid, cached_len):
         self._slot(table_idx)
         if cached_len < 0:
             raise ValueError("cached_len cannot be negative")
@@ -439,17 +553,7 @@ class RecurrentStatePool:
         if self._owners[table_idx] != uid:
             if cached_len != 0:
                 raise RuntimeError("Hybrid cannot restore recurrent state from a token prefix")
-            self._allocate_working(table_idx)
-            conv, recurrent = self._working(table_idx)
-            try:
-                recurrent.zero_()
-                conv.zero_()
-            except BaseException as error:
-                if self.device_abort is not None:
-                    self.fail_device(error)
-                raise
-            self._owners[table_idx] = uid
-            self._processed_lens[table_idx] = 0
+            self.reserve_request(table_idx, uid)
         if self._processed_lens[table_idx] != cached_len:
             raise RuntimeError("Hybrid recurrent state does not match request cached_len")
         self._active[table_idx] = True
@@ -463,31 +567,44 @@ class RecurrentStatePool:
         self._processed_lens[table_idx] = processed_len
         self._active[table_idx] = False
 
-    def release_request(self, table_idx: int, uid: int) -> None:
+    def release_request(self, table_idx, uid):
         self._slot(table_idx)
-        # A late completion must never release the next request using this slot.
         if self._owners[table_idx] != uid:
             return
         if self.arena is not None:
             self.arena._check_mutable()
-        for pending in list(self._pending.values()):
-            if pending.plan.table_idx == table_idx and pending.plan.uid == uid:
-                self.abort_checkpoint(pending.plan)
-        if self.arena is None:
-            self._recurrent[:, table_idx].zero_()
-            self._conv[:, table_idx].zero_()
-        else:
-            self.arena.free_state(("request", table_idx))
+        for generation, owner in list(self._request_checkpoints.items()):
+            if owner == (table_idx, uid):
+                self.drop_checkpoint(
+                    StateCheckpoint(generation, self._checkpoint_lengths[generation])
+                )
+        working = self._working_slots[table_idx]
+        if working is not None:
+            try:
+                conv, recurrent = self._working(table_idx)
+                recurrent.zero_()
+                conv.zero_()
+            except BaseException as error:
+                if self.device_abort is not None:
+                    self.fail_device(error)
+                raise
+        tracks = self._tracking_slots[table_idx]
+        self._tracking_slots[table_idx] = []
+        self._working_slots[table_idx] = None
+        deferred = set(self._deferred_checkpoint_storage.values())
+        for slot in ([working] if working is not None else []) + tracks:
+            if slot not in deferred:
+                self._release_slot(slot)
         self._owners[table_idx] = None
         self._processed_lens[table_idx] = 0
         self._active[table_idx] = False
 
-    def reset(self) -> None:
-        for slot in list(self._checkpoints):
-            self.drop_checkpoint(StateCheckpoint(slot, 0))
+    def reset(self):
         for table_idx, uid in enumerate(self._owners):
             if uid is not None:
                 self.release_request(table_idx, uid)
+        for generation in list(self._checkpoints):
+            self.drop_checkpoint(StateCheckpoint(generation, self._checkpoint_lengths[generation]))
 
     def get_kda_state(self, layer_id: int, table_idx: int):
         from minisgl.attention.kda import KDAState
@@ -507,17 +624,19 @@ class RecurrentStatePool:
         target.recurrent.copy_(state.recurrent)
 
     def batch_indices(self, table_indices):
-        """Resolve active owners to physical rows once for a numerical forward."""
         if len(set(table_indices)) != len(table_indices):
             raise ValueError("Recurrent batch cannot update one request twice")
+        physical = []
         for index in table_indices:
             self._slot(index)
             if self._owners[index] is None or not self._active[index]:
                 raise RuntimeError("begin_request must precede batched state access")
-        if self.arena is not None:
-            table_indices = [self.arena.state_index(("request", index)) for index in table_indices]
+            slot = self._working_slots[index]
+            physical.append(
+                self.arena.state_index(self._state_key(slot)) if self.arena is not None else slot
+            )
         device = self.arena.buffer.device if self.arena is not None else self._conv.device
-        return torch.tensor(table_indices, dtype=torch.long, device=device)
+        return torch.tensor(physical, dtype=torch.long, device=device)
 
     @property
     def is_idle(self):

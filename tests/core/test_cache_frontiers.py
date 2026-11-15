@@ -38,8 +38,8 @@ def manager(monkeypatch, request, device):
         3,
         torch.float32,
         device,
-        max_cached_states=2,
-        max_staged_states=2,
+        state_slot_capacity=(2) + (2) + (2),
+        tracking_buffers=(2) // (2),
         arena=arena,
     )
     pool = SimpleNamespace(
@@ -133,13 +133,19 @@ def test_next_chunk_uses_the_latest_lease_even_if_constructed_before_donation(ma
     manager.check_integrity()
 
 
-def test_staging_failure_releases_earlier_copies_and_capacity_is_reusable(manager):
+def test_staging_failure_preserves_owner_until_explicit_cancellation_then_reuses_capacity(manager):
     first, second = admit(manager), admit(manager, 1, 11)
     advance(manager, first, 0, 4, 1)
     advance(manager, second, 0, 5, 2)
     with pytest.raises(RuntimeError, match="frontier"):
         manager.stage_states([first, second], [4, 4], is_prefill=True)
+    assert manager.pool.recurrent._staged  # exception cannot silently recycle earlier writes
+    manager.release_state(first.table_idx, first.uid)
+    manager.release_state(second.table_idx, second.uid)
     assert not manager.pool.recurrent._staged
+    assert manager.pool.recurrent.state_usage["free"] == manager.pool.recurrent.slot_capacity
+    manager.pool.recurrent.reserve_request(first.table_idx, first.uid)
+    advance(manager, first, 0, 4, 1)
     staged = manager.stage_states([first], [4], is_prefill=True)
     manager.release_staged(staged)
     assert not manager.pool.recurrent._checkpoints

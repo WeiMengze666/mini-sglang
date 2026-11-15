@@ -90,7 +90,7 @@ def construction(monkeypatch):
 
     def pages(self, *args):
         events.append("budget")
-        self.cached_state_capacity = 0
+        self.state_slot_capacity = None
         return 4
 
     def new_group(ranks, **kwargs):

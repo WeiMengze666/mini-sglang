@@ -39,7 +39,7 @@ class CacheManager:
         self._handles = {}
         self._tracking = {}
         states = getattr(pool, "recurrent", None)
-        self.tracks_decode = states is not None and bool(states.max_staged_states)
+        self.tracks_decode = states is not None and states.checkpoint_enabled
         self._tracking_slots = 2 if getattr(pool, "supports_overlap", False) else 1
         self._checkpoint_cpu_group = cpu_group
         self._checkpoint_quantum = checkpoint_quantum
@@ -52,9 +52,13 @@ class CacheManager:
     def restore_state(self, table_idx: int, uid: int, handle: BaseCacheHandle) -> None:
         self.prefix_cache.restore_state(table_idx, uid, handle)
         if getattr(self.pool, "recurrent", None) is not None and handle.cached_len == 0:
-            if self.arena is not None:
-                self.prefix_cache.release_checkpoint_memory(self.arena.state_bytes)
-            self.pool.recurrent.reserve_request(table_idx, uid)
+            while True:
+                try:
+                    self.pool.recurrent.reserve_request(table_idx, uid)
+                    break
+                except MemoryError:
+                    if not self.prefix_cache.evict_checkpoint():
+                        raise
         self._handles[table_idx, uid] = handle
 
     def release_state(self, table_idx, uid):
@@ -116,18 +120,13 @@ class CacheManager:
                 )
                 plan = None
                 if eligible:
-                    staged = bool(states.max_staged_states)
+                    staged = states.checkpoint_enabled
                     plan = states.reserve_checkpoint(
                         req.table_idx, req.uid, frontier, end_len=req.device_len, staged=staged
                     )
-                    if (
-                        plan is None
-                        and not staged
-                        and states.available_checkpoint_slots == 0
-                        and self.prefix_cache.evict_checkpoint()
-                    ):
+                    if plan is None and self.prefix_cache.evict_checkpoint():
                         plan = states.reserve_checkpoint(
-                            req.table_idx, req.uid, frontier, end_len=req.device_len
+                            req.table_idx, req.uid, frontier, end_len=req.device_len, staged=staged
                         )
                 plans.append(plan)
         except BaseException as exc:
@@ -336,7 +335,9 @@ class CacheManager:
         # An explicit old frontier needs its staged state. It cannot be rebuilt
         # from a working slot that the next forward may already have advanced.
         if checkpoint is not None or frontier is None:
-            self.prefix_cache.cache_state(req, new_handle, checkpoint=checkpoint, cached_len=length)
+            self.prefix_cache.cache_state(
+                req, new_handle, checkpoint=checkpoint, cached_len=length, finished=finished
+            )
         # unlock until all operations on handle is done
         self.unlock(old_handle)
         # this part is already in the prefix cache, free it

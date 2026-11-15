@@ -169,7 +169,7 @@ def _worker(rank, world, init_file, device_type):
                     2,
                     torch.float32,
                     device,
-                    max_cached_states=2,
+                    state_slot_capacity=(2) * (3 if False else 2) + (2),
                     unified_memory=unified,
                 )
                 if unified:
@@ -198,6 +198,7 @@ def _worker(rank, world, init_file, device_type):
                 # First chunk has empty local key sets on all but one DCP rank.
                 chunks = [run(0, 1), run(1, 4)]
                 checkpoint = cache.recurrent.snapshot(0, 10)
+                cache.recurrent.adopt_staged(checkpoint)
                 cache.release_request(0, 10)
                 cache.recurrent.restore(1, 20, checkpoint)
                 gpu_table[1, :4] = gpu_table[0, :4]

@@ -90,7 +90,13 @@ class BasePrefixCache(ABC):
         """Restore mutable state after locking a matched handle, if applicable."""
 
     def cache_state(
-        self, req, handle: BaseCacheHandle, *, checkpoint=None, cached_len=None
+        self,
+        req,
+        handle: BaseCacheHandle,
+        *,
+        checkpoint=None,
+        cached_len=None,
+        finished: bool = False,
     ) -> None:
         """Attach a committed recurrent checkpoint to an inserted token prefix."""
 

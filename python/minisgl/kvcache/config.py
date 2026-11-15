@@ -8,26 +8,18 @@ from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import local_size, tp_info
 
 
-def cached_state_capacity(
-    available_bytes, bytes_per_state, working_slots, *, ratio, scratch_slots=0
-):
-    """Fit checkpoints into a state/KV byte ratio after mandatory request state.
-
-    ``ratio`` describes state bytes divided by token-cache bytes, so state
-    receives ratio/(1+ratio) of the post-weight budget. Working and overlap
-    scratch slots belong to that same state budget.
-    """
+def state_slot_capacity(available_bytes, bytes_per_state, *, ratio):
+    """Budget all working, tracking and tree slots from one state/KV ratio."""
     if not isfinite(ratio) or ratio <= 0:
         raise ValueError("State/KV memory ratio must be finite and positive")
-    if bytes_per_state <= 0 or min(working_slots, scratch_slots) < 0:
-        raise ValueError("State capacity requires positive byte sizes and nonnegative slot counts")
+    if bytes_per_state <= 0:
+        raise ValueError("State capacity requires a positive byte size")
     if available_bytes <= 0:
         raise MemoryError("No post-load memory is available for recurrent state")
     slots = int(available_bytes * (ratio / (1 + ratio))) // bytes_per_state
-    cached = slots - working_slots - scratch_slots
-    if cached < 1:
-        raise MemoryError("State budget cannot hold request state, scratch and a checkpoint")
-    return cached
+    if slots < 1:
+        raise MemoryError("State budget cannot hold one physical state slot")
+    return slots
 
 
 @dataclass(frozen=True)

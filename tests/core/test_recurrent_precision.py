@@ -28,7 +28,7 @@ def test_precision_follows_working_state_checkpoint_and_reordered_batch(
         torch.bfloat16,
         torch.device("cpu"),
         max_running_req=3,
-        max_cached_states=1,
+        state_slot_capacity=(3) * (3 if False else 2) + (1),
         unified_memory=unified,
         state_dtype=state_dtype,
         kv_dtype=kv_dtype,
@@ -42,7 +42,10 @@ def test_precision_follows_working_state_checkpoint_and_reordered_batch(
     if unified:
         assert cache.arena.state_bytes >= expected_bytes
     else:
-        assert cache.allocated_bytes == 128 * 7 * kv_dtype.itemsize + (3 + pool.max_cached_states + pool.max_staged_states) * expected_bytes
+        assert (
+            cache.allocated_bytes
+            == 128 * 7 * kv_dtype.itemsize + pool.slot_capacity * expected_bytes
+        )
     assert pool.conv_dtype == torch.bfloat16 and pool.state_dtype == state_dtype
 
     cache.begin_request(0, 10, 0)
@@ -55,6 +58,7 @@ def test_precision_follows_working_state_checkpoint_and_reordered_batch(
     cache.set_kda_state(0, 0, values)
     cache.finish_request(0, 10, 4)
     checkpoint = pool.snapshot(0, 10)
+    pool.adopt_staged(checkpoint)
     pool.restore(1, 11, checkpoint)
     cache.begin_request(0, 10, 4)
     cache.begin_request(1, 11, 4)

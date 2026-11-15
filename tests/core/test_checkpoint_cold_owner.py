@@ -11,7 +11,9 @@ from minisgl.kvcache.recurrent_pool import RecurrentStatePool
 
 
 def pool():
-    return RecurrentStatePool((0,), 1, 1, 2, 3, torch.bfloat16, "cpu", max_cached_states=1)
+    return RecurrentStatePool(
+        (0,), 1, 1, 2, 3, torch.bfloat16, "cpu", state_slot_capacity=(1) + (1) + (0)
+    )
 
 
 def _cold_child(stage, folder):
@@ -129,7 +131,8 @@ def _warm_child(stage, folder):
     events = []
     with pytest.MonkeyPatch.context() as patch:
         manager, states, handle = _warm_setup(patch)
-        target_conv, target_state = states._working(1)
+        physical = states._free_state_slots[-1]
+        target_conv, target_state = states._slot_views(physical)
         conv_ptr, state_ptr = target_conv.data_ptr(), target_state.data_ptr()
         original = torch.Tensor.copy_
 

@@ -21,7 +21,7 @@ def test_native_views_update_only_the_selected_owner_and_restore_private_state(
         3,
         torch.bfloat16,
         "cpu",
-        max_cached_states=4,
+        state_slot_capacity=(4) + (4) + (0),
         state_dtype=dtype,
         arena=arena,
     )
@@ -41,6 +41,7 @@ def test_native_views_update_only_the_selected_owner_and_restore_private_state(
     torch.testing.assert_close(native_state[row], recurrent.transpose(-1, -2), rtol=0, atol=0)
     pool.finish_request(3, 10, 13)
     checkpoint = pool.snapshot(3, 10, expected_len=13)
+    pool.adopt_staged(checkpoint)
     pool.begin_request(3, 10, 13)
     native_conv[row].fill_(-5)
     native_state[row].fill_(-7)

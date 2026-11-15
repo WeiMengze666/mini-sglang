@@ -31,7 +31,7 @@ class HybridCache(BaseKVCachePool):
         max_running_req: int,
         dtype: torch.dtype,
         device: torch.device,
-        max_cached_states: int = 0,
+        state_slot_capacity: int | None = None,
         unified_memory: bool = False,
         enable_cache_overlap: bool = False,
         *,
@@ -81,11 +81,9 @@ class HybridCache(BaseKVCachePool):
             config.conv_kernel_size,
             dtype,
             device,
-            max_cached_states=max_cached_states,
+            state_slot_capacity=state_slot_capacity,
             arena=self.arena,
-            max_staged_states=(
-                (2 if enable_cache_overlap else 1) * max_running_req if max_cached_states else 0
-            ),
+            tracking_buffers=2 if enable_cache_overlap else 1,
             state_dtype=state_dtype,
             device_abort=device_abort,
         )
@@ -99,7 +97,7 @@ class HybridCache(BaseKVCachePool):
         )
 
     def stage_state(self, table_idx, uid, length):
-        if not self.recurrent.max_staged_states:
+        if not self.recurrent.checkpoint_enabled:
             return None
         return self.recurrent.snapshot(table_idx, uid, staged=True, expected_len=length)
 

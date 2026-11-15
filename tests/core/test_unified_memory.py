@@ -42,7 +42,7 @@ def test_allocation_failure_is_atomic_and_byte_capacity_changes_with_workload():
     arena.check_integrity()
 
 
-def test_scheduler_reclaims_optional_checkpoint_before_protected_kv(monkeypatch):
+def test_scheduler_preserves_state_receipt_then_reclaims_after_unlock(monkeypatch):
     import minisgl.core as core
     from minisgl.kvcache.config import HybridCacheConfig
     from minisgl.kvcache.hybrid_pool import HybridCache
@@ -53,16 +53,16 @@ def test_scheduler_reclaims_optional_checkpoint_before_protected_kv(monkeypatch)
     layout = HybridCacheConfig(2, (1,), (0,), 3, 2, 1, 8, 2)
     ctx.kv_cache = pool = HybridCache(
         layout,
-        8,
+        12,
         2,
         2,
         torch.float32,
         torch.device("cpu"),
-        max_cached_states=2,
+        state_slot_capacity=(2) * (3 if False else 2) + (2),
         unified_memory=True,
     )
     table = torch.empty(2, 16, dtype=torch.int32)
-    cm = CacheManager(7, 2, table, "hybrid", pool=pool)
+    cm = CacheManager(11, 2, table, "hybrid", pool=pool)
     handle = cm.prefix_cache.match_prefix(torch.arange(6, dtype=torch.int32)).cuda_handle
     cm.restore_state(0, 100, handle)
     pages = cm._allocate(3)
@@ -73,16 +73,18 @@ def test_scheduler_reclaims_optional_checkpoint_before_protected_kv(monkeypatch)
     req.cached_len = 6
     cm.cache_req(req, finished=False)
     assert len(pool.recurrent._checkpoints) == 1
-    # Only one physical KV page is free. The snapshot occupies two pages' worth
-    # of bytes; it can be discarded because the running request has private state.
-    assert pool.arena.free_pages == 1
-    more = cm._allocate(2)
+    # Working, replacement tracking, and donated state occupy three common
+    # arena slots. The continuing request protects BOTH its KV and state anchor.
+    assert pool.arena.free_pages == 3
+    assert not cm.reclaim_capacity(8)
+    assert len(pool.recurrent._checkpoints) == 1
+    cm.unlock(req.cache_handle)
+    more = cm._allocate(4)
     assert not pool.recurrent._checkpoints
-    assert cm.prefix_cache.size_info.protected_size == 6
+    assert cm.prefix_cache.size_info.evictable_size == 6
     torch.testing.assert_close(table[0, :6], cm._page_to_token(pages))
     cm._free(cm._page_to_token(more))
     pool.release_request(0, 100)
-    cm.unlock(req.cache_handle)
     cm._free(cm.prefix_cache.evict(6))
     cm.check_integrity()
     pool.arena.check_integrity()
