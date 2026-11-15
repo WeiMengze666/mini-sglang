@@ -14,8 +14,30 @@ from .weight import decode_mxfp4
 _LINEAR_OUT = getattr(torch.ops.aten.linear, "out", None)
 
 
-def _linear(x, weight, bias, *, out=None):
-    # The same mature ATen linear dispatcher, with an explicit destination.
+def _linear(x, weight, bias, *, out=None, output_dtype=None):
+    from .bf16_gemm import try_bf16_gemm
+
+    result = try_bf16_gemm(x, weight, bias, out=out, output_dtype=output_dtype)
+    if result is not None:
+        return result
+    if output_dtype is not None:
+        if x.is_cuda and x.dtype == weight.dtype and x.dtype in (torch.bfloat16, torch.float16):
+            flat = x.reshape(-1, x.shape[-1])
+            # Preserve the existing functional vs caller-out ATen overloads.
+            result = (
+                torch.mm(flat, weight.t(), out=out, out_dtype=output_dtype)
+                if out is not None
+                else torch.mm(flat, weight.t(), out_dtype=output_dtype)
+            )
+            if bias is not None:
+                result.add_(bias)
+            return result if out is not None else result.view(*x.shape[:-1], weight.shape[0])
+        # Preserve the original retained-FP32 reference, including mixed or
+        # wider CPU inputs; it always casts both operands before arithmetic.
+        cast_bias = None if bias is None else bias.to(output_dtype)
+        if out is not None:
+            return _LINEAR_OUT(x.to(output_dtype), weight.to(output_dtype), cast_bias, out=out)
+        return F.linear(x.to(output_dtype), weight.to(output_dtype), cast_bias)
     if out is not None:
         return _LINEAR_OUT(x, weight, bias, out=out)
     return F.linear(x, weight, bias)
@@ -28,11 +50,7 @@ def linear_bf16(x: torch.Tensor, weight: torch.Tensor, bias=None) -> torch.Tenso
 
 def linear_fp32(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     """Retain projection accumulators using the official PyTorch GEMM API."""
-    if x.is_cuda and x.dtype == weight.dtype and x.dtype in (torch.bfloat16, torch.float16):
-        flat = x.reshape(-1, x.shape[-1])
-        result = torch.mm(flat, weight.t(), out_dtype=torch.float32)
-        return result.view(*x.shape[:-1], weight.shape[0])
-    return F.linear(x.float(), weight.float())
+    return _linear(x, weight, None, output_dtype=torch.float32)
 
 
 def headwise_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
@@ -116,9 +134,9 @@ class MergedLinear:
             output = torch.empty(
                 (flat.shape[0], self.weight.shape[0]), device=x.device, dtype=torch.float32
             )
-            torch.mm(flat, self.weight.t(), out=output, out_dtype=torch.float32)
+            _linear(flat, self.weight, None, out=output, output_dtype=torch.float32)
         else:
-            output = F.linear(flat.float(), self.weight.float())
+            output = linear_fp32(flat, self.weight)
         output = output.view(*x.shape[:-1], self.weight.shape[0])
         return dict(zip(self.names, output[..., : sum(self.widths)].split(self.widths, -1)))
 
