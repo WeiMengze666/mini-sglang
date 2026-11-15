@@ -80,7 +80,15 @@ class BaseMoeBackend(ABC):
             raise ValueError("A MoE backend cannot reuse its output stream on another device")
 
     def project_outputs(
-        self, parallel, mixed, shared, projection=None, *, output_dtype=None, prepared=False
+        self,
+        parallel,
+        mixed,
+        shared,
+        projection=None,
+        *,
+        output_dtype=None,
+        prepared=False,
+        residual=None,
     ):
         """Project the reduced mixture and add the already-reduced shared result.
 
@@ -89,7 +97,10 @@ class BaseMoeBackend(ABC):
         dense projection weight; it returns owned storage. Other paths preserve
         the projection's own forward and the original shared cast-before-add.
         Stream dependencies and input lifetimes belong to forward_outputs.
+        residual is consumed only here, after any deferred finalize/reduction/norm;
+        the internal DeferredMoEOutput never includes this final residual.
         """
+        from minisgl.layers.elementwise import add3
         from minisgl.layers.linear import Linear
 
         if type(prepared) is not bool:
@@ -109,9 +120,12 @@ class BaseMoeBackend(ABC):
             if get_parallel_layout().ep_size == 1 and parallel.supports_linear_all_gather(
                 mixed, projection.weight, shared
             ):
-                return parallel.linear_all_gather(mixed, projection.weight, shared)
+                result = parallel.linear_all_gather(mixed, projection.weight, shared)
+                return result if residual is None else result + residual
         result = projection.forward(mixed) if projection is not None else mixed
-        return result + shared.to(dtype) if shared is not None else result
+        if shared is not None:
+            return add3(result, shared.to(dtype), residual)
+        return result if residual is None else result + residual
 
     def forward_outputs(
         self,

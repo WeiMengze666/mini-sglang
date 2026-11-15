@@ -226,7 +226,9 @@ def test_decoder_bank_snapshots_survive_shared_slot_reuse_and_mlp_returns_owned_
         layer.self_attention_res_proj = layer.mlp_res_proj = SimpleNamespace(
             weight=torch.zeros(1, 16, dtype=torch.bfloat16)
         )
-        layer.mlp = SimpleNamespace(forward=lambda value: torch.ones_like(value))
+        layer.mlp = SimpleNamespace(
+            forward=lambda value, *, residual: residual + torch.ones_like(value)
+        )
         old_heads.append((head, head.clone()))
         head = layer.forward(head, bank, None, None, None, Backend())
         assert head.data_ptr() != projection._output.data_ptr()

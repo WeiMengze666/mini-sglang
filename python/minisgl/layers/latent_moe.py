@@ -74,8 +74,9 @@ class GatedMLP(BaseOP):
             gate, up = self.gate_proj.forward(x), self.up_proj.forward(x)
         return self.forward_from_projections(gate, up, dtype=x.dtype, out=out)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._tp.all_reduce(self.forward_local(x))
+    def forward(self, x: torch.Tensor, *, residual: torch.Tensor | None = None) -> torch.Tensor:
+        output = self._tp.all_reduce(self.forward_local(x))
+        return output if residual is None else output + residual
 
 
 class _Expert(BaseOP):
@@ -237,11 +238,15 @@ class LatentMoE(BaseOP):
         if not self._expert_executor.supports_cuda_graph:
             raise ValueError("CUDA graphs require a device-side grouped expert executor")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, *, residual: torch.Tensor | None = None) -> torch.Tensor:
         shape = x.shape
         x = x.reshape(-1, shape[-1])
         if not x.shape[0]:
-            return x.reshape(shape)
+            output = x.reshape(shape)
+            return output if residual is None else output + residual
+        flat_residual = (
+            residual.reshape(x.shape) if residual is not None and residual.shape == shape else None
+        )
         front = self._front.forward(x) if self._front is not None else None
         logits = linear_fp32(x, self.gate.weight) if front is None else front["router"]
         routing = self.gate.routing(logits)
@@ -322,5 +327,8 @@ class LatentMoE(BaseOP):
             self.routed_expert_up_proj,
             output_dtype=x.dtype,
             prepared=packed is not None,
+            residual=flat_residual,
         )
-        return output.reshape(shape)
+        output = output.reshape(shape)
+        # Preserve ordinary broadcasting on the original, unflattened shape.
+        return output + residual if residual is not None and flat_residual is None else output
