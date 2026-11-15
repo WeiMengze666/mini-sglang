@@ -322,6 +322,44 @@ def test_selected_native_bad_triple_or_local_storage_raises_without_retry(host, 
     assert calls == []
 
 
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+def test_routing_weights_follow_native_vector_alignment_without_rank_local_fallback(host, dtype):
+    provider, _, out, values, indices, _, norm = native_inputs(host)
+    provider.input_alignment = 32
+    offset = 16 // torch.empty((), dtype=dtype).element_size()
+    storage = cuda_tensor(out.shape[0] * 16 + offset, dtype=dtype)
+    weights = storage[offset:].view(out.shape[0], 16)
+    assert weights.is_contiguous() and weights.data_ptr() % 32 == 16
+    calls = []
+    provider.__dict__["_residual_kernel"] = SimpleNamespace(
+        finalize_push_norm=lambda *args: calls.append(args)
+    )
+    # Address validity is a selected local ABI check, never a collective route switch.
+    assert provider.supports_weighted_all_reduce(out, norm=norm, topk=16)
+    with pytest.raises(ValueError, match="aligned contiguous"):
+        provider.weighted_all_reduce(values, indices, weights, out=out, norm=norm)
+    assert calls == []
+
+    # The same view meets the SDK's 16B requirement on the other provider ABI.
+    provider.input_alignment = 16
+    assert provider.supports_weighted_all_reduce(out, norm=norm, topk=16)
+    assert provider.weighted_all_reduce(values, indices, weights, out=out, norm=norm) is out
+    assert len(calls) == 1
+
+    # Do not accidentally impose the routing-weight vector width on the output.
+    provider.input_alignment = 32
+    weights = cuda_tensor(out.shape[0], 16, dtype=dtype)
+    shifted_out = cuda_tensor(out.numel() + 8)[8:].view_as(out)
+    assert weights.data_ptr() % 32 == 0 and shifted_out.data_ptr() % 32 == 16
+    calls.clear()
+    assert provider.supports_weighted_all_reduce(shifted_out, norm=norm, topk=16)
+    assert (
+        provider.weighted_all_reduce(values, indices, weights, out=shifted_out, norm=norm)
+        is shifted_out
+    )
+    assert len(calls) == 1
+
+
 def test_cold_native_capture_fails_before_jit(host, monkeypatch):
     provider, _, out, values, indices, weights, norm = native_inputs(host)
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)

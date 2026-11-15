@@ -393,10 +393,11 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         if not self.supports_weighted_all_reduce(out, norm=norm, topk=16):
             raise ValueError("Native weighted reduction does not cover this output/epilogue")
         tensors = (out, values, indices, weights, norm.weight)
+        # SDK routing weights use kMaxVecBytes; the other tensors need only 16B.
         if any(
             value.device != self.device
             or not value.is_contiguous()
-            or value.data_ptr() % 16
+            or value.data_ptr() % (max(16, self.input_alignment) if value is weights else 16)
             or value.requires_grad
             for value in tensors
         ):
