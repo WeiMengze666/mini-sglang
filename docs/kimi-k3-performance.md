@@ -50,31 +50,31 @@ MNNVL or all-to-all transport.
 ## Current kernel diagnostic (2026-11-16)
 
 The [recovered trace summary](validation/kimi-k3-recovered-trace-20261116.json)
-records a **diagnostic**, not another performance acceptance run. Job35 failed
+records a **diagnostic**, not another performance acceptance run. Job 35 failed
 at the original 120s Nsight-stop limit; its exact-session raw stream was recovered
 offline without a new GPU run. The 15.39s software trace contains 5,714,636 kernel
 records across eight owned ranks, each with 213 graph launches. Its 29 incomplete
 CUPTI drops and generic missing-buffer warning remain recorded. The original
 900s workload did not complete.
 
-Actual decode batches were17--21. The native weighted finalization, KDA,
+Actual decode batches were 17–21. The native weighted finalization, KDA,
 MLA FP8 write/query, output gate and DCP paths were observed. GEMV/all-gather
-fusion was correctly ineligible because every sampled batch exceeded12. Two
-roughly2.1s gaps between decode graphs contained substantial eager/collective
+fusion was correctly ineligible because every sampled batch exceeded 12. Two
+roughly 2.1s gaps between decode graphs contained substantial eager/collective
 work; cross-rank arrival and waiting varied. This does not identify CPU
 scheduling or communication bandwidth as the cause. The paired official
-software trace was submitted as job37 using the retained baseline configuration;
+software trace was submitted as job 37 using the retained baseline configuration;
 its result is pending in this snapshot.
 
-Small GPU copies consistent with sampled IDs total only0.808ms on GPU0 in
+Small GPU copies consistent with sampled IDs total only 0.808ms on GPU 0 in
 this segment; host allocation and synchronization costs are not measured by
-that number. The independent result-copy-stream feature passed79 CPU checks,
-but job36 failed its producer-before-copy observation and did not qualify CUDA
+that number. The independent result-copy-stream feature passed 79 CPU checks,
+but job 36 failed its producer-before-copy observation and did not qualify CUDA
 IDs or the graph case. It remains a separate feature without a speedup claim.
 Both runtimes default to decode-only MoE tuning; broader prefill tuning is an
 official opt-in, not a proven missing default or established bottleneck.
 
-AIPerf seed42 controls the workload. These requests use non-greedy server
+AIPerf seed 42 controls the workload. These requests use non-greedy server
 defaults; server RNG seeds and GPU sampling algorithms differ. This is not a
 per-token greedy comparison.
 

@@ -27,7 +27,7 @@
       "20": 64,
       "21": 21
     },
-    "native_path_coverage": "Eachrank213 verified69KDA-node frames;92BF16weightedfinalize nodes/graph;24MLAwrite/query,outputgate,DCPhelix nodes/graph. GEMVAG0consistentwithallB>12.",
+    "native_path_coverage": "Each rank has 213 verified frames of 69 KDA nodes, 92 BF16 weighted-finalize nodes per graph, and 24 MLA write/query, output-gate and DCP Helix nodes per graph. No GEMV/AG kernels were observed; all sampled B > 12.",
     "GPU0_after2s_graph_envelope_ms": {
       "p50": 27.593641,
       "p95": 31.8331346,
@@ -39,25 +39,25 @@
       "total_ms": 0.808,
       "stream": 20,
       "bytes": "4*actualB",
-      "limits": "Matchedsource/batch/graphboundaries; no tensoraddresses/callstack to assert identity. Doesnotmeasurehostalloc/sync or predictcopycandidatebenefit."
+      "limits": "Consistent with source, batch sizes and graph boundaries; no tensor addresses or call stacks to assert identity. This does not measure host allocation/synchronization or predict candidate benefit."
     }
   },
-  "MoE_tuning": "Both defaults tune1..64; official EXTEND is opt-in. 120warnings=15signatures*8ranks, not invocationcount or measuredcost.",
+  "MoE_tuning": "Both defaults tune 1–64 tokens; official EXTEND is opt-in. 120 warnings cover 15 signatures across 8 ranks, rather than 120 calls; cost is unmeasured.",
   "copy_stream_candidate": {
     "source": "da5ea1f63366a9006990d5e8b4d53504041c3599",
     "CPU_tests_passed": 79,
     "GPU_job": 36,
     "GPU_qualified": false,
-    "outcome": "Independentprogress observation failed in3B1cases;otherworkers terminated,B48notexecuted,noactualIDrawqualification. Hostbuffersseenpinned; actualblockingpointunknown.",
+    "outcome": "The independent-progress observation failed for B1 on 3 ranks. Other workers were terminated; B48 did not run and no actual-ID raw qualification was saved. Observed host buffers were pinned; the blocking point is unknown.",
     "promoted_to_main": false,
     "performance_claim": false
   },
   "official37": {
     "submission_UTC": "2026-11-15T22:48:26Z",
     "result_available_in_this_snapshot": false,
-    "scope": "Samebaseline9source/argv/env/workload/warmup,softwaretrace15satprimary+200s; diagnostic only. stop/exportbudget900s and timeoutreceipts preservefuturefailures."
+    "scope": "Same baseline9 source, argv, environment, workload and warmup. Software trace for 15s at primary+200s; diagnostic only. Stop/export budgets are 900s and timeout receipts preserve future failures."
   },
-  "sampling": "AIPerfseed42isworkloadseed;canonicalpayloadomitsT/topP/topK,actualdefaultsT1.0non-greedy. ServerRNGseedsanddefaultGPUalgorithmsdiffer;notaper-tokengreedyequalityrun.",
+  "sampling": "AIPerf seed 42 controls the workload. Canonical payloads omit temperature/top-p/top-k; actual server defaults use temperature 1.0 and non-greedy sampling. Server RNG seeds and default GPU algorithms differ; this is not a per-token greedy equality run.",
   "artifact_refs": {
     "findings": {
       "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-attention-software-nsight-v1-analysis/RECOVERED-TRACE-FINDINGS.json",
