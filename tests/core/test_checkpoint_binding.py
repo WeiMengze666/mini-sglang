@@ -162,6 +162,9 @@ def test_incomplete_or_unsupported_model_disables_whole_binding_before_allocatio
     elif invalid == "long_pair":
         records[0] = (*records[0], "extra")
     records = records if invalid == "mutable" else tuple(records)
+    # Free shared slots use torch.empty; seed finite values for no-write checks.
+    case.states._recurrent.fill_(0.25)
+    case.states._conv.fill_(-0.5)
     state, conv = case.states._recurrent.clone(), case.states._conv.clone()
     metadata = case.batch.attn_metadata
 
