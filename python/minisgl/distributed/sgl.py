@@ -128,7 +128,7 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         return self._residual_ops._jit_module(self.comm.world_size)
 
     def supports_all_reduce_residual(
-        self, x, residual=None, *, norm=None, output_key: str | None = None
+        self, x, residual=None, *, norm=None, output_key: str | None = None, overlap: bool = False
     ):
         # The enabled SDK communicator already validates world size and
         # multicast capability; SM100/103 is only its wrapper's auto policy.
@@ -138,6 +138,10 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
             raise RuntimeError("Cannot reduce on a closed communicator")
         if output_key is not None and (not isinstance(output_key, str) or not output_key):
             raise ValueError("output_key must be a nonempty reservation name or None")
+        if type(overlap) is not bool:
+            raise ValueError("Reduction overlap hint must be a bool")
+        if overlap and norm is not None:
+            return False  # Low-SM overlap currently describes the plain shared reduction.
         if norm is not None:
             from minisgl.layers.norm import RMSNormEpilogue
 
@@ -162,7 +166,7 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
             return False
         if residual is not None and (residual.shape != x.shape or residual.dtype != x.dtype):
             return False
-        if x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size):
+        if not overlap and x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size):
             # SDK ar_fusion.cuh:768-771 requires row_clusters < push.num_blocks.
             # At its <=512KiB push bound, rows<=73<96, so row_clusters==rows.
             return norm is None or x.numel() // 3584 < self.comm.config.num_push_blocks
@@ -172,9 +176,13 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
             and x.numel() // 8 < 1 << 31
         )
 
-    def all_reduce_residual(self, x, residual=None, *, norm=None, output_key: str | None = None):
+    def all_reduce_residual(
+        self, x, residual=None, *, norm=None, output_key: str | None = None, overlap: bool = False
+    ):
         """Native in-place AR + residual or a prefix RMSNorm epilogue.
 
+        overlap=True selects the SDK's low-SM pull for the plain shared
+        reduction; it requires an explicit multicast key even for small inputs.
         The SDK norm kernels reduce the entire packed buffer and normalize
         only the requested leading rows. Push computes RMS statistics from
         FP32 sums before rounding its numerator; this intentionally follows
@@ -190,7 +198,9 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         every rank; local storage violations raise before launch. First
         invocation must run during warmup, before graph capture.
         """
-        if not self.supports_all_reduce_residual(x, residual, norm=norm, output_key=output_key):
+        if not self.supports_all_reduce_residual(
+            x, residual, norm=norm, output_key=output_key, overlap=overlap
+        ):
             raise ValueError("Native AR + residual does not cover this input")
         if x.device != self.device or (residual is not None and residual.device != x.device):
             raise ValueError("Native AR + residual input is on the wrong local device")
@@ -206,7 +216,7 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
                 raise ValueError(
                     "Native RMSNorm weights require separate contiguous aligned local storage"
                 )
-        push = x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size)
+        push = not overlap and x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size)
         if push:
             if not x.is_contiguous() or x.data_ptr() % 16:
                 x = x.clone(memory_format=torch.contiguous_format)
@@ -242,8 +252,10 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
                     if norm is None
                     else self._residual_ops.NORM_TUNING,
                     nbytes=x.nbytes,
-                    num_blocks=None,
-                    unroll=None,
+                    # Official K3 shared side-stream policy (model:1413):
+                    # low-SM always uses pull, even below the push threshold.
+                    num_blocks=4 if overlap else None,
+                    unroll=8 if overlap else None,
                 )
                 if norm is None:
                     kernel.pull_res(

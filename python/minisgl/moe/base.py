@@ -49,6 +49,85 @@ class BaseMoeBackend(ABC):
         weights, ids = routing.select(self)
         return executor.forward(x, weights, ids, **options)
 
+    def prepare_output_stream(self, output: torch.Tensor) -> None:
+        """One backend-owned stream, created after reservation and before capture."""
+        if not output.is_cuda:
+            return
+        stream = getattr(self, "_shared_stream", None)
+        if stream is None:
+            if torch.cuda.is_current_stream_capturing():
+                raise RuntimeError("Prepare the MoE output stream before graph capture")
+            self._shared_stream = torch.cuda.Stream(device=output.device)
+        elif stream.device != output.device:
+            raise ValueError("A MoE backend cannot reuse its output stream on another device")
+
+    def forward_outputs(
+        self,
+        parallel,
+        expert_producer,
+        shared_producer=None,
+        *,
+        expert_out=None,
+        shared_out=None,
+        packed=None,
+        output_key=None,
+        norm=None,
+        output_dtype=None,
+        shared_inputs=(),
+    ):
+        """Own local producers and reduction order, including optional overlap.
+
+        Only already-prepared same-dtype outputs use the side stream. Its shared
+        pull must finish before latent AR touches the communicator's same
+        semaphore plane. Returned tensors are ready on the invoking stream;
+        this is a scheduling hint, not a Future or caller-wait contract.
+        All other paths preserve serial mixture precision.
+        """
+        stream = getattr(self, "_shared_stream", None)
+        overlap = (
+            stream is not None
+            and shared_producer is not None
+            and packed is not None
+            and output_key is not None
+            and expert_out is not None
+            and shared_out is not None
+            and packed.dtype == output_dtype == torch.bfloat16
+        )
+        if overlap:
+            if packed.device != stream.device:
+                raise ValueError("Prepared MoE outputs differ from their backend stream device")
+            main = torch.cuda.current_stream(device=packed.device)
+            stream.wait_stream(main)  # Front is ready; this edge precedes expert launch.
+            for value in shared_inputs:
+                if value.is_cuda:
+                    value.record_stream(stream)
+            mixed = expert_producer(expert_out)
+            with torch.cuda.stream(stream):
+                shared = shared_producer(shared_out)
+                shared = parallel.all_reduce_residual(shared, output_key=output_key, overlap=True)
+            main.wait_stream(stream)  # Shared pull is complete before latent AR/norm.
+            if shared.is_cuda:
+                # A generic reduction may return side-stream-owned storage,
+                # rather than an alias of the persistent shared destination.
+                shared.record_stream(main)
+            (mixed,) = self.reduce_outputs(
+                parallel,
+                mixed,
+                packed=expert_out.view(-1),
+                output_key=output_key,
+                norm=norm,
+                output_dtype=output_dtype,
+            )
+            return mixed, shared
+        mixed = expert_producer(expert_out)
+        shared = shared_producer(shared_out) if shared_producer is not None else None
+        options = {"norm": norm, "output_dtype": output_dtype}
+        if packed is not None:
+            options.update(packed=packed, output_key=output_key)
+        if shared is None:
+            return self.reduce_outputs(parallel, mixed, **options)[0], None
+        return self.reduce_outputs(parallel, mixed, shared, **options)
+
     def reduce_outputs(
         self, parallel, *outputs, packed=None, output_key=None, norm=None, output_dtype=None
     ):

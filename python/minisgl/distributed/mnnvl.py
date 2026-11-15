@@ -15,7 +15,7 @@ from typing import Protocol
 import torch
 import torch.distributed as dist
 
-from .impl import DistributedCommunicator, DistributedImpl
+from .impl import DistributedCommunicator, DistributedImpl, _all_reduce_options
 
 
 class MNNVLProvider(Protocol):
@@ -253,21 +253,31 @@ class MNNVLDistributedImpl(DistributedImpl):
         return reserve(key, shape, dtype, enabled=enabled) if reserve is not None else None
 
     def supports_all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> bool:
         method = getattr(self.provider, "supports_all_reduce_residual", None)
-        return (
-            bool(method(x, residual, norm=norm, output_key=output_key))
-            if method is not None
-            else False
-        )
+        options = _all_reduce_options(norm, output_key, overlap)
+        return bool(method(x, residual, **options)) if method is not None else False
 
     def all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> torch.Tensor:
-        if not self.supports_all_reduce_residual(x, residual, norm=norm, output_key=output_key):
-            return super().all_reduce_residual(x, residual, norm=norm, output_key=output_key)
-        return self.provider.all_reduce_residual(x, residual, norm=norm, output_key=output_key)
+        options = _all_reduce_options(norm, output_key, overlap)
+        if not self.supports_all_reduce_residual(x, residual, **options):
+            return super().all_reduce_residual(x, residual, **options)
+        return self.provider.all_reduce_residual(x, residual, **options)
 
     def capture(self):
         capture = getattr(self.provider, "capture", None)

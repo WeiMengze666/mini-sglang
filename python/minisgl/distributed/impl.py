@@ -13,6 +13,16 @@ if TYPE_CHECKING:
     from minisgl.kernel import PyNCCLCommunicator
 
 
+def _all_reduce_options(norm, output_key, overlap: bool):
+    """Validate the resource hint and preserve the default provider call ABI."""
+    if type(overlap) is not bool:
+        raise ValueError("Reduction overlap hint must be a bool")
+    options = {"norm": norm, "output_key": output_key}
+    if overlap:
+        options["overlap"] = True
+    return options
+
+
 @dataclass
 class DistributedImpl(ABC):
     @abstractmethod
@@ -57,18 +67,32 @@ class DistributedImpl(ABC):
         return None
 
     def supports_all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> bool:
         """Whether this backend can fuse reduction with a residual epilogue."""
         return False
 
     def all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> torch.Tensor:
         """Reduce ``x`` and apply an optional residual and unary epilogue.
 
         Hardware backends can override this to use a fused communication
         kernel. The fallback keeps the operation correct for every backend.
+        overlap is an execution hint for work overlapping other GPU kernels;
+        the generic composition may ignore it without changing the result.
         output_key is an explicit prepared-storage route hint, ignored by the
         generic composition. Backends may mutate x; copy retained input aliases
         before dispatch. Native pull requires the same reservation key and slice
@@ -77,6 +101,7 @@ class DistributedImpl(ABC):
         overlapping residual first when the reduction may mutate x. A native
         backend may document stronger snapshot semantics for its fused path.
         """
+        _all_reduce_options(norm, output_key, overlap)
         result = self.all_reduce(x)
         if residual is not None:
             result = result + residual
@@ -144,23 +169,35 @@ class FallbackDistributedImpl(DistributedImpl):
         )
 
     def supports_all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> bool:
+        options = _all_reduce_options(norm, output_key, overlap)
         return self.primary.supports_all_reduce_residual(
-            x, residual, norm=norm, output_key=output_key
-        ) or self.fallback.supports_all_reduce_residual(
-            x, residual, norm=norm, output_key=output_key
-        )
+            x, residual, **options
+        ) or self.fallback.supports_all_reduce_residual(x, residual, **options)
 
     def all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> torch.Tensor:
+        options = _all_reduce_options(norm, output_key, overlap)
         for backend in (self.primary, self.fallback):
-            if backend.supports_all_reduce_residual(x, residual, norm=norm, output_key=output_key):
-                return backend.all_reduce_residual(x, residual, norm=norm, output_key=output_key)
+            if backend.supports_all_reduce_residual(x, residual, **options):
+                return backend.all_reduce_residual(x, residual, **options)
         # A backend may reduce this tensor without covering its epilogue.
         # Keep capability-based routing for the reduction and compose the rest.
-        return super().all_reduce_residual(x, residual, norm=norm, output_key=output_key)
+        return super().all_reduce_residual(x, residual, **options)
 
     @contextmanager
     def capture(self):
@@ -299,9 +336,16 @@ class DistributedCommunicator:
         return self._backend().reserve_output(key, shape, dtype, enabled=enabled)
 
     def all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> torch.Tensor:
-        return self._backend().all_reduce_residual(x, residual, norm=norm, output_key=output_key)
+        options = _all_reduce_options(norm, output_key, overlap)
+        return self._backend().all_reduce_residual(x, residual, **options)
 
     @contextmanager
     def capture(self):

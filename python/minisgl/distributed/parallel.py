@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from .impl import DistributedCommunicator
+from .impl import DistributedCommunicator, _all_reduce_options
 from .info import DistributedInfo, local_size, try_get_tp_info
 
 
@@ -44,14 +44,21 @@ class TensorParallel:
         )
 
     def all_reduce_residual(
-        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+        self,
+        x: torch.Tensor,
+        residual=None,
+        *,
+        norm=None,
+        output_key: str | None = None,
+        overlap: bool = False,
     ) -> torch.Tensor:
+        options = _all_reduce_options(norm, output_key, overlap)
         if self.size == 1:
             result = x
             if residual is not None:
                 result = result + residual
             return norm(result) if norm is not None else result
-        return self._comm.all_reduce_residual(x, residual, norm=norm, output_key=output_key)
+        return self._comm.all_reduce_residual(x, residual, **options)
 
 
 __all__ = ["TensorParallel", "local_size", "tp_info"]

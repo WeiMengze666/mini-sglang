@@ -225,6 +225,8 @@ class LatentMoE(BaseOP):
         )
         self._output = output
         self._reserved_key = key if output is not None else None
+        if output is not None:
+            self._backend.prepare_output_stream(output)
 
     def prepare_runtime(self, context, *, dry_run=False):
         return self._backend.prepare_local(
@@ -266,20 +268,20 @@ class LatentMoE(BaseOP):
             latent_size = x.shape[0] * routed.shape[1]
             mixed_out = packed[:latent_size].view(x.shape[0], routed.shape[1])
             shared_out = packed[latent_size:].view(x.shape[0], shape[-1])
-        # The executor owns mixture precision; normalization follows expert reduction.
-        options = {} if mixed_out is None else {"out": mixed_out}
-        mixed = self._backend.forward_experts(self._expert_executor, routed, routing, **options)
         strict_bf16 = x.dtype == torch.bfloat16 and use_strict_bf16()
-        if strict_bf16:
-            mixed = mixed.to(x.dtype)
-        shared = None
-        if self.shared_experts is not None:
-            options = {} if shared_out is None else {"out": shared_out}
+
+        def expert_producer(out):
+            options = {} if out is None else {"out": out}
+            mixed = self._backend.forward_experts(self._expert_executor, routed, routing, **options)
+            return mixed.to(x.dtype) if strict_bf16 else mixed
+
+        def shared_producer(out):
+            options = {} if out is None else {"out": out}
             dense = all(
                 op.weight_format == "dense"
                 for op in (self.shared_experts.gate_proj, self.shared_experts.up_proj)
             )
-            shared = (
+            return (
                 self.shared_experts.forward_from_projections(
                     front["gate"], front["up"], dtype=x.dtype, **options
                 )
@@ -288,14 +290,20 @@ class LatentMoE(BaseOP):
                     x, projection_dtype=torch.float32 if strict_bf16 and dense else None, **options
                 )
             )
-        # Reduce partials before nonlinear latent normalization/up-projection.
-        # Strict BF16 rounds each local mixture before the collective.
-        options = {} if packed is None else {"packed": packed, "output_key": self._reserved_key}
-        options.update(norm=self.routed_expert_norm, output_dtype=x.dtype)
-        if shared is not None:
-            mixed, shared = self._backend.reduce_outputs(self._tp, mixed, shared, **options)
-        else:
-            (mixed,) = self._backend.reduce_outputs(self._tp, mixed, **options)
+
+        shared_inputs = (x,) if front is None else (front["gate"], front["up"])
+        mixed, shared = self._backend.forward_outputs(
+            self._tp,
+            expert_producer,
+            shared_producer if self.shared_experts is not None else None,
+            expert_out=mixed_out,
+            shared_out=shared_out,
+            packed=packed,
+            output_key=self._reserved_key,
+            norm=self.routed_expert_norm,
+            output_dtype=x.dtype,
+            shared_inputs=shared_inputs,
+        )
         output = mixed
         if self.routed_expert_up_proj is not None:
             output = self.routed_expert_up_proj.forward(output)
