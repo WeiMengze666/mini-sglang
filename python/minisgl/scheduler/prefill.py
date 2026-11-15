@@ -48,7 +48,9 @@ class PrefillAdder:
         else:
             end = min(cached_len + budget, req.input_len)
         replay_until = getattr(handle, "replay_until", 0)
-        if replay_until > cached_len:
+        if replay_until > cached_len and not self.cache_manager.supports_checkpoint_frontier(
+            cached_len, replay_until
+        ):
             end = min(end, replay_until)
         if end < req.input_len:
             end = end // self.chunk_alignment * self.chunk_alignment

@@ -647,3 +647,70 @@ def test_explicit_abort_inside_borrow_cannot_publish_and_reclaims_after_exit():
     assert not arena._deferred_state_frees and arena.free_bytes == free
     states.release_request(0, 10)
     arena.check_integrity()
+
+
+@pytest.mark.parametrize("pressure", [False, True])
+def test_native_fork_crosses_once_and_optional_pressure_never_forges_anchor(manager, pressure):
+    from minisgl.scheduler.prefill import PrefillAdder
+
+    # Existing Full KV reaches8, but there is no state at that branch point.
+    seed = admit(manager, end=8)
+    allocate_pages(manager, seed)
+    states = manager.pool.recurrent
+    states.begin_request(seed.table_idx, seed.uid, 0)
+    finish(states, seed)
+    manager.cache_req(seed, finished=True, frontier=8)
+    manager.release_state(seed.table_idx, seed.uid)
+    req = admit(manager, uid=11, end=20)
+    handle = manager.current_handle(req)
+    assert (handle.cached_len, handle.replay_until) == (0, 8)
+    manager._checkpoint_quantum = 4  # CPU fixture for the startup-agreed portfolio.
+    adder = PrefillAdder(20, 0, manager, None)
+    assert adder._chunk_size(SimpleNamespace(input_len=20), handle, 0) == 20
+    allocate_pages(manager, req)
+
+    held = []
+    if pressure:
+        while (lease := states.reserve_checkpoint(0, 11, 8, end_len=20)) is not None:
+            held.append(lease)
+        assert held
+    batch = Batch([req], "prefill")
+    plans = manager.plan_checkpoints(batch, SUPPORTED)
+    assert len(plans) == (0 if pressure else 1)
+    states.begin_request(0, 11, 0)
+    if plans:
+        assert plans[0].checkpoint.length == 8
+        write_all(states, plans[0])
+    for layer in LAYERS:
+        state = states.get_kda_state(layer, 0)
+        state.conv.fill_(20)
+        state.recurrent.fill_(40)
+    finish(states, req)
+    assert req.cached_len == 20
+
+    if plans:
+        checkpoint = states.seal_checkpoint(plans[0])
+        manager.cache_req(req, finished=False, frontier=8, checkpoint=checkpoint)
+        assert states._working(0)[1].eq(40).all()
+        matched = manager.prefix_cache.match_prefix(req.input_ids[:8]).cuda_handle
+        assert matched.cached_len == 8
+        manager.lock(matched)
+        manager.restore_state(1, 12, matched)
+        states.begin_request(1, 12, 8)
+        assert states.get_kda_state(0, 1).recurrent.eq(16).all()
+        states.finish_request(1, 12, 9)
+        manager.release_state(1, 12)
+        manager.unlock(matched)
+    else:
+        # The same full forward completes, with no old-fork metadata to publish.
+        manager.cache_req(req, finished=False)
+        assert not manager.prefix_cache.checkpoints
+        assert manager.prefix_cache.match_prefix(req.input_ids[:8]).cuda_handle.cached_len == 0
+        assert states._working(0)[1].eq(40).all()
+    manager.release_checkpoint_plan(held)
+    manager.release_checkpoint_plan(plans)
+    manager.discard_req(req)
+    assert not states._pending
+    assert len(states._checkpoints) == (0 if pressure else 1)
+    assert states.is_idle
+    manager.check_integrity()

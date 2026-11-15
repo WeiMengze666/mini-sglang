@@ -254,6 +254,7 @@ def test_known_fork_survives_short_chunks_until_it_is_computed(manager):
     manager.cache_req(req, finished=False)
     handle = manager.current_handle(req)
     adder = object.__new__(PrefillAdder)
+    adder.cache_manager = manager
     adder.token_budget = adder.chunk_budget = 32
     adder.compute_page_size = adder.chunk_alignment = 2
     pending = SimpleNamespace(input_len=40)
