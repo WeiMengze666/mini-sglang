@@ -8,6 +8,7 @@ from minisgl.attention.mla import MLALatentOutput, MLAOutput, MLAState, apply_ro
 from minisgl.distributed.context import ContextParallel
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
+from minisgl.layers.activation import sigmoid_mul
 from minisgl.layers.base import BaseOP
 from minisgl.layers.linear import (
     Linear,
@@ -216,7 +217,7 @@ class MLALayer(BaseOP):
             output = headwise_linear(output.to(x.dtype), weight.transpose(1, 2))
         output = output.to(x.dtype).flatten(-2)
         if self._output_gate:
-            output = output * self.g_proj.forward(x).sigmoid()
+            output = sigmoid_mul(output, self.g_proj.forward(x))
         return self.o_proj.forward(output, residual=residual)
 
     def attend(

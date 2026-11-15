@@ -66,6 +66,7 @@ __all__ = [
     "silu_and_mul",
     "gelu_and_mul",
     "situ_and_mul",
+    "sigmoid_mul",
 ]
 
 
@@ -124,3 +125,19 @@ def situ_and_mul(
     if linear_beta is not None:
         u = linear_beta * torch.tanh(u / linear_beta)
     return (g * u).to(dtype)
+
+
+def sigmoid_mul(x: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
+    """Multiply by a sigmoid gate, retaining the original storage rounding."""
+    if (
+        x.is_cuda
+        and gate.is_cuda
+        and x.dtype == gate.dtype == torch.bfloat16
+        and not (x.requires_grad or gate.requires_grad)
+    ):
+        from minisgl.kernel.activation import try_sigmoid_mul
+
+        result = try_sigmoid_mul(x, gate)
+        if result is not None:
+            return result
+    return x * gate.sigmoid()
