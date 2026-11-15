@@ -177,7 +177,11 @@ class MLACache:
         Arena pages keep their existing stride-aware store. The fused SDK owns
         the E4M3 SATFINITE conversion; it is not an aten cast equivalence claim.
         """
-        if self.arena is not None or (self.latent_dim, self.rope_dim) != (512, 64):
+        if (
+            self.arena is not None
+            or self.dtype != torch.float8_e4m3fn
+            or (self.latent_dim, self.rope_dim) != (512, 64)
+        ):
             return None
         from minisgl.kernel.mla import store_mla_and_concat_query
 

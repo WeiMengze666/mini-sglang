@@ -212,6 +212,7 @@ def test_pool_dense_view_keeps_dtype_locations_and_avoids_arena_reinterpretation
 ):
     cache = object.__new__(MLACache)
     cache.arena, cache.latent_dim, cache.rope_dim = arena, 512, 64
+    cache.dtype = torch.float8_e4m3fn
     cache._device, cache.num_tokens = torch.device("cpu"), 256
     cache._cp = SimpleNamespace(size=8, rank=7)
     cache._full_layers = {3: 1}
@@ -246,3 +247,18 @@ def test_write_policy_and_invalid_locations_cannot_launch(monkeypatch):
             3, torch.zeros(1, 512), torch.zeros(1, 64), torch.tensor([128]), None, None
         )
     assert called == []
+
+
+def test_non_fp8_cache_declines_before_location_validation_or_kernel(monkeypatch):
+    cache = MLACache((3,), 128, 512, 64, torch.bfloat16, "cpu", page_size=64)
+    cache._mla.fill_(0.125)
+    before = cache._mla.clone()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Non-FP8 fusion decline performed validation or native work")
+
+    monkeypatch.setattr(cache, "_validate_locations", forbidden)
+    monkeypatch.setattr(kernel, "store_mla_and_concat_query", forbidden)
+    monkeypatch.setattr(kernel, "_concat_query_kernels", forbidden)
+    assert cache.store_and_concat_query(3, None, None, None, None, None) is None
+    torch.testing.assert_close(cache._mla, before, rtol=0, atol=0)
