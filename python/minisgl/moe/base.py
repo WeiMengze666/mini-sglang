@@ -1,7 +1,17 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import torch
 from minisgl.distributed.info import DistributedInfo
+
+
+@dataclass(frozen=True)
+class DeferredMoEOutput:
+    """Local unfinalized expert values and their native weighted-row mapping."""
+
+    values: torch.Tensor
+    indices: torch.Tensor
+    weights: torch.Tensor
 
 
 class BaseMoeBackend(ABC):
@@ -35,12 +45,20 @@ class BaseMoeBackend(ABC):
         supports = getattr(executor, "supports_out", None)
         return get_parallel_layout().ep_size == 1 and callable(supports) and supports(dtype)
 
-    def forward_experts(self, executor, x, routing, *, out=None):
+    def supports_deferred_output(self, executor, dtype: torch.dtype) -> bool:
+        supports = getattr(executor, "supports_deferred_output", None)
+        return self.supports_out(executor, dtype) and callable(supports) and supports(dtype)
+
+    def forward_experts(self, executor, x, routing, *, out=None, deferred: bool = False):
         """Let an executor fuse routing with compute, then use ordinary routes."""
         if out is not None and not self.supports_out(executor, out.dtype):
             raise NotImplementedError(
                 "Caller-owned expert output requires plain TP and executor support"
             )
+        if deferred:
+            if out is None or not self.supports_deferred_output(executor, out.dtype):
+                raise NotImplementedError("Deferred expert output requires a plain-TP executor")
+            return executor.forward_deferred(self, x, routing, out=out)
         options = {} if out is None else {"out": out}
         fused = getattr(executor, "try_forward_routed", None)
         output = fused(x, routing, **options) if fused is not None else None
@@ -74,6 +92,8 @@ class BaseMoeBackend(ABC):
         norm=None,
         output_dtype=None,
         shared_inputs=(),
+        deferred_producer=None,
+        topk=None,
     ):
         """Own local producers and reduction order, including optional overlap.
 
@@ -93,6 +113,20 @@ class BaseMoeBackend(ABC):
             and shared_out is not None
             and packed.dtype == output_dtype == torch.bfloat16
         )
+        epilogue = None
+        if overlap and deferred_producer is not None:
+            from minisgl.layers.norm import RMSNormEpilogue, TorchRMSNorm
+
+            if (
+                isinstance(norm, TorchRMSNorm)
+                and norm.weight.dtype == output_dtype
+                and expert_out.ndim == 2
+                and expert_out.shape[1] == norm.weight.numel()
+            ):
+                candidate = RMSNormEpilogue(norm, expert_out.shape[0])
+                supports = getattr(parallel, "supports_weighted_all_reduce", None)
+                if callable(supports) and supports(expert_out, norm=candidate, topk=topk):
+                    epilogue = candidate
         if overlap:
             if packed.device != stream.device:
                 raise ValueError("Prepared MoE outputs differ from their backend stream device")
@@ -101,7 +135,12 @@ class BaseMoeBackend(ABC):
             for value in shared_inputs:
                 if value.is_cuda:
                     value.record_stream(stream)
-            mixed = expert_producer(expert_out)
+            # Select the output-only consumer before any expert route/quant/GEMM launch.
+            mixed = (
+                deferred_producer(expert_out)
+                if epilogue is not None
+                else expert_producer(expert_out)
+            )
             with torch.cuda.stream(stream):
                 shared = shared_producer(shared_out)
                 shared = parallel.all_reduce_residual(shared, output_key=output_key, overlap=True)
@@ -110,14 +149,34 @@ class BaseMoeBackend(ABC):
                 # A generic reduction may return side-stream-owned storage,
                 # rather than an alias of the persistent shared destination.
                 shared.record_stream(main)
-            (mixed,) = self.reduce_outputs(
-                parallel,
-                mixed,
-                packed=expert_out.view(-1),
-                output_key=output_key,
-                norm=norm,
-                output_dtype=output_dtype,
-            )
+            if epilogue is not None:
+                if (
+                    not isinstance(mixed, DeferredMoEOutput)
+                    or mixed.weights.shape != (expert_out.shape[0], topk)
+                    or mixed.indices.numel() != expert_out.shape[0] * topk
+                ):
+                    raise ValueError(
+                        "Deferred expert output does not match its selected row mapping"
+                    )
+                # Hold all three native outputs through their same-stream consumer.
+                # It writes the reserved latent destination, finalizes, reduces and
+                # normalizes once; no ordinary AR or second normalizer follows.
+                mixed = parallel.weighted_all_reduce(
+                    mixed.values,
+                    mixed.indices,
+                    mixed.weights,
+                    out=expert_out,
+                    norm=epilogue,
+                )
+            else:
+                (mixed,) = self.reduce_outputs(
+                    parallel,
+                    mixed,
+                    packed=expert_out.view(-1),
+                    output_key=output_key,
+                    norm=norm,
+                    output_dtype=output_dtype,
+                )
             return mixed, shared
         mixed = expert_producer(expert_out)
         shared = shared_producer(shared_out) if shared_producer is not None else None

@@ -275,6 +275,11 @@ class LatentMoE(BaseOP):
             mixed = self._backend.forward_experts(self._expert_executor, routed, routing, **options)
             return mixed.to(x.dtype) if strict_bf16 else mixed
 
+        def deferred_producer(out):
+            return self._backend.forward_experts(
+                self._expert_executor, routed, routing, out=out, deferred=True
+            )
+
         def shared_producer(out):
             options = {} if out is None else {"out": out}
             dense = all(
@@ -303,6 +308,12 @@ class LatentMoE(BaseOP):
             norm=self.routed_expert_norm,
             output_dtype=x.dtype,
             shared_inputs=shared_inputs,
+            deferred_producer=(
+                deferred_producer
+                if self._backend.supports_deferred_output(self._expert_executor, x.dtype)
+                else None
+            ),
+            topk=routing.topk,
         )
         output = mixed
         if self.routed_expert_up_proj is not None:

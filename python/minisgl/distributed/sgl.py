@@ -273,3 +273,68 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
                         tuning.unroll,
                     )
         return x
+
+    def supports_weighted_all_reduce(self, out, *, norm, topk: int) -> bool:
+        from minisgl.layers.norm import RMSNormEpilogue
+
+        if self._closed:
+            raise RuntimeError("Cannot reduce on a closed communicator")
+        return bool(
+            not getattr(self.comm, "disabled", False)
+            and getattr(self.comm, "has_multicast", False)
+            and out.is_cuda
+            and out.dtype == torch.bfloat16
+            and out.ndim == 2
+            and out.shape[1] == 3584
+            and type(topk) is int
+            and topk == 16
+            and isinstance(norm, RMSNormEpilogue)
+            and norm.width == 3584
+            and norm.weight.dtype == torch.bfloat16
+            and type(norm.num_norm_rows) is int
+            and norm.num_norm_rows == out.shape[0]
+            and 0 < out.nbytes <= min(self._push_max_bytes, self.comm.max_push_size)
+            # SDK ar_fusion.cuh:819-821; <=512KiB implies rows<=73<96.
+            and out.shape[0] < self.comm.config.num_push_blocks
+        )
+
+    def weighted_all_reduce(self, values, indices, weights, *, out, norm):
+        """Official output-only top16 finalize + push AR + RMSNorm, once.
+
+        Selection uses group-uniform algorithm metadata. Local storage and
+        native triple errors raise; an already-launched FI operation is never
+        retried through another finalizer.
+        """
+        if (
+            weights.ndim != 2
+            or weights.shape != (out.shape[0], 16)
+            or indices.ndim != 1
+            or indices.numel() != out.shape[0] * 16
+            or indices.dtype != torch.int32
+            or values.ndim != 2
+            or values.shape[1] != 3584
+            or values.shape[0] == 0
+            or values.dtype != torch.bfloat16
+            or weights.dtype not in (torch.bfloat16, torch.float32)
+        ):
+            raise ValueError("Native weighted reduction needs the exact BF16/top16 FI triple")
+        if not self.supports_weighted_all_reduce(out, norm=norm, topk=16):
+            raise ValueError("Native weighted reduction does not cover this output/epilogue")
+        tensors = (out, values, indices, weights, norm.weight)
+        if any(
+            value.device != self.device
+            or not value.is_contiguous()
+            or value.data_ptr() % 16
+            or value.requires_grad
+            for value in tensors
+        ):
+            raise ValueError("Native weighted reduction requires aligned contiguous local storage")
+        if norm.weight.ndim != 1 or any(torch._C._overlaps(out, value) for value in tensors[1:]):
+            raise ValueError("Native weighted output must not alias its triple or RMS weights")
+        if "_residual_kernel" not in self.__dict__ and torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("Warm native weighted reduction before graph capture")
+        with self.execution_context():
+            self._residual_kernel.finalize_push_norm(
+                self.comm.obj, out.view(-1), values, indices, weights, norm.weight, norm.eps
+            )
+        return out

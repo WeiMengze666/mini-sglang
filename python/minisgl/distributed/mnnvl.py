@@ -279,6 +279,16 @@ class MNNVLDistributedImpl(DistributedImpl):
             return super().all_reduce_residual(x, residual, **options)
         return self.provider.all_reduce_residual(x, residual, **options)
 
+    def supports_weighted_all_reduce(self, out, *, norm, topk: int) -> bool:
+        method = getattr(self.provider, "supports_weighted_all_reduce", None)
+        return bool(method(out, norm=norm, topk=topk)) if method is not None else False
+
+    def weighted_all_reduce(self, values, indices, weights, *, out, norm):
+        method = getattr(self.provider, "weighted_all_reduce", None)
+        if method is None:
+            raise NotImplementedError("This provider has no weighted reduction consumer")
+        return method(values, indices, weights, out=out, norm=norm)
+
     def capture(self):
         capture = getattr(self.provider, "capture", None)
         return capture() if capture is not None else nullcontext()

@@ -107,6 +107,22 @@ class DistributedImpl(ABC):
             result = result + residual
         return norm(result) if norm is not None else result
 
+    def supports_weighted_all_reduce(self, out, *, norm, topk: int) -> bool:
+        """Advertise an output-only weighted reduction before producers launch."""
+        return False
+
+    def weighted_all_reduce(self, values, indices, weights, *, out, norm):
+        """Write SUM_rank SUM_k weights[n,k] * values[indices[n,k]], then norm.
+
+        Negative indices contribute zero. Indices are flattened [N*topk], weights
+        are [N,topk], and values contain local expert rows. A supported native
+        implementation owns accumulation/rounding. The destination is output-only
+        and may be borrowed storage; retain copies before its next producer write.
+        There is deliberately no generic gather/finalize kernel or CUDA retry.
+        Call supports_weighted_all_reduce before launching an unfinalized producer.
+        """
+        raise NotImplementedError("This backend has no weighted reduction consumer")
+
     def capture(self):
         """Register communication resources around a complete CUDA graph capture.
 
@@ -198,6 +214,20 @@ class FallbackDistributedImpl(DistributedImpl):
         # A backend may reduce this tensor without covering its epilogue.
         # Keep capability-based routing for the reduction and compose the rest.
         return super().all_reduce_residual(x, residual, **options)
+
+    def supports_weighted_all_reduce(self, out, *, norm, topk: int) -> bool:
+        return any(
+            backend.supports_weighted_all_reduce(out, norm=norm, topk=topk)
+            for backend in (self.primary, self.fallback)
+        )
+
+    def weighted_all_reduce(self, values, indices, weights, *, out, norm):
+        if weights.ndim != 2:
+            raise ValueError("Weighted reduction weights must have [rows, topk] shape")
+        for backend in (self.primary, self.fallback):
+            if backend.supports_weighted_all_reduce(out, norm=norm, topk=weights.shape[1]):
+                return backend.weighted_all_reduce(values, indices, weights, out=out, norm=norm)
+        return super().weighted_all_reduce(values, indices, weights, out=out, norm=norm)
 
     @contextmanager
     def capture(self):
@@ -346,6 +376,12 @@ class DistributedCommunicator:
     ) -> torch.Tensor:
         options = _all_reduce_options(norm, output_key, overlap)
         return self._backend().all_reduce_residual(x, residual, **options)
+
+    def supports_weighted_all_reduce(self, out, *, norm, topk: int) -> bool:
+        return self._backend().supports_weighted_all_reduce(out, norm=norm, topk=topk)
+
+    def weighted_all_reduce(self, values, indices, weights, *, out, norm):
+        return self._backend().weighted_all_reduce(values, indices, weights, out=out, norm=norm)
 
     @contextmanager
     def capture(self):

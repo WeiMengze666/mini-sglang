@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Iterable
 
 import torch
@@ -166,6 +167,17 @@ class FlashInferMXFP4Experts:
             and not self._w2.requires_grad
         )
 
+    def supports_deferred_output(self, dtype: torch.dtype) -> bool:
+        return (
+            self._activation == "situ" and self._precision == "mxfp8" and self.supports_out(dtype)
+        )
+
+    def forward_deferred(self, backend, x, routing, *, out):
+        if not self.supports_deferred_output(out.dtype):
+            raise NotImplementedError("Deferred FI output requires SiTU/MXFP8 and BF16 output")
+        self._validate_output(x, out)
+        return self._run(*self.prepare_inputs(backend, x, routing), out=out, do_finalize=False)
+
     def _validate_output(self, x, out, *extra_sources) -> None:
         if out is None:
             return
@@ -256,7 +268,7 @@ class FlashInferMXFP4Experts:
         self._validate_output(x, out, weights, ids)
         return self._run(*self._prepare_inputs(x, weights, ids), out=out)
 
-    def _run(self, x_input, x_scale, routes, topk, *, out=None):
+    def _run(self, x_input, x_scale, routes, topk, *, out=None, do_finalize: bool = True):
         route_inputs = routes if isinstance(routes, tuple) else (routes,)
         self._validate_output(x_input, out, x_scale, *route_inputs)
         from flashinfer import trtllm_fp4_block_scale_routed_moe
@@ -270,7 +282,7 @@ class FlashInferMXFP4Experts:
                 (x_input.shape[0], self._hidden), dtype=torch.bfloat16, device=x_input.device
             )
         )
-        trtllm_fp4_block_scale_routed_moe(
+        result = trtllm_fp4_block_scale_routed_moe(
             # The SDK consumes this dtype directly, including in finalization.
             topk_ids=routes,
             routing_bias=None,
@@ -305,9 +317,20 @@ class FlashInferMXFP4Experts:
             ),
             tune_max_num_tokens=self._tune_tokens(x_input.shape[0]),
             output=output,
-            do_finalize=True,
-            enable_pdl=True,
+            do_finalize=do_finalize,
+            # Official TRTLLM MoE policy (runner:50-56, EnvInt default8192).
+            # FI additionally masks this hint by the actual device capability.
+            enable_pdl=x_input.shape[0]
+            <= int(os.getenv("SGLANG_TRTLLM_MOE_PDL_MAX_TOKENS", "8192")),
         )
+        if not do_finalize:
+            from .base import DeferredMoEOutput
+
+            # FI returns (values, weights, expanded-to-permuted indices).
+            # Keep native BF16/F32 routing weights and the explicit [N,H] output,
+            # matching the official wrapper's finalized/deferred profile shapes.
+            values, weights, indices = result
+            return DeferredMoEOutput(values, indices, weights)
         # The finalized kernel publishes its result through the explicit destination.
         # Keep BF16 partials through the tensor-parallel reduction.
         return output

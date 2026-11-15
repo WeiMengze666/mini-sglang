@@ -60,5 +60,13 @@ class TensorParallel:
             return norm(result) if norm is not None else result
         return self._comm.all_reduce_residual(x, residual, **options)
 
+    def supports_weighted_all_reduce(self, out, *, norm, topk: int) -> bool:
+        return self.size > 1 and self._comm.supports_weighted_all_reduce(out, norm=norm, topk=topk)
+
+    def weighted_all_reduce(self, values, indices, weights, *, out, norm):
+        if self.size == 1:
+            raise NotImplementedError("Single-rank weighted finalization is not implemented")
+        return self._comm.weighted_all_reduce(values, indices, weights, out=out, norm=norm)
+
 
 __all__ = ["TensorParallel", "local_size", "tp_info"]
