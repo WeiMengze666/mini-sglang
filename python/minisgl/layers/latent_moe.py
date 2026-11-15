@@ -47,12 +47,12 @@ class GatedMLP(BaseOP):
             if plan is not None:
                 self._gate_up_weight = plan.weight
 
-    def forward_from_projections(self, gate, up, *, dtype):
+    def forward_from_projections(self, gate, up, *, dtype, out=None):
         activated = self._activation.apply(gate, up, dtype=dtype)
-        return self.down_proj.forward(activated)
+        return self.down_proj.forward(activated, out=out)
 
     def forward_local(
-        self, x: torch.Tensor, *, projection_dtype: torch.dtype | None = None
+        self, x: torch.Tensor, *, projection_dtype: torch.dtype | None = None, out=None
     ) -> torch.Tensor:
         """Optionally retain dense gate/up accumulators through the activation."""
         if projection_dtype not in (None, torch.float32):
@@ -72,7 +72,7 @@ class GatedMLP(BaseOP):
             up = linear_fp32(x, self.up_proj.weight)
         else:
             gate, up = self.gate_proj.forward(x), self.up_proj.forward(x)
-        return self.forward_from_projections(gate, up, dtype=x.dtype)
+        return self.forward_from_projections(gate, up, dtype=x.dtype, out=out)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._tp.all_reduce(self.forward_local(x))
@@ -168,6 +168,8 @@ class LatentMoE(BaseOP):
         self._backend = get_moe_backend()
         self._expert_executor = TorchExpertExecutor(self.experts.items())
         self._front = None
+        self._output = None
+        self._reserved_key = None
         if self.gate.weight.is_meta:
             MergedLinear.try_create(self._front_projections())
 
@@ -183,6 +185,8 @@ class LatentMoE(BaseOP):
 
     def after_load(self):
         self._front = None
+        self._output = None
+        self._reserved_key = None
         if self.gate.weight.is_cuda and self.gate.weight.dtype == torch.bfloat16:
             self._front = MergedLinear.try_create(self._front_projections())
             if self._front is not None:
@@ -197,6 +201,30 @@ class LatentMoE(BaseOP):
             num_global_experts=self._config.num_experts,
             routing_policy=RoutingPolicy.from_config(self._config),
         )
+
+    def prepare_inference(self) -> None:
+        from minisgl.core import get_global_ctx_or_none
+
+        ctx = get_global_ctx_or_none()
+        down, shared = self.routed_expert_down_proj, self.shared_experts
+        if ctx is None or ctx.max_forward_len is None or down is None or shared is None:
+            return
+        latent_width, shared_width = down._output_size, self._config.hidden_size
+        dtype = torch.bfloat16
+        key = f"moe.output:{latent_width}:{shared_width}:{dtype}"
+        # Group-wide reservation agrees on metadata before capture, including a
+        # declined producer. Forward never changes transport based on local pointers.
+        output = self._tp.reserve_output(
+            key,
+            (ctx.max_forward_len, latent_width + shared_width),
+            dtype,
+            enabled=(
+                self._backend.supports_out(self._expert_executor, dtype)
+                and shared.down_proj.supports_out(dtype)
+            ),
+        )
+        self._output = output
+        self._reserved_key = key if output is not None else None
 
     def prepare_runtime(self, context, *, dry_run=False):
         return self._backend.prepare_local(
@@ -227,30 +255,44 @@ class LatentMoE(BaseOP):
             routed = linear_fp32(x, down.weight)
         else:
             routed = down.forward(x).to(input_dtype)
+        packed = mixed_out = shared_out = None
+        if (
+            self._output is not None
+            and x.dtype == self._output.dtype
+            and x.shape[0] <= self._output.shape[0]
+        ):
+            # Blocks, not row columns: both destinations must be contiguous.
+            packed = self._output[: x.shape[0]].view(-1)
+            latent_size = x.shape[0] * routed.shape[1]
+            mixed_out = packed[:latent_size].view(x.shape[0], routed.shape[1])
+            shared_out = packed[latent_size:].view(x.shape[0], shape[-1])
         # The executor owns mixture precision; normalization follows expert reduction.
-        mixed = self._backend.forward_experts(self._expert_executor, routed, routing)
+        options = {} if mixed_out is None else {"out": mixed_out}
+        mixed = self._backend.forward_experts(self._expert_executor, routed, routing, **options)
         strict_bf16 = x.dtype == torch.bfloat16 and use_strict_bf16()
         if strict_bf16:
             mixed = mixed.to(x.dtype)
         shared = None
         if self.shared_experts is not None:
+            options = {} if shared_out is None else {"out": shared_out}
             dense = all(
                 op.weight_format == "dense"
                 for op in (self.shared_experts.gate_proj, self.shared_experts.up_proj)
             )
             shared = (
                 self.shared_experts.forward_from_projections(
-                    front["gate"], front["up"], dtype=x.dtype
+                    front["gate"], front["up"], dtype=x.dtype, **options
                 )
                 if front is not None
                 else self.shared_experts.forward_local(
-                    x, projection_dtype=torch.float32 if strict_bf16 and dense else None
+                    x, projection_dtype=torch.float32 if strict_bf16 and dense else None, **options
                 )
             )
         # Reduce partials before nonlinear latent normalization/up-projection.
         # Strict BF16 rounds each local mixture before the collective.
+        options = {} if packed is None else {"packed": packed, "output_key": self._reserved_key}
         if shared is not None:
-            mixed, shared = self._backend.reduce_outputs(self._tp, mixed, shared)
+            mixed, shared = self._backend.reduce_outputs(self._tp, mixed, shared, **options)
         else:
             (mixed,) = self._backend.reduce_outputs(self._tp, mixed)
         output = mixed.to(x.dtype)

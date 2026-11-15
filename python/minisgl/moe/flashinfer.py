@@ -157,6 +157,43 @@ class FlashInferMXFP4Experts:
         # Preserve projection accumulators until MXFP8 quantization.
         return torch.float32 if self._precision == "mxfp8" else torch.bfloat16
 
+    def supports_out(self, dtype: torch.dtype) -> bool:
+        """The finalized FI executor writes a contiguous BF16 [tokens, hidden]."""
+        return (
+            dtype == torch.bfloat16
+            and self._w2 is not None
+            and self._w2.is_cuda
+            and not self._w2.requires_grad
+        )
+
+    def _validate_output(self, x, out, *extra_sources) -> None:
+        if out is None:
+            return
+        if not self.supports_out(out.dtype):
+            raise NotImplementedError(
+                "FlashInfer caller-owned output requires loaded CUDA weights and BF16"
+            )
+        if x.ndim != 2 or out.shape != (x.shape[0], self._hidden):
+            raise ValueError("FlashInfer output must have the exact [tokens, hidden] shape")
+        if out.device != x.device or out.device != self._w2.device or not out.is_contiguous():
+            raise ValueError("FlashInfer output must be contiguous on the input and weight device")
+        if x.requires_grad or out.requires_grad:
+            raise ValueError("FlashInfer caller-owned output is inference-only")
+        sources = (
+            x,
+            self._w13,
+            self._w13_scale,
+            self._w2,
+            self._w2_scale,
+            self._alpha,
+            self._linear,
+            *extra_sources,
+        )
+        if any(torch._C._overlaps(out, source) for source in sources if source is not None):
+            raise ValueError(
+                "FlashInfer output must use separate storage from inputs and parameters"
+            )
+
     def _validate_input(self, x: torch.Tensor) -> None:
         if x.ndim != 2 or x.shape[-1] != self._hidden:
             raise ValueError("FlashInfer FP4 expects [tokens, hidden] input")
@@ -208,20 +245,30 @@ class FlashInferMXFP4Experts:
             prepared if prepared is not None else self._prepare_inputs(x, *routing.select(backend))
         )
 
-    def try_forward_routed(self, x, routing):
+    def try_forward_routed(self, x, routing, *, out=None):
+        self._validate_output(x, out)
         prepared = self._prepare_routed_inputs(x, routing)
-        return None if prepared is None else self._run(*prepared)
+        return None if prepared is None else self._run(*prepared, out=out)
 
-    def forward(self, x: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
-        return self._run(*self._prepare_inputs(x, weights, ids))
+    def forward(
+        self, x: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor, *, out=None
+    ) -> torch.Tensor:
+        self._validate_output(x, out, weights, ids)
+        return self._run(*self._prepare_inputs(x, weights, ids), out=out)
 
-    def _run(self, x_input, x_scale, routes, topk):
+    def _run(self, x_input, x_scale, routes, topk, *, out=None):
+        route_inputs = routes if isinstance(routes, tuple) else (routes,)
+        self._validate_output(x_input, out, x_scale, *route_inputs)
         from flashinfer import trtllm_fp4_block_scale_routed_moe
         from flashinfer.fused_moe.core import ActivationType
         from flashinfer.tllm_enums import RoutingMethodType, SfLayout
 
-        output = torch.empty(
-            (x_input.shape[0], self._hidden), dtype=torch.bfloat16, device=x_input.device
+        output = (
+            out
+            if out is not None
+            else torch.empty(
+                (x_input.shape[0], self._hidden), dtype=torch.bfloat16, device=x_input.device
+            )
         )
         trtllm_fp4_block_scale_routed_moe(
             # The SDK consumes this dtype directly, including in finalization.
