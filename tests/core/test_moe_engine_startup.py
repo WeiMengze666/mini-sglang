@@ -180,6 +180,7 @@ def construction(monkeypatch):
             max_running_req=rows,
             cache_dtype=torch.bfloat16,
             max_seq_len=8,
+            max_forward_len=8,
             cuda_graph_bs=[],
             cuda_graph_max_bs=0,
             enable_unified_memory=False,

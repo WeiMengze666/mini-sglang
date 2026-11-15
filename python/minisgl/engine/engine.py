@@ -68,12 +68,13 @@ class Engine:
         assert not torch.cuda.is_initialized()
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         configure_parallel(dcp_size=config.dcp_size, ep_size=config.ep_size)
+        _set_runtime_environment(config)
+        self.device = torch.device(f"cuda:{config.tp_info.rank}")
+        torch.cuda.set_device(self.device)
         if config.attention_provider is not None:
             load_attention_provider(config.attention_provider)
         _adjust_config(config)
 
-        self.device = torch.device(f"cuda:{config.tp_info.rank}")
-        torch.cuda.set_device(self.device)
         torch.manual_seed(42)
         self.stream = torch.cuda.Stream()
         torch.cuda.set_stream(self.stream)
@@ -548,14 +549,19 @@ def _align_up_32(num: int) -> int:
     return (num + 31) // 32 * 32
 
 
-def _adjust_config(config: EngineConfig):
+def _set_runtime_environment(config: EngineConfig) -> None:
     # Ordinary NCCL defaults match the native runtime. Custom AR's multicast
     # allocations are independent of NCCL's symmetric-memory/NVLS switches.
     os.environ.setdefault("NCCL_CUMEM_ENABLE", "0")
     os.environ.setdefault("NCCL_NVLS_ENABLE", "0")
     if config.dcp_size > 1:
         os.environ.setdefault("NCCL_GRAPH_MIXING_SUPPORT", "0")
+    # Native runtime defaults must precede CUDA context/provider creation.
+    os.environ.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "8")
+    os.environ.setdefault("TRTLLM_ENABLE_PDL", "1")
 
+
+def _adjust_config(config: EngineConfig):
     def override(attr: str, value: Any):  # this is dangerous, use with caution
         object.__setattr__(config, attr, value)
 
