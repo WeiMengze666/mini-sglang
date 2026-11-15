@@ -549,6 +549,13 @@ def _align_up_32(num: int) -> int:
 
 
 def _adjust_config(config: EngineConfig):
+    # Ordinary NCCL defaults match the native runtime. Custom AR's multicast
+    # allocations are independent of NCCL's symmetric-memory/NVLS switches.
+    os.environ.setdefault("NCCL_CUMEM_ENABLE", "0")
+    os.environ.setdefault("NCCL_NVLS_ENABLE", "0")
+    if config.dcp_size > 1:
+        os.environ.setdefault("NCCL_GRAPH_MIXING_SUPPORT", "0")
+
     def override(attr: str, value: Any):  # this is dangerous, use with caution
         object.__setattr__(config, attr, value)
 
