@@ -72,6 +72,7 @@ def batch_for(tokens, *, uid=10, slot=0, start=0, padding=0):
         uid=uid, table_idx=slot, cached_len=start, device_len=start + n, extend_len=n
     )
     batch = SimpleNamespace(
+        is_decode=start > 0 and n == 1,
         reqs=[req],
         input_ids=torch.tensor(tokens + [0] * padding),
         positions=torch.arange(start, start + n + padding),
@@ -114,6 +115,7 @@ def test_batch_isolation_padding_release_and_slot_reuse():
     expected_b = model.forward_batch(b, cache, page_table(), all_logits=True)
     cache.reset()
     both = SimpleNamespace(
+        is_decode=False,
         reqs=a.reqs + b.reqs,
         input_ids=torch.cat((a.input_ids, b.input_ids, torch.tensor([99, 99]))),
         positions=torch.cat((a.positions, b.positions, torch.tensor([99, 99]))),
@@ -187,6 +189,7 @@ def test_multi_request_begin_failure_releases_started_requests():
     cache = cache_for(config)
     a, b = batch_for([1]), batch_for([2], uid=11, slot=1, start=3)
     broken = SimpleNamespace(
+        is_decode=False,
         reqs=a.reqs + b.reqs,
         input_ids=torch.cat((a.input_ids, b.input_ids)),
         positions=torch.cat((a.positions, b.positions)),
