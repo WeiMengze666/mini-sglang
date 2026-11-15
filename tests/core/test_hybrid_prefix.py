@@ -202,3 +202,46 @@ def test_global_budget_retains_earlier_fork_frontiers(monkeypatch, unified, path
         states.finish_request(0, 200, 5)
         states.release_request(0, 200)
         tree.lock_handle(handle, unlock=True)
+
+
+@pytest.mark.parametrize("refresh", ["match", "publish"])
+def test_state_lru_refreshes_only_used_anchor_not_walked_ancestors(cache, refresh):
+    a_ids = torch.tensor([0, 1], dtype=torch.int32)
+    b_ids = torch.tensor([0, 1, 2, 3], dtype=torch.int32)
+    c_ids = torch.tensor([10, 11], dtype=torch.int32)
+    handles = []
+    for uid, ids in enumerate((a_ids, b_ids, c_ids), 100):
+        req = commit(cache, 0, uid, len(ids), uid)
+        handle = cache.insert_prefix(ids, ids).handle
+        cache.cache_state(req, handle, finished=True)
+        cache.states.release_request(0, uid)
+        handles.append(handle)
+    a, b, c = handles
+    for handle, timestamp in zip(handles, (1, 2, 3)):
+        handle.node.timestamp = timestamp
+
+    if refresh == "match":
+        used = cache.match_prefix(b_ids).cuda_handle
+    else:
+        # A duplicate publication reuses the tree checkpoint and keeps the
+        # caller's working state private; it still refreshes this state anchor.
+        req = commit(cache, 0, 200, len(b_ids), 200)
+        used = cache.insert_prefix(b_ids, b_ids).handle
+        cache.cache_state(req, used)
+        cache.states.release_request(0, 200)
+    assert used.node is b.node
+    assert a.node.timestamp > c.node.timestamp  # Full-KV walk touched ancestor A.
+    cache.lock_handle(used)
+    try:
+        assert cache.evict_checkpoint()
+        # Only B was consumed/published. A stays the oldest STATE even though
+        # its KV path is protected and was traversed while visiting B.
+        assert a.node.uuid not in cache.checkpoints
+        assert b.node.uuid in cache.checkpoints and c.node.uuid in cache.checkpoints
+        cache.restore_state(1, 201, used)
+        cache.states.begin_request(1, 201, len(b_ids))
+        assert cache.states.get_kda_state(0, 1).recurrent.eq(202).all()
+        cache.states.finish_request(1, 201, len(b_ids) + 1)
+        cache.states.release_request(1, 201)
+    finally:
+        cache.lock_handle(used, unlock=True)

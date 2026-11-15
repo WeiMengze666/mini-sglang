@@ -39,6 +39,7 @@ class HybridPrefixCache(RadixPrefixCache):
             raise ValueError("Hybrid prefix caching requires positive checkpoint capacity")
         self.states = states
         self.max_states_per_path = max_states_per_path
+        # Insertion order is the state-only LRU, independent of KV walk timestamps.
         self.checkpoints: dict[int, tuple[RadixTreeNode, StateCheckpoint]] = {}
         self._state_locks: dict[int, tuple[RadixCacheHandle, int]] = {}
 
@@ -66,6 +67,7 @@ class HybridPrefixCache(RadixPrefixCache):
             node = node.parent
         # No state at a newly split node: replay from an ancestor and place one
         # at the fork, rather than pretending append-only KV restores an SSM.
+        self._touch_checkpoint(node)
         return MatchResult(HybridCacheHandle(length, node, matched if matched > length else 0))
 
     def continue_handle(self, old_handle, new_handle, processed_len):
@@ -105,16 +107,19 @@ class HybridPrefixCache(RadixPrefixCache):
     def evict_checkpoint(self) -> bool:
         return self._evict_checkpoint()
 
+    def _touch_checkpoint(self, node):
+        if node.uuid in self.checkpoints:
+            self.checkpoints[node.uuid] = self.checkpoints.pop(node.uuid)
+
     def _evict_checkpoint(self, exclude=None):
         pinned = {handle.node.uuid for handle, _ in self._state_locks.values()}
-        node = min(
+        node = next(
             (
                 node
                 for node, _ in self.checkpoints.values()
                 if node.uuid != exclude and node.uuid not in pinned
             ),
-            key=lambda n: n.timestamp,
-            default=None,
+            None,
         )
         if node is None:
             return False
@@ -136,6 +141,7 @@ class HybridPrefixCache(RadixPrefixCache):
             raise RuntimeError("Staged checkpoint and radix frontier lengths differ")
         node = handle.node
         if node.uuid in self.checkpoints:
+            self._touch_checkpoint(node)
             return  # caller retains the unused track until its normal release
         pinned = {anchor.node.uuid for anchor, _ in self._state_locks.values()}
         path, parent = [], node
@@ -144,10 +150,12 @@ class HybridPrefixCache(RadixPrefixCache):
                 path.append(parent)
             parent = parent.parent
         if self.max_states_per_path is not None and len(path) >= self.max_states_per_path:
-            candidates = [n for n in path if n.uuid not in pinned]
+            candidates = [
+                n for n, _ in self.checkpoints.values() if n in path and n.uuid not in pinned
+            ]
             if not candidates:
                 return
-            self._drop(min(candidates, key=lambda n: n.timestamp))
+            self._drop(candidates[0])
         snapshot = checkpoint
         while True:
             try:
