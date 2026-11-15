@@ -244,6 +244,12 @@ def test_prepared_projection_uses_native_and_keeps_owned_output(monkeypatch):
     assert [c[0] for c in calls] == ["supports", "native"]
     assert calls[1][2] is op.weight and result.eq(3).all()
     assert not torch._C._overlaps(result, b)
+    prefix = torch.full_like(result, 7)
+    result_with_prefix = create_moe_backend("fused").project_outputs(
+        Parallel(), x, b, op, output_dtype=torch.bfloat16, prepared=True, residual=prefix
+    )
+    assert result_with_prefix.eq(10).all() and prefix.eq(7).all() and b.eq(1).all()
+    assert [c[0] for c in calls] == ["supports", "native", "supports", "native"]
 
 
 @pytest.mark.parametrize(

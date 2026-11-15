@@ -182,6 +182,26 @@ def test_prelaunch_cap_shared_join_and_exactly_one_consumer(streams, supported):
     assert len(normalizations) == 1 and tail.eq(6).all()
     if supported:
         assert result is latent
+    # The finalized tensor, not DeferredMoEOutput, reaches the optional prefix tail.
+    prefix = torch.full_like(tail, 7)
+    projection_calls = []
+
+    def project(value):
+        projection_calls.append(1)
+        return value[:, :2] * 2
+
+    expected = (project(result) + tail) + prefix
+    projection_calls.clear()
+    final = backend.project_outputs(
+        parallel,
+        result,
+        tail,
+        SimpleNamespace(forward=project),
+        output_dtype=torch.bfloat16,
+        residual=prefix,
+    )
+    assert torch.equal(final, expected) and projection_calls == [1]
+    assert len(normalizations) == 1 and prefix.eq(7).all() and tail.eq(6).all()
 
 
 def test_fp32_fallback_never_launches_deferred_or_changes_cast_norm_order():

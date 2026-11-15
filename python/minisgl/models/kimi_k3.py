@@ -54,7 +54,7 @@ class KimiDecoderLayer(BaseOP):
         if self._block_size is None:
             x = self.input_layernorm.forward(head)
             head = self._attention(x, batch, cache, page_table, backend, residual=head)
-            return head + self.mlp.forward(self.post_attention_layernorm.forward(head))
+            return self.mlp.forward(self.post_attention_layernorm.forward(head), residual=head)
 
         x = attention_residual(
             head,
@@ -73,7 +73,7 @@ class KimiDecoderLayer(BaseOP):
         x = attention_residual(
             head, bank, self.mlp_res_norm, self.mlp_res_proj, self.post_attention_layernorm
         )
-        return head + self.mlp.forward(x)
+        return self.mlp.forward(x, residual=head)
 
 
 class KimiModel(BaseOP):
