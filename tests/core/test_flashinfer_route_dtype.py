@@ -203,3 +203,79 @@ def test_native_preparation_respects_semantics_and_sdk_coverage(executor, monkey
         assert actual is result and events == ["stream-enter", "stream-exit"]
     else:
         assert actual is None and events == []
+
+
+@pytest.mark.parametrize("fused", [False, True])
+def test_caller_output_reaches_sdk_and_returns_exact_destination(executor, monkeypatch, fused):
+    from minisgl.moe.fused import FusedMoe
+
+    obj, calls = executor
+    obj._w2 = torch.empty(1).as_subclass(DeviceInput)
+    x = torch.zeros(3, 256, dtype=torch.bfloat16).as_subclass(DeviceInput)
+    weights = torch.full((3, 2), 0.5)
+    ids = torch.zeros(3, 2, dtype=torch.int32)
+    out = torch.full((3, 256), -17, dtype=torch.bfloat16)
+    if fused:
+        monkeypatch.setattr(
+            obj, "_prepare_routed_inputs", lambda x, routing: (x, None, (ids, weights), 2)
+        )
+        routing = SimpleNamespace(select=lambda backend: pytest.fail("duplicate route"))
+        result = FusedMoe().forward_experts(obj, x, routing, out=out)
+    else:
+        monkeypatch.setattr(obj, "_prepare_routed_inputs", lambda x, routing: None)
+        routing = SimpleNamespace(select=lambda backend: (weights, ids))
+        result = FusedMoe().forward_experts(obj, x, routing, out=out)
+    assert result is out and len(calls) == 1 and calls[0]["output"] is out
+    assert calls[0]["do_finalize"] is True and out.eq(0).all()
+
+
+@pytest.mark.parametrize(
+    "invalid", ["shape", "dtype", "stride", "device", "grad", "alias", "unloaded"]
+)
+def test_invalid_output_declines_before_preparing_inputs(executor, monkeypatch, invalid):
+    obj, calls = executor
+    obj._w2 = torch.empty(1).as_subclass(DeviceInput)
+    x = torch.zeros(3, 256, dtype=torch.bfloat16).as_subclass(DeviceInput)
+    out = torch.empty_like(x).as_subclass(torch.Tensor)
+    error = ValueError
+    if invalid == "shape":
+        out = out[:2]
+    elif invalid == "dtype":
+        out = out.float()
+        error = NotImplementedError
+    elif invalid == "stride":
+        out = torch.empty(3, 512, dtype=torch.bfloat16)[:, ::2]
+    elif invalid == "device":
+        out = torch.empty(3, 256, dtype=torch.bfloat16, device="meta")
+    elif invalid == "grad":
+        out.requires_grad_(True)
+    elif invalid == "alias":
+        out = x
+    else:
+        obj._w2 = None
+        error = NotImplementedError
+    monkeypatch.setattr(obj, "_prepare_inputs", lambda *a: pytest.fail("prepared invalid output"))
+    monkeypatch.setattr(
+        obj, "_prepare_routed_inputs", lambda *a: pytest.fail("prepared invalid output")
+    )
+    with pytest.raises(error):
+        obj.forward(x, torch.ones(3, 2), torch.zeros(3, 2, dtype=torch.int32), out=out)
+    with pytest.raises(error):
+        obj.try_forward_routed(x, object(), out=out)
+    assert calls == []
+
+
+def test_native_failure_is_not_retried_or_replaced(executor, monkeypatch):
+    obj, calls = executor
+    obj._w2 = torch.empty(1).as_subclass(DeviceInput)
+    x = torch.zeros(3, 256, dtype=torch.bfloat16).as_subclass(DeviceInput)
+    out = torch.empty(3, 256, dtype=torch.bfloat16)
+
+    def fail(**kwargs):
+        calls.append(kwargs)
+        raise RuntimeError("native CUDA failure")
+
+    monkeypatch.setattr(sys.modules["flashinfer"], "trtllm_fp4_block_scale_routed_moe", fail)
+    with pytest.raises(RuntimeError, match="native CUDA failure"):
+        obj.forward(x, torch.ones(3, 2), torch.zeros(3, 2, dtype=torch.int32), out=out)
+    assert len(calls) == 1 and calls[0]["output"] is out
