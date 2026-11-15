@@ -13,7 +13,7 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 
-from .impl import TorchDistributedImpl
+from .impl import TorchDistributedImpl, _gather_last_dim
 from .info import DistributedInfo
 from .mnnvl import MNNVLAllReduceProvider
 
@@ -134,6 +134,129 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
     @cached_property
     def _linear_all_gather_kernel(self):
         return self._linear_all_gather_ops._jit_module()
+
+    @cached_property
+    def _all_gather_ops(self):
+        return importlib.import_module(
+            "sglang.srt.distributed.device_communicators.triton_symm_mem_ag"
+        )
+
+    def prepare_all_gather(
+        self,
+        *,
+        max_rows: int | None = None,
+        shard_width: int | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> bool:
+        """Prepare the SDK gather on this TP group before cache budgeting."""
+        if self.output_group is None or self.device is None or self.device.type != "cuda":
+            return False
+        unknown = max_rows is None and shard_width is None and dtype is None
+        error = None
+        if self._closed:
+            error = ("state", "Cannot prepare all-gather on a closed communicator")
+        elif self._capturing or torch.cuda.is_current_stream_capturing():
+            error = ("state", "All-gather preparation must precede graph capture")
+        elif not unknown and (
+            type(max_rows) is not int
+            or max_rows <= 0
+            or type(shard_width) is not int
+            or shard_width <= 0
+            or not isinstance(dtype, torch.dtype)
+        ):
+            error = ("value", "All-gather preparation needs positive rows, width and dtype")
+        spec = None if unknown or error else (max_rows, shard_width, str(dtype))
+        previous = getattr(self, "_gather_spec", None)
+        if error is None and previous is not None and spec != previous:
+            error = ("value", "Cannot resize or change dtype of a prepared all-gather")
+        action = "error" if error else "reuse" if previous is not None else "new"
+        available = (
+            not unknown
+            and error is None
+            and dtype == torch.bfloat16
+            and shard_width % 8 == 0
+            and not getattr(self.comm, "disabled", False)
+            and getattr(self.comm, "has_multicast", False)
+        )
+        if available:
+            try:
+                self._all_gather_ops
+            except ImportError:
+                available = False
+        if not self._agree_preparation(
+            spec, action, error, available, label="All-gather preparation"
+        ):
+            return False
+        if action == "reuse":
+            if not self._gather_warm:
+                raise RuntimeError("Prepared all-gather did not finish warmup")
+            return True
+
+        # The SDK owns symmetric allocation, rendezvous and the real kernel.
+        # Unknown allocation/device failures propagate to Engine's worker owner.
+        state = self._all_gather_ops.create_state(
+            self.group,
+            dist.get_rank(self.group),
+            max_rows,
+            shard_width * dist.get_world_size(self.group),
+            device=self.device,
+        )
+        if not self._agree_preparation(
+            spec,
+            "mapped",
+            None,
+            bool(state.symm_mem_hdl.multicast_ptr),
+            label="All-gather mapping",
+        ):
+            return False
+        self._gather_state, self._gather_spec, self._gather_warm = state, spec, False
+        with self.execution_context():
+            probe = state.comm_buff.new_zeros((1, shard_width))
+            self._all_gather_ops.all_gather_inner(
+                state, probe, state.hidden_dim, skip_entry_sync=False, safe=True
+            )
+        torch.cuda.synchronize(self.device)
+        self._gather_warm = True
+        return True
+
+    def supports_all_gather_last_dim(self, x) -> bool:
+        if self._closed:
+            raise RuntimeError("Cannot gather on a closed communicator")
+        spec = getattr(self, "_gather_spec", None)
+        return bool(
+            spec is not None
+            and x.is_cuda
+            and x.ndim == 2
+            and x.dtype == torch.bfloat16
+            and 0 < x.shape[0] <= spec[0]
+            and x.shape[1] == spec[1]
+        )
+
+    def all_gather_last_dim(self, x):
+        if not self.supports_all_gather_last_dim(x):
+            return _gather_last_dim(self.all_gather, x)
+        # Local storage errors must not select a different collective on peers.
+        if x.device != self.device or not x.is_contiguous() or x.data_ptr() % 16 or x.requires_grad:
+            raise ValueError(
+                "Native all-gather requires local contiguous aligned inference storage"
+            )
+        if not self._gather_warm:
+            raise RuntimeError("Native all-gather must be warmed before use")
+        with self.execution_context():
+            return self._all_gather_ops.all_gather_inner(
+                self._gather_state,
+                x,
+                self._gather_state.hidden_dim,
+                skip_entry_sync=False,
+                safe=True,
+            )
+
+    def close(self):
+        if not self._closed and getattr(self, "_gather_state", None) is not None:
+            torch.cuda.synchronize(self.device)
+        super().close()
+        self._gather_state = self._gather_spec = None
+        self._gather_warm = False
 
     def supports_linear_all_gather(self, x, weight, addend) -> bool:
         if self._closed:

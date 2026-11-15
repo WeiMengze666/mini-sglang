@@ -23,13 +23,24 @@ def _all_reduce_options(norm, output_key, overlap: bool):
     return options
 
 
+def _validate_all_gather_dim(x, dim):
+    if type(dim) is not int or dim not in (0, -1) or x.ndim == 0:
+        raise ValueError("All-gather requires a non-scalar tensor and dim=0 or dim=-1")
+
+
+def _gather_last_dim(gather, x):
+    """Preserve the leading-dimension transport ABI of legacy backends."""
+    leading = x.movedim(-1, 0).contiguous()
+    return gather(leading).movedim(0, -1).contiguous()
+
+
 @dataclass
 class DistributedImpl(ABC):
     @abstractmethod
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor: ...
 
     @abstractmethod
-    def all_gather(self, x: torch.Tensor) -> torch.Tensor: ...
+    def all_gather(self, x: torch.Tensor, *, dim: int = 0) -> torch.Tensor: ...
 
     def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError("This communication backend does not support all-to-all")
@@ -48,6 +59,22 @@ class DistributedImpl(ABC):
     def supports_all_gather(self, x: torch.Tensor) -> bool:
         """Whether this backend can gather this tensor without fallback."""
         return True
+
+    def _supports_last_dim_all_gather(self, x: torch.Tensor) -> bool:
+        return self.supports_all_gather(x.movedim(-1, 0))
+
+    def _all_gather_last_dim(self, x: torch.Tensor) -> torch.Tensor:
+        return _gather_last_dim(self.all_gather, x)
+
+    def prepare_all_gather(
+        self,
+        *,
+        max_rows: int | None = None,
+        shard_width: int | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> bool:
+        """Optional collective setup before the first memory-budget snapshot."""
+        return False
 
     def supports_linear_all_gather(self, x, weight, addend) -> bool:
         """Whether this backend covers a replicated linear projection and add."""
@@ -177,9 +204,43 @@ class FallbackDistributedImpl(DistributedImpl):
         backend = self.primary if self._supports(self.primary, "all_reduce", x) else self.fallback
         return backend.all_reduce(x)
 
-    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
+    def all_gather(self, x: torch.Tensor, *, dim: int = 0) -> torch.Tensor:
+        _validate_all_gather_dim(x, dim)
+        if dim == -1:
+            return self._all_gather_last_dim(x)
         backend = self.primary if self._supports(self.primary, "all_gather", x) else self.fallback
         return backend.all_gather(x)
+
+    @classmethod
+    def _supports_last(cls, backend, x):
+        supports = getattr(backend, "_supports_last_dim_all_gather", None)
+        return (
+            bool(supports(x))
+            if supports is not None
+            else cls._supports(backend, "all_gather", x.movedim(-1, 0))
+        )
+
+    def _supports_last_dim_all_gather(self, x):
+        return self._supports_last(self.primary, x) or self._supports_last(self.fallback, x)
+
+    def _all_gather_last_dim(self, x):
+        backend = self.primary if self._supports_last(self.primary, x) else self.fallback
+        gather = getattr(backend, "_all_gather_last_dim", None)
+        return gather(x) if gather is not None else _gather_last_dim(backend.all_gather, x)
+
+    def prepare_all_gather(
+        self,
+        *,
+        max_rows: int | None = None,
+        shard_width: int | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> bool:
+        options = {"max_rows": max_rows, "shard_width": shard_width, "dtype": dtype}
+        for backend in (self.primary, self.fallback):
+            prepare = getattr(backend, "prepare_all_gather", None)
+            if prepare is not None and prepare(**options):
+                return True
+        return False
 
     def supports_all_to_all(self, x: torch.Tensor) -> bool:
         return self._supports(self.primary, "all_to_all", x) or self._supports(
@@ -308,7 +369,10 @@ class TorchDistributedImpl(DistributedImpl):
         dist.all_reduce(x, op=dist.ReduceOp.SUM, group=self.group)
         return x
 
-    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
+    def all_gather(self, x: torch.Tensor, *, dim: int = 0) -> torch.Tensor:
+        _validate_all_gather_dim(x, dim)
+        if dim == -1:
+            return self._all_gather_last_dim(x)
         tp_size = dist.get_world_size(self.group)
         if tp_size == 1:
             return x
@@ -340,7 +404,10 @@ class PyNCCLDistributedImpl(DistributedImpl):
             self.comm.all_reduce(x, "sum")
         return x
 
-    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
+    def all_gather(self, x: torch.Tensor, *, dim: int = 0) -> torch.Tensor:
+        _validate_all_gather_dim(x, dim)
+        if dim == -1:
+            return self._all_gather_last_dim(x)
         from .info import get_tp_info
 
         world_size = get_tp_info().size
@@ -381,8 +448,27 @@ class DistributedCommunicator:
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         return self._backend().all_reduce(x)
 
-    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
-        return self._backend().all_gather(x)
+    def all_gather(self, x: torch.Tensor, *, dim: int = 0) -> torch.Tensor:
+        _validate_all_gather_dim(x, dim)
+        backend = self._backend()
+        if dim == 0:
+            return backend.all_gather(x)
+        gather = getattr(backend, "_all_gather_last_dim", None)
+        return gather(x) if gather is not None else _gather_last_dim(backend.all_gather, x)
+
+    def prepare_all_gather(
+        self,
+        *,
+        max_rows: int | None = None,
+        shard_width: int | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> bool:
+        prepare = getattr(self._backend(), "prepare_all_gather", None)
+        return (
+            bool(prepare(max_rows=max_rows, shard_width=shard_width, dtype=dtype))
+            if prepare
+            else False
+        )
 
     def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
         return self._backend().all_to_all(x)

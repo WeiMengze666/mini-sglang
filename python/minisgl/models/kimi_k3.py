@@ -175,7 +175,7 @@ class KimiK3LinearForCausalLM(BaseLLMModel):
             else:
                 last = metadata.get_last_indices(len(batch.reqs))
             hidden = hidden[last]
-        logits = self.lm_head.forward(hidden).float()
+        logits = self.lm_head.forward(hidden)
         if self._sharded_vocab:
-            logits = self._tp.all_gather(logits.T.contiguous()).T.contiguous()
-        return logits
+            logits = self._tp.all_gather(logits, dim=-1)
+        return logits.float()
