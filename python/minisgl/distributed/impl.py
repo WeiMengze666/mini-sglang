@@ -39,15 +39,39 @@ class DistributedImpl(ABC):
         """Whether this backend can gather this tensor without fallback."""
         return True
 
-    def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
+    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+        """Collectively reserve stable provider-owned output storage, or decline.
+
+        Call in the same order on every group member during preparation, after
+        KV allocation and before graph capture. Storage lives until backend
+        close; its contents last only until the next write to the same slot.
+        Every rank must use the corresponding reservation and slice. Callers
+        copy retained aliases before reuse, without growing the reservation.
+        The optional all_reduce_residual output_key names this reservation;
+        all group members must supply the same key and corresponding slice.
+        """
+        return None
+
+    def supports_all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+    ) -> bool:
         """Whether this backend can fuse reduction with a residual epilogue."""
         return False
 
-    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
+    def all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+    ) -> torch.Tensor:
         """Reduce ``x`` and apply an optional residual and unary epilogue.
 
         Hardware backends can override this to use a fused communication
-        kernel.  The fallback keeps the operation correct for every backend.
+        kernel. The fallback keeps the operation correct for every backend.
+        output_key is an explicit prepared-storage route hint, ignored by the
+        generic composition. Backends may mutate x; copy retained input aliases
+        before dispatch. Native pull requires the same reservation key and slice
+        on every rank; omitting the key preserves generic large-tensor routing.
+        The generic composition reduces before adding residual: callers copy an
+        overlapping residual first when the reduction may mutate x. A native
+        backend may document stronger snapshot semantics for its fused path.
         """
         result = self.all_reduce(x)
         if residual is not None:
@@ -105,18 +129,28 @@ class FallbackDistributedImpl(DistributedImpl):
         backend = self.primary if self._supports(self.primary, "all_to_all", x) else self.fallback
         return backend.all_to_all(x)
 
-    def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
-        return self.primary.supports_all_reduce_residual(
-            x, residual, norm=norm
-        ) or self.fallback.supports_all_reduce_residual(x, residual, norm=norm)
+    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+        result = self.primary.reserve_output(key, shape, dtype)
+        return self.fallback.reserve_output(key, shape, dtype) if result is None else result
 
-    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
+    def supports_all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+    ) -> bool:
+        return self.primary.supports_all_reduce_residual(
+            x, residual, norm=norm, output_key=output_key
+        ) or self.fallback.supports_all_reduce_residual(
+            x, residual, norm=norm, output_key=output_key
+        )
+
+    def all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+    ) -> torch.Tensor:
         for backend in (self.primary, self.fallback):
-            if backend.supports_all_reduce_residual(x, residual, norm=norm):
-                return backend.all_reduce_residual(x, residual, norm=norm)
+            if backend.supports_all_reduce_residual(x, residual, norm=norm, output_key=output_key):
+                return backend.all_reduce_residual(x, residual, norm=norm, output_key=output_key)
         # A backend may reduce this tensor without covering its epilogue.
         # Keep capability-based routing for the reduction and compose the rest.
-        return super().all_reduce_residual(x, residual, norm=norm)
+        return super().all_reduce_residual(x, residual, norm=norm, output_key=output_key)
 
     @contextmanager
     def capture(self):
@@ -249,8 +283,13 @@ class DistributedCommunicator:
     def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
         return self._backend().all_to_all(x)
 
-    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
-        return self._backend().all_reduce_residual(x, residual, norm=norm)
+    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+        return self._backend().reserve_output(key, shape, dtype)
+
+    def all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+    ) -> torch.Tensor:
+        return self._backend().all_reduce_residual(x, residual, norm=norm, output_key=output_key)
 
     @contextmanager
     def capture(self):

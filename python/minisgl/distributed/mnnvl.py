@@ -34,13 +34,139 @@ class MNNVLAllReduceProvider:
     collectives use the same process group through ordinary Torch/NCCL calls.
     """
 
-    def __init__(self, comm, *, group=None, execution_context=nullcontext, input_alignment=1):
+    def __init__(
+        self,
+        comm,
+        *,
+        group=None,
+        execution_context=nullcontext,
+        input_alignment=1,
+        output_group=None,
+        device=None,
+    ):
         self.comm = comm
         self.group = group
         self.execution_context = execution_context
         if input_alignment < 1 or input_alignment & (input_alignment - 1):
             raise ValueError("Collective input alignment must be a positive power of two")
         self.input_alignment = input_alignment
+        self.output_group = output_group
+        self.device = torch.device(device) if device is not None else None
+        self._outputs = {}
+        self._capturing = False
+        self._closed = False
+
+    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+        """Collective preparation, including reuse and rejected requests."""
+        if self.output_group is None or self.device is None or self.device.type != "cuda":
+            return None
+
+        error = None
+        if not isinstance(dtype, torch.dtype):
+            error = ("value", "Output reservation dtype must be a torch dtype")
+        elif (
+            not isinstance(key, str)
+            or not key
+            or not isinstance(shape, (tuple, list, torch.Size))
+            or not shape
+            or any(not isinstance(size, int) or size <= 0 for size in shape)
+        ):
+            error = ("value", "Output reservation needs a name and positive integer shape")
+        elif self._closed:
+            error = ("state", "Cannot reserve output on a closed communicator")
+        elif self._capturing or torch.cuda.is_current_stream_capturing():
+            error = ("state", "Output reservation must precede graph capture")
+
+        spec = None if error else (key, tuple(shape), str(dtype))
+        previous = self._outputs.get(key) if error is None else None
+        if previous is not None:
+            tensor, _ = previous
+            if tuple(tensor.shape) != tuple(shape) or tensor.dtype != dtype:
+                error = ("value", "Cannot resize or change dtype of a reserved output")
+        action = "error" if error else "reuse" if previous is not None else "new"
+        available = not getattr(self.comm, "disabled", False) and getattr(
+            self.comm, "has_multicast", False
+        )
+        # Every call agrees before returning, including cache hits and local
+        # validation errors. A rank must never reuse while a peer rendezvouses.
+        peers = [None] * dist.get_world_size(self.output_group)
+        dist.all_gather_object(
+            peers, (spec, action, error, bool(available)), group=self.output_group
+        )
+        errors = [peer[2] for peer in peers if peer[2] is not None]
+        if errors:
+            kind, message = errors[0]
+            raise (ValueError if kind == "value" else RuntimeError)(message)
+        if any(peer[0] != peers[0][0] for peer in peers):
+            raise ValueError("Output reservation differs across communicator ranks")
+        if any(peer[1] != peers[0][1] for peer in peers):
+            raise RuntimeError("Output reservation reuse/new state differs across ranks")
+        if not all(peer[3] for peer in peers):
+            return None
+        if action == "reuse":
+            return previous[0]
+        shape = tuple(shape)
+
+        # Allocation is local. Agree its outcome before any rank enters the
+        # collective rendezvous, so one rank's OOM cannot strand its peers.
+        tensor = handle = None
+        error = None
+        try:
+            from torch._C._distributed_c10d import _SymmetricMemory
+
+            # Persistent mutable storage even inside inference_mode.
+            with torch.inference_mode(False):
+                tensor = _SymmetricMemory.empty_strided_p2p(
+                    (torch.Size(shape).numel(),),
+                    [1],
+                    dtype,
+                    self.device,
+                    self.output_group.group_name,
+                ).view(shape)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        dist.all_gather_object(peers, error, group=self.output_group)
+        if any(peer is not None for peer in peers):
+            tensor = None
+            details = next(f"rank {rank}: {peer}" for rank, peer in enumerate(peers) if peer)
+            raise RuntimeError(f"Output reservation allocation failed on {details}")
+
+        # Do not publish a slot on only some ranks if rendezvous or multicast
+        # validation fails locally. Retain temporary mappings until agreement.
+        error = None
+        try:
+            handle = _SymmetricMemory.rendezvous(tensor)
+            if handle is None or not handle.multicast_ptr:
+                raise RuntimeError("Reserved output has no multicast mapping")
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        dist.all_gather_object(peers, error, group=self.output_group)
+        if any(peer is not None for peer in peers):
+            handle = tensor = None
+            details = next(f"rank {rank}: {peer}" for rank, peer in enumerate(peers) if peer)
+            raise RuntimeError(f"Output reservation mapping failed on {details}")
+        self._outputs[key] = (tensor, handle)
+        return tensor
+
+    def _output_mc_ptr(self, x: torch.Tensor, *, key: str | None = None):
+        """Resolve contiguous aliases within the explicitly named reservation."""
+        if not x.is_contiguous():
+            return None
+        ptr = x.data_ptr()
+        end = ptr + x.numel() * x.element_size()
+        outputs = self._outputs.values() if key is None else (self._outputs.get(key),)
+        for output in outputs:
+            if output is None:
+                continue
+            tensor, handle = output
+            if (
+                x.device == tensor.device
+                and x.dtype == tensor.dtype
+                and tensor.data_ptr() <= ptr
+                and end <= tensor.data_ptr() + tensor.nbytes
+            ):
+                return int(handle.multicast_ptr) + ptr - tensor.data_ptr()
+        return None
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         # Normalize locally instead of choosing a different collective on peers
@@ -64,12 +190,26 @@ class MNNVLAllReduceProvider:
     def capture(self):
         capture = getattr(self.comm, "capture", None)
         with self.execution_context(), capture() if capture is not None else nullcontext():
-            yield
+            previous = self._capturing
+            self._capturing = True
+            try:
+                yield
+            finally:
+                self._capturing = previous
 
     def close(self) -> None:
+        if self._closed:
+            return
+        # Engine destroys its graphs before distributed teardown. Drain any
+        # remaining use before closing communication and dropping mappings.
+        # A device/close failure deliberately retains the reservations.
+        if self._outputs:
+            torch.cuda.synchronize(self.device)
         close = getattr(self.comm, "close", None)
         if close is not None:
             close()
+        self._outputs.clear()
+        self._closed = True
 
 
 class MNNVLDistributedImpl(DistributedImpl):
@@ -96,14 +236,26 @@ class MNNVLDistributedImpl(DistributedImpl):
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
         return self.provider.all_gather(x)
 
-    def supports_all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> bool:
-        method = getattr(self.provider, "supports_all_reduce_residual", None)
-        return bool(method(x, residual, norm=norm)) if method is not None else False
+    def reserve_output(self, key: str, shape: tuple[int, ...], dtype: torch.dtype):
+        reserve = getattr(self.provider, "reserve_output", None)
+        return reserve(key, shape, dtype) if reserve is not None else None
 
-    def all_reduce_residual(self, x: torch.Tensor, residual=None, *, norm=None) -> torch.Tensor:
-        if not self.supports_all_reduce_residual(x, residual, norm=norm):
-            return super().all_reduce_residual(x, residual, norm=norm)
-        return self.provider.all_reduce_residual(x, residual, norm=norm)
+    def supports_all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+    ) -> bool:
+        method = getattr(self.provider, "supports_all_reduce_residual", None)
+        return (
+            bool(method(x, residual, norm=norm, output_key=output_key))
+            if method is not None
+            else False
+        )
+
+    def all_reduce_residual(
+        self, x: torch.Tensor, residual=None, *, norm=None, output_key: str | None = None
+    ) -> torch.Tensor:
+        if not self.supports_all_reduce_residual(x, residual, norm=norm, output_key=output_key):
+            return super().all_reduce_residual(x, residual, norm=norm, output_key=output_key)
+        return self.provider.all_reduce_residual(x, residual, norm=norm, output_key=output_key)
 
     def capture(self):
         capture = getattr(self.provider, "capture", None)

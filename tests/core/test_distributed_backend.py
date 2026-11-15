@@ -65,17 +65,19 @@ def test_mnnvl_adapter_exposes_optional_fused_residual():
         def all_gather(self, tensor):
             return tensor
 
-        def supports_all_reduce_residual(self, tensor, residual, *, norm=None):
+        def supports_all_reduce_residual(self, tensor, residual, *, norm=None, output_key=None):
+            assert output_key == "projection"
             return residual is not None and norm is not None
 
-        def all_reduce_residual(self, tensor, residual=None, *, norm=None):
+        def all_reduce_residual(self, tensor, residual=None, *, norm=None, output_key=None):
+            assert output_key == "projection"
             return norm(tensor + 1 + residual)
 
     backend = MNNVLDistributedImpl(Provider())
     x = torch.zeros(2)
     assert backend.all_reduce(x).eq(1).all()
-    assert backend.supports_all_reduce_residual(x, x, norm=torch.neg)
-    assert backend.all_reduce_residual(x, x, norm=torch.neg).eq(-1).all()
+    assert backend.supports_all_reduce_residual(x, x, norm=torch.neg, output_key="projection")
+    assert backend.all_reduce_residual(x, x, norm=torch.neg, output_key="projection").eq(-1).all()
 
 
 def test_mnnvl_custom_allreduce_provider_uses_external_collective(monkeypatch):
@@ -119,24 +121,28 @@ def test_residual_fusion_capability_receives_full_epilogue():
         def __init__(self, enabled):
             self.enabled = enabled
 
-        def supports_all_reduce_residual(self, tensor, skip=None, *, norm=None):
-            calls.append((self.enabled, skip is residual, norm is torch.square))
+        def supports_all_reduce_residual(self, tensor, skip=None, *, norm=None, output_key=None):
+            calls.append((self.enabled, skip is residual, norm is torch.square, output_key))
             return self.enabled and skip is residual and norm is torch.square
 
-        def all_reduce_residual(self, tensor, skip=None, *, norm=None):
-            assert self.enabled
+        def all_reduce_residual(self, tensor, skip=None, *, norm=None, output_key=None):
+            assert self.enabled and output_key == "projection"
             return norm(tensor + 3 + skip)
 
     backend = FallbackDistributedImpl(Backend(False), Backend(True))
-    assert backend.supports_all_reduce_residual(x, residual, norm=torch.square)
-    actual = backend.all_reduce_residual(x, residual, norm=torch.square)
+    assert backend.supports_all_reduce_residual(
+        x, residual, norm=torch.square, output_key="projection"
+    )
+    actual = backend.all_reduce_residual(x, residual, norm=torch.square, output_key="projection")
     torch.testing.assert_close(actual, torch.square(x + 3 + residual))
-    assert calls == [(False, True, True), (True, True, True)] * 2
+    assert calls == [(False, True, True, "projection"), (True, True, True, "projection")] * 2
 
 
 def test_unsupported_residual_fusion_uses_capable_reduction_then_epilogue():
     class Provider:
-        def supports_all_reduce_residual(self, tensor, residual=None, *, norm=None):
+        def supports_all_reduce_residual(
+            self, tensor, residual=None, *, norm=None, output_key=None
+        ):
             return False
 
         def all_reduce_residual(self, *args, **kwargs):

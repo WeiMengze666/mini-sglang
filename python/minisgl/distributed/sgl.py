@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import os
 import tempfile
+from functools import cached_property
 from pathlib import Path
 
 import torch
@@ -89,6 +90,127 @@ def create_provider(*, tp_info, cpu_group, device_group, device, max_bytes):
     # The SDK's PDL staging copy uses wider vectors than its 16-byte entry
     # check on Blackwell. Views must meet the copy's alignment on every rank.
     alignment = 32 if torch.cuda.get_device_capability(device)[0] >= 10 else 16
-    return MNNVLAllReduceProvider(
-        comm, group=device_group, execution_context=use_torch_stream, input_alignment=alignment
+    return SGLangMNNVLProvider(
+        comm,
+        group=device_group,
+        execution_context=use_torch_stream,
+        input_alignment=alignment,
+        output_group=cpu_group,
+        device=device,
     )
+
+
+class SGLangMNNVLProvider(MNNVLAllReduceProvider):
+    """Instance-bound SDK in-place AR + a group-replicated residual.
+
+    Native pull is an explicit prepared route: output_key names a reservation
+    and inputs must be corresponding slices on every rank. Plain large tensors
+    keep generic fallback. Capability checks never inspect local addresses to
+    select an algorithm, and no collective error is retried.
+    """
+
+    @cached_property
+    def _residual_ops(self):
+        return importlib.import_module("sglang.kernels.ops.communication.all_reduce_residual")
+
+    @cached_property
+    def _push_max_bytes(self):
+        # Pure SDK selector input; do not initialize its process-global state.
+        module = importlib.import_module("sglang.srt.layers.communication.k3_ar_fusion")
+        return module._PUSH_MAX_BYTES
+
+    @cached_property
+    def _residual_kernel(self):
+        return self._residual_ops._jit_module(self.comm.world_size)
+
+    def supports_all_reduce_residual(
+        self, x, residual=None, *, norm=None, output_key: str | None = None
+    ):
+        # The enabled SDK communicator already validates world size and
+        # multicast capability; SM100/103 is only its wrapper's auto policy.
+        # Only group-uniform semantics and sizes select an algorithm. Local
+        # strides, alignment and multicast aliases never choose a fallback.
+        if self._closed:
+            raise RuntimeError("Cannot reduce on a closed communicator")
+        if output_key is not None and (not isinstance(output_key, str) or not output_key):
+            raise ValueError("output_key must be a nonempty reservation name or None")
+        if (
+            norm is not None
+            or getattr(self.comm, "disabled", False)
+            or not getattr(self.comm, "has_multicast", False)
+            or not x.is_cuda
+            or x.dtype != torch.bfloat16
+            or x.numel() == 0
+            or x.numel() % 8
+        ):
+            return False
+        if residual is not None and (residual.shape != x.shape or residual.dtype != x.dtype):
+            return False
+        if x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size):
+            return True
+        return bool(
+            output_key is not None
+            and getattr(self.comm, "pull_enabled", False)
+            and x.numel() // 8 < 1 << 31
+        )
+
+    def all_reduce_residual(self, x, residual=None, *, norm=None, output_key: str | None = None):
+        """Native in-place AR + residual; return the possibly normalized input.
+
+        Kernels mutate their input in place. Push may first copy a strided or
+        unaligned input and returns that copy. A reserved result is borrowed
+        until the same slot is written again; callers copy retained aliases.
+        The residual is group-replicated and logically read-only. Overlapping
+        residual storage is snapshotted before dispatch; aliases of mutated x
+        still observe its writes, so callers copy aliases they retain. Native
+        pull additionally requires the same explicit output_key and slice on
+        every rank; local storage violations raise before launch. First
+        invocation must run during warmup, before graph capture.
+        """
+        if not self.supports_all_reduce_residual(x, residual, norm=norm, output_key=output_key):
+            raise ValueError("Native AR + residual does not cover this input")
+        if x.device != self.device or (residual is not None and residual.device != x.device):
+            raise ValueError("Native AR + residual input is on the wrong local device")
+        push = x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size)
+        if push:
+            if not x.is_contiguous() or x.data_ptr() % 16:
+                x = x.clone(memory_format=torch.contiguous_format)
+            mc_ptr = None
+        else:
+            mc_ptr = self._output_mc_ptr(x, key=output_key)
+            if not x.is_contiguous() or x.data_ptr() % 16 or mc_ptr is None:
+                raise ValueError(
+                    f"Native pull requires a contiguous reserved multicast alias of {output_key!r}"
+                )
+        if residual is not None and (
+            not residual.is_contiguous()
+            or residual.data_ptr() % 16
+            or torch._C._overlaps(x, residual)
+        ):
+            residual = residual.clone(memory_format=torch.contiguous_format)
+        if "_residual_kernel" not in self.__dict__ and torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("Warm native AR + residual before graph capture")
+        # Exact SDK Communicator ABI, bound to this instance rather than its
+        # public wrappers' world-size-global _COMM_MAP.
+        kernel = self._residual_kernel
+        flat = x.view(-1)
+        residual = residual.view(-1) if residual is not None else None
+        with self.execution_context():
+            if push:
+                kernel.push_res(self.comm.obj, flat, residual)
+            else:
+                tuning = self._residual_ops._resolve_tuning(
+                    self._residual_ops.RES_TUNING,
+                    nbytes=x.nbytes,
+                    num_blocks=None,
+                    unroll=None,
+                )
+                kernel.pull_res(
+                    self.comm.obj,
+                    flat,
+                    residual,
+                    mc_ptr,
+                    tuning.num_blocks,
+                    tuning.unroll,
+                )
+        return x
