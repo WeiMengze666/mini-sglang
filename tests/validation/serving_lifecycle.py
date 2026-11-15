@@ -95,7 +95,7 @@ def run(model, output, unified, args):
         sys.executable,
         "-m",
         "minisgl",
-        "--model",
+        "--model-path",
         str(model),
         "--port",
         str(port),
@@ -107,10 +107,12 @@ def run(model, output, unified, args):
         str(args.num_pages),
         "--page-size",
         str(args.page_size),
-        "--max-extend-length",
+        "--max-prefill-tokens",
         str(args.max_extend_tokens),
-        "--max-cached-states",
-        "8",
+        "--chunked-prefill-size",
+        str(args.max_extend_tokens),
+        "--mamba-full-memory-ratio",
+        str(args.mamba_full_memory_ratio),
         "--tp-size",
         str(args.tp_size),
         "--dcp-size",
@@ -123,11 +125,11 @@ def run(model, output, unified, args):
         args.attention_backend,
     ]
     if args.max_seq_len is not None:
-        command.extend(("--max-seq-len-override", str(args.max_seq_len)))
+        command.extend(("--context-length", str(args.max_seq_len)))
     if args.cuda_graph_max_bs is not None:
-        command.extend(("--cuda-graph-max-bs", str(args.cuda_graph_max_bs)))
-    if args.enable_cache_overlap:
-        command.append("--enable-cache-overlap")
+        command.extend(("--cuda-graph-max-bs-decode", str(args.cuda_graph_max_bs)))
+    if not args.enable_cache_overlap:
+        command.append("--disable-overlap-schedule")
     if unified:
         command.append("--enable-unified-memory")
     log = output / ("http-unified.log" if unified else "http-static.log")
@@ -266,7 +268,15 @@ def main():
         help="Use an existing local checkpoint instead of generating a fixture",
     )
     parser.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
-    parser.add_argument("--num-pages", type=int, default=128)
+    parser.add_argument(
+        "--num-pages", type=int, default=2048, help="Token-page cache budget for the small fixture."
+    )
+    parser.add_argument(
+        "--mamba-full-memory-ratio",
+        type=float,
+        default=0.31,
+        help="State/KV memory ratio for the small fixture's cache budget.",
+    )
     parser.add_argument("--page-size", type=int, default=2)
     parser.add_argument("--max-extend-tokens", type=int, default=4)
     parser.add_argument("--max-seq-len", type=int)

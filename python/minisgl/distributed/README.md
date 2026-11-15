@@ -5,7 +5,7 @@ derives contiguous ranges, tensor shard specs, and local expert IDs. It holds no
 process-group or communication resources.
 
 `ParallelLayout(tensor, dcp_size, ep_size)` composes the TP descriptor with
-independent context/expert layout rules. Its `context`, `attention`, `experts`
+independent context/expert layout rules. Its `context`, `mla_decode`, `experts`
 and `expert_tensor` views are derived `DistributedInfo` objects. It does not
 store another rank/size pair or parallel copies of the derived coordinates.
 
@@ -15,9 +15,12 @@ For TP rank 5 of 8, DCP=2 and EP=4:
 | --- | ---: | ---: |
 | tensor | 5 | 8 |
 | context | 1 | 2 |
-| attention | 2 | 4 |
+| mla_decode | 2 | 4 |
 | experts | 1 | 4 |
 | expert_tensor | 1 | 2 |
+
+KDA remains sharded across the full tensor-parallel group; `mla_decode` describes
+only the expanded MLA decode head ownership.
 
 These are logical coordinates; they are not global member lists.
 `init_context_parallel` creates the actual subgroup handles in a consistent order.
