@@ -49,6 +49,22 @@ class DistributedImpl(ABC):
         """Whether this backend can gather this tensor without fallback."""
         return True
 
+    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+        """Whether this backend covers a replicated linear projection and add."""
+        return False
+
+    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
+        """Return owned x @ weight.T + addend via column GEMM and all-gather.
+
+        Every group member supplies the same replicated x, FULL replicated
+        weight, and already-reduced addend. Inputs are read-only and must remain
+        live until current-stream consumption completes. This optional inference
+        operation is not row-parallel linear or a reduction of local partials.
+        Callers select capability before launch and keep their ordinary Linear
+        path when unsupported; native errors must never trigger a retry.
+        """
+        raise NotImplementedError("This communication backend does not support linear all-gather")
+
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
     ):
@@ -173,6 +189,17 @@ class FallbackDistributedImpl(DistributedImpl):
     def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
         backend = self.primary if self._supports(self.primary, "all_to_all", x) else self.fallback
         return backend.all_to_all(x)
+
+    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+        return self.primary.supports_linear_all_gather(
+            x, weight, addend
+        ) or self.fallback.supports_linear_all_gather(x, weight, addend)
+
+    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
+        for backend in (self.primary, self.fallback):
+            if backend.supports_linear_all_gather(x, weight, addend):
+                return backend.linear_all_gather(x, weight, addend)
+        return super().linear_all_gather(x, weight, addend)
 
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
@@ -359,6 +386,12 @@ class DistributedCommunicator:
 
     def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
         return self._backend().all_to_all(x)
+
+    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+        return self._backend().supports_linear_all_gather(x, weight, addend)
+
+    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
+        return self._backend().linear_all_gather(x, weight, addend)
 
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True

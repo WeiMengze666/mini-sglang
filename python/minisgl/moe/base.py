@@ -79,6 +79,40 @@ class BaseMoeBackend(ABC):
         elif stream.device != output.device:
             raise ValueError("A MoE backend cannot reuse its output stream on another device")
 
+    def project_outputs(
+        self, parallel, mixed, shared, projection=None, *, output_dtype=None, prepared=False
+    ):
+        """Project the reduced mixture and add the already-reduced shared result.
+
+        prepared identifies the existing same-dtype producer slots. The optional
+        collective consumes replicated mixture/shared tensors and a FULL replicated
+        dense projection weight; it returns owned storage. Other paths preserve
+        the projection's own forward and the original shared cast-before-add.
+        Stream dependencies and input lifetimes belong to forward_outputs.
+        """
+        from minisgl.layers.linear import Linear
+
+        if type(prepared) is not bool:
+            raise ValueError("Projection preparation hint must be a bool")
+        dtype = mixed.dtype if output_dtype is None else output_dtype
+        if (
+            prepared
+            and mixed.is_cuda
+            and shared is not None
+            and type(projection) is Linear
+            and projection.weight_format == "dense"
+            and projection.bias is None
+            and mixed.dtype == shared.dtype == projection.weight.dtype == dtype == torch.bfloat16
+        ):
+            from minisgl.distributed.layout import get_parallel_layout
+
+            if get_parallel_layout().ep_size == 1 and parallel.supports_linear_all_gather(
+                mixed, projection.weight, shared
+            ):
+                return parallel.linear_all_gather(mixed, projection.weight, shared)
+        result = projection.forward(mixed) if projection is not None else mixed
+        return result + shared.to(dtype) if shared is not None else result
+
     def forward_outputs(
         self,
         parallel,

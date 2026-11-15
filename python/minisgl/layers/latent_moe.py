@@ -315,9 +315,12 @@ class LatentMoE(BaseOP):
             ),
             topk=routing.topk,
         )
-        output = mixed
-        if self.routed_expert_up_proj is not None:
-            output = self.routed_expert_up_proj.forward(output)
-        if shared is not None:
-            output = output + shared.to(x.dtype)
+        output = self._backend.project_outputs(
+            self._tp,
+            mixed,
+            shared,
+            self.routed_expert_up_proj,
+            output_dtype=x.dtype,
+            prepared=packed is not None,
+        )
         return output.reshape(shape)

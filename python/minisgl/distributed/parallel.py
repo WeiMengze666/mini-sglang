@@ -35,6 +35,15 @@ class TensorParallel:
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
         return self._comm.all_gather(x) if self.size > 1 else x
 
+    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+        return self.size > 1 and self._comm.supports_linear_all_gather(x, weight, addend)
+
+    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
+        """Column GEMM + gather with full replicated operands; returns owned output."""
+        if self.size == 1:
+            raise NotImplementedError("Singleton linear keeps the ordinary Linear path")
+        return self._comm.linear_all_gather(x, weight, addend)
+
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
     ):
