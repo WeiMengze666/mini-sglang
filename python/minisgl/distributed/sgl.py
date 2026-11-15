@@ -127,6 +127,78 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
     def _residual_kernel(self):
         return self._residual_ops._jit_module(self.comm.world_size)
 
+    @cached_property
+    def _linear_all_gather_ops(self):
+        return importlib.import_module("sglang.kernels.ops.communication.gemm_ag")
+
+    @cached_property
+    def _linear_all_gather_kernel(self):
+        return self._linear_all_gather_ops._jit_module()
+
+    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+        if self._closed:
+            raise RuntimeError("Cannot project on a closed communicator")
+        if (
+            getattr(self.comm, "disabled", False)
+            or not getattr(self.comm, "has_multicast", False)
+            or self.comm.world_size != 8
+            or not all(
+                value.is_cuda and value.dtype == torch.bfloat16 for value in (x, weight, addend)
+            )
+            or x.ndim != 2
+            or weight.ndim != 2
+            or addend.ndim != 2
+        ):
+            return False
+        ops = self._linear_all_gather_ops
+        rows = x.shape[0]
+        blocks = getattr(getattr(self.comm, "config", None), "num_push_blocks", 0)
+        window = self.comm.max_push_size
+        # gemm_ag.cuh:25-28,249-281: 8 BF16/thread, 128 threads/block,
+        # one cleanup block. Only the consumer grid is counter-limited.
+        consumers = (rows * ops.N + 1023) // 1024
+        return (
+            0 < rows <= ops.MAX_TOKENS
+            and x.shape[1] == ops.K
+            and tuple(weight.shape) == (ops.N, ops.K)
+            and tuple(addend.shape) == (rows, ops.N)
+            and rows * (ops.N // 8) * 2 <= window
+            and 0 < window * self.comm.world_size < 1 << 32
+            and consumers + 1 <= blocks
+        )
+
+    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
+        """Instance-bound SDK column GEMV + AG + add with replicated operands.
+
+        The SDK slices the FULL weight inside its producer. The returned tensor
+        owns fresh storage; x, weight and addend remain read-only. Local storage
+        violations raise after uniform capability selection, never switching one
+        rank back to a replicated GEMM. Warm the SDK module before graph capture.
+        """
+        if not self.supports_linear_all_gather(x, weight, addend):
+            raise ValueError("Native linear all-gather does not cover these operands")
+        for value, alignment in ((x, 32), (weight, 32), (addend, 16)):
+            if (
+                value.device != self.device
+                or not value.is_contiguous()
+                or value.data_ptr() % alignment
+                or value.requires_grad
+            ):
+                raise ValueError(
+                    "Native linear all-gather requires aligned contiguous local inference operands"
+                )
+        if (
+            "_linear_all_gather_kernel" not in self.__dict__
+            and torch.cuda.is_current_stream_capturing()
+        ):
+            raise RuntimeError("Warm native linear all-gather before graph capture")
+        kernel = self._linear_all_gather_kernel
+        output = torch.empty_like(addend)
+        with self.execution_context():
+            # b is already-reduced shared; c belongs to the outer residual owner.
+            kernel.run(self.comm.obj, x, weight, addend, None, output)
+        return output
+
     def supports_all_reduce_residual(
         self, x, residual=None, *, norm=None, output_key: str | None = None, overlap: bool = False
     ):

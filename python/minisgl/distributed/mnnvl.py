@@ -279,6 +279,15 @@ class MNNVLDistributedImpl(DistributedImpl):
             return super().all_reduce_residual(x, residual, **options)
         return self.provider.all_reduce_residual(x, residual, **options)
 
+    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+        method = getattr(self.provider, "supports_linear_all_gather", None)
+        return bool(method(x, weight, addend)) if method is not None else False
+
+    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
+        if not self.supports_linear_all_gather(x, weight, addend):
+            return super().linear_all_gather(x, weight, addend)
+        return self.provider.linear_all_gather(x, weight, addend)
+
     def capture(self):
         capture = getattr(self.provider, "capture", None)
         return capture() if capture is not None else nullcontext()
