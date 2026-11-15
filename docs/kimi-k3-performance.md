@@ -4,7 +4,7 @@
 
 The [compact evidence summary](validation/kimi-k3-canonical-16k-20261116.json)
 records accepted **unprofiled** TP8/DCP8/EP1 runs: both prefill budgets 16384,
-context 1048576, concurrency 48, 393 dataset entries and seed 42. The canonical
+context 1048576, concurrency 48, 393 dataset entries and workload seed 42. The canonical
 precision is native FlashInfer MXFP8 expert activations, FP8 E4M3 KV and BF16
 persistent KDA state. BF16-activation/Marlin results below are historical or a
 different precision path.
@@ -46,6 +46,37 @@ canonical configuration does not use a common byte arena for MLA KV and states.
 EP32 qualifies four synthetic NCCL configurations (EP2/8 × N1/48, shared2),
 with 32 rank-process passes. It does not qualify a whole EP model, EP graphs,
 MNNVL or all-to-all transport.
+
+## Current kernel diagnostic (2026-11-16)
+
+The [recovered trace summary](validation/kimi-k3-recovered-trace-20261116.json)
+records a **diagnostic**, not another performance acceptance run. Job35 failed
+at the original 120s Nsight-stop limit; its exact-session raw stream was recovered
+offline without a new GPU run. The 15.39s software trace contains 5,714,636 kernel
+records across eight owned ranks, each with 213 graph launches. Its 29 incomplete
+CUPTI drops and generic missing-buffer warning remain recorded. The original
+900s workload did not complete.
+
+Actual decode batches were17--21. The native weighted finalization, KDA,
+MLA FP8 write/query, output gate and DCP paths were observed. GEMV/all-gather
+fusion was correctly ineligible because every sampled batch exceeded12. Two
+roughly2.1s gaps between decode graphs contained substantial eager/collective
+work; cross-rank arrival and waiting varied. This does not identify CPU
+scheduling or communication bandwidth as the cause. The paired official
+software trace was submitted as job37 using the retained baseline configuration;
+its result is pending in this snapshot.
+
+Small GPU copies consistent with sampled IDs total only0.808ms on GPU0 in
+this segment; host allocation and synchronization costs are not measured by
+that number. The independent result-copy-stream feature passed79 CPU checks,
+but job36 failed its producer-before-copy observation and did not qualify CUDA
+IDs or the graph case. It remains a separate feature without a speedup claim.
+Both runtimes default to decode-only MoE tuning; broader prefill tuning is an
+official opt-in, not a proven missing default or established bottleneck.
+
+AIPerf seed42 controls the workload. These requests use non-greedy server
+defaults; server RNG seeds and GPU sampling algorithms differ. This is not a
+per-token greedy comparison.
 
 ## Historical reports
 
