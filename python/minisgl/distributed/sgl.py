@@ -138,9 +138,21 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
             raise RuntimeError("Cannot reduce on a closed communicator")
         if output_key is not None and (not isinstance(output_key, str) or not output_key):
             raise ValueError("output_key must be a nonempty reservation name or None")
+        if norm is not None:
+            from minisgl.layers.norm import RMSNormEpilogue
+
+            if (
+                not isinstance(norm, RMSNormEpilogue)
+                or residual is not None
+                or norm.width != 3584
+                or norm.weight.dtype != torch.bfloat16
+                or type(norm.num_norm_rows) is not int
+                or not 0 <= norm.num_norm_rows <= x.numel() // 3584
+                or x.numel() % 3584
+            ):
+                return False
         if (
-            norm is not None
-            or getattr(self.comm, "disabled", False)
+            getattr(self.comm, "disabled", False)
             or not getattr(self.comm, "has_multicast", False)
             or not x.is_cuda
             or x.dtype != torch.bfloat16
@@ -151,7 +163,9 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         if residual is not None and (residual.shape != x.shape or residual.dtype != x.dtype):
             return False
         if x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size):
-            return True
+            # SDK ar_fusion.cuh:768-771 requires row_clusters < push.num_blocks.
+            # At its <=512KiB push bound, rows<=73<96, so row_clusters==rows.
+            return norm is None or x.numel() // 3584 < self.comm.config.num_push_blocks
         return bool(
             output_key is not None
             and getattr(self.comm, "pull_enabled", False)
@@ -159,7 +173,12 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         )
 
     def all_reduce_residual(self, x, residual=None, *, norm=None, output_key: str | None = None):
-        """Native in-place AR + residual; return the possibly normalized input.
+        """Native in-place AR + residual or a prefix RMSNorm epilogue.
+
+        The SDK norm kernels reduce the entire packed buffer and normalize
+        only the requested leading rows. Push computes RMS statistics from
+        FP32 sums before rounding its numerator; this intentionally follows
+        the official fused algorithm rather than a bitwise split-op oracle.
 
         Kernels mutate their input in place. Push may first copy a strided or
         unaligned input and returns that copy. A reserved result is borrowed
@@ -175,6 +194,18 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
             raise ValueError("Native AR + residual does not cover this input")
         if x.device != self.device or (residual is not None and residual.device != x.device):
             raise ValueError("Native AR + residual input is on the wrong local device")
+        if norm is not None:
+            weight = norm.weight
+            if (
+                weight.device != x.device
+                or weight.ndim != 1
+                or not weight.is_contiguous()
+                or weight.data_ptr() % 16
+                or torch._C._overlaps(weight, x)
+            ):
+                raise ValueError(
+                    "Native RMSNorm weights require separate contiguous aligned local storage"
+                )
         push = x.nbytes <= min(self._push_max_bytes, self.comm.max_push_size)
         if push:
             if not x.is_contiguous() or x.data_ptr() % 16:
@@ -201,20 +232,32 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         residual = residual.view(-1) if residual is not None else None
         with self.execution_context():
             if push:
-                kernel.push_res(self.comm.obj, flat, residual)
+                if norm is None:
+                    kernel.push_res(self.comm.obj, flat, residual)
+                else:
+                    kernel.push_norm(self.comm.obj, flat, norm.weight, norm.eps, norm.num_norm_rows)
             else:
                 tuning = self._residual_ops._resolve_tuning(
-                    self._residual_ops.RES_TUNING,
+                    self._residual_ops.RES_TUNING
+                    if norm is None
+                    else self._residual_ops.NORM_TUNING,
                     nbytes=x.nbytes,
                     num_blocks=None,
                     unroll=None,
                 )
-                kernel.pull_res(
-                    self.comm.obj,
-                    flat,
-                    residual,
-                    mc_ptr,
-                    tuning.num_blocks,
-                    tuning.unroll,
-                )
+                if norm is None:
+                    kernel.pull_res(
+                        self.comm.obj, flat, residual, mc_ptr, tuning.num_blocks, tuning.unroll
+                    )
+                else:
+                    kernel.pull_norm(
+                        self.comm.obj,
+                        flat,
+                        norm.weight,
+                        norm.eps,
+                        norm.num_norm_rows,
+                        mc_ptr,
+                        tuning.num_blocks,
+                        tuning.unroll,
+                    )
         return x

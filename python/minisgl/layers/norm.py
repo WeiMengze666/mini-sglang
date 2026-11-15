@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Tuple
 
 import torch
@@ -62,3 +63,43 @@ class TorchRMSNorm(BaseOP):
         if use_strict_bf16() and x.dtype == self.weight.dtype == torch.bfloat16:
             return (normalized * self.weight.float()).to(x.dtype)
         return normalized.to(x.dtype) * self.weight
+
+
+@dataclass(frozen=True)
+class RMSNormEpilogue:
+    """Normalize only the leading rows of borrowed packed reduction storage.
+
+    The original normalizer owns the fallback arithmetic. This same-dtype
+    in-place epilogue leaves every trailing element unchanged; casts required
+    by an allocating/FP32 expert path stay with the MoE backend.
+    """
+
+    normalizer: TorchRMSNorm
+    num_norm_rows: int
+
+    @property
+    def weight(self) -> torch.Tensor:
+        return self.normalizer.weight
+
+    @property
+    def eps(self) -> float:
+        return self.normalizer.eps
+
+    @property
+    def width(self) -> int:
+        return self.weight.numel()
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        if type(self.num_norm_rows) is not int or self.num_norm_rows < 0 or self.width < 1:
+            raise ValueError("RMSNorm epilogue requires nonnegative rows and positive width")
+        count = self.num_norm_rows * self.width
+        if not x.is_contiguous() or count > x.numel():
+            raise ValueError("RMSNorm prefix must fit contiguous packed storage")
+        if x.dtype != self.weight.dtype:
+            raise ValueError("Packed RMSNorm epilogue requires matching storage and weight dtype")
+        if torch._C._overlaps(x, self.weight):
+            raise ValueError("Packed RMSNorm output must not overlap normalization weights")
+        if count:
+            prefix = x.view(-1)[:count].view(self.num_norm_rows, self.width)
+            prefix.copy_(self.normalizer.forward(prefix))
+        return x

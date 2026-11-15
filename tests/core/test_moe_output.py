@@ -46,11 +46,12 @@ class Parallel:
         self.events.append(("generic",))
         return x * 2
 
-    def all_reduce_residual(self, x, residual=None, *, output_key=None):
+    def all_reduce_residual(self, x, residual=None, *, norm=None, output_key=None):
         assert residual is None and output_key in self.outputs
         assert x.is_contiguous()
         self.events.append(("prepared", output_key))
-        return x.mul_(2) if self.inplace else x * 2
+        reduced = x.mul_(2) if self.inplace else x * 2
+        return norm(reduced) if norm is not None else reduced
 
 
 @pytest.fixture(autouse=True)

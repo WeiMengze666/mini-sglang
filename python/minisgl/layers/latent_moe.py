@@ -291,13 +291,12 @@ class LatentMoE(BaseOP):
         # Reduce partials before nonlinear latent normalization/up-projection.
         # Strict BF16 rounds each local mixture before the collective.
         options = {} if packed is None else {"packed": packed, "output_key": self._reserved_key}
+        options.update(norm=self.routed_expert_norm, output_dtype=x.dtype)
         if shared is not None:
             mixed, shared = self._backend.reduce_outputs(self._tp, mixed, shared, **options)
         else:
-            (mixed,) = self._backend.reduce_outputs(self._tp, mixed)
-        output = mixed.to(x.dtype)
-        if self.routed_expert_norm is not None:
-            output = self.routed_expert_norm.forward(output)
+            (mixed,) = self._backend.reduce_outputs(self._tp, mixed, **options)
+        output = mixed
         if self.routed_expert_up_proj is not None:
             output = self.routed_expert_up_proj.forward(output)
         if shared is not None:

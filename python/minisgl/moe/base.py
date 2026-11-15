@@ -49,17 +49,22 @@ class BaseMoeBackend(ABC):
         weights, ids = routing.select(self)
         return executor.forward(x, weights, ids, **options)
 
-    def reduce_outputs(self, parallel, *outputs, packed=None, output_key=None):
-        """Reduce partials, optionally already written into caller-owned packed storage."""
+    def reduce_outputs(
+        self, parallel, *outputs, packed=None, output_key=None, norm=None, output_dtype=None
+    ):
+        """Reduce local partials, then cast and optionally normalize the mixture.
+
+        A prepared same-dtype RMS epilogue can normalize the latent prefix in
+        the selected communication backend. Other paths keep the original
+        reduce -> mixture cast -> normalizer order, including FP32 partials.
+        """
+        from minisgl.layers.norm import RMSNormEpilogue, TorchRMSNorm
+
         if not outputs:
             raise ValueError("MoE reduction needs at least one output")
-        if len(outputs) == 1 and packed is None:
-            return (parallel.all_reduce(outputs[0]),)
         sizes = [part.numel() for part in outputs]
-        if packed is None:
-            packed = torch.cat([part.to(outputs[0].dtype).flatten() for part in outputs])
-            reduced = parallel.all_reduce(packed)
-        else:
+        epilogue = None
+        if packed is not None:
             if packed.ndim != 1 or not packed.is_contiguous() or packed.numel() != sum(sizes):
                 raise ValueError(
                     "Caller-owned packed MoE output must be an exact contiguous flat tensor"
@@ -76,10 +81,34 @@ class BaseMoeBackend(ABC):
                         "MoE partials must be contiguous consecutive blocks of packed output"
                     )
                 offset += part.numel()
-            reduced = parallel.all_reduce_residual(packed, output_key=output_key)
-        return tuple(
-            part.view(original.shape) for part, original in zip(reduced.split(sizes), outputs)
-        )
+            if (
+                isinstance(norm, TorchRMSNorm)
+                and packed.dtype == output_dtype == norm.weight.dtype == torch.bfloat16
+                and outputs[0].ndim == 2
+                and outputs[0].shape[1] == norm.weight.numel()
+            ):
+                epilogue = RMSNormEpilogue(norm, outputs[0].shape[0])
+            options = {} if epilogue is None else {"norm": epilogue}
+            reduced = parallel.all_reduce_residual(packed, output_key=output_key, **options)
+            parts = tuple(
+                part.view(original.shape) for part, original in zip(reduced.split(sizes), outputs)
+            )
+        elif len(outputs) == 1:
+            parts = (parallel.all_reduce(outputs[0]),)
+        else:
+            value = torch.cat([part.to(outputs[0].dtype).flatten() for part in outputs])
+            reduced = parallel.all_reduce(value)
+            parts = tuple(
+                part.view(original.shape) for part, original in zip(reduced.split(sizes), outputs)
+            )
+        if epilogue is not None:
+            return parts  # Native or callable fallback already normalized the prefix once.
+        mixed, *tail = parts
+        if output_dtype is not None:
+            mixed = mixed.to(output_dtype)
+        if norm is not None:
+            mixed = norm.forward(mixed)
+        return (mixed, *tail)
 
     @abstractmethod
     def forward(
