@@ -79,6 +79,16 @@ class CacheManager:
         interval = self.prefix_cache.checkpoint_interval
         return is_prefill or (interval is not None and length % interval == 0)
 
+    def supports_checkpoint_frontier(self, start, frontier):
+        """Startup-agreed portfolio/alignment only; reservation may still decline."""
+        quantum = self._checkpoint_quantum
+        return (
+            quantum is not None
+            and start < frontier
+            and frontier % lcm(self.page_size, quantum) == 0
+            and (frontier - start) % quantum == 0
+        )
+
     def coordinates_checkpoints(self, batch):
         return self._checkpoint_quantum is not None and batch.is_prefill
 

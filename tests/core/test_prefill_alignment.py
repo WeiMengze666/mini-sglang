@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+from minisgl.scheduler.cache import CacheManager
 from minisgl.scheduler.prefill import PrefillAdder
 
 
@@ -20,7 +21,9 @@ from minisgl.scheduler.prefill import PrefillAdder
 def test_partial_chunks_align_absolute_frontiers_and_final_tails_fit(
     start, budget, length, replay, expected
 ):
-    adder = PrefillAdder(budget, 0, None, None, chunk_alignment=8)
+    cache = object.__new__(CacheManager)
+    cache.page_size, cache._checkpoint_quantum = 8, None
+    adder = PrefillAdder(budget, 0, cache, None, chunk_alignment=8)
     handle = SimpleNamespace(cached_len=start, replay_until=replay)
     assert adder._chunk_size(SimpleNamespace(input_len=length), handle, start) == expected
     assert adder.token_budget == budget
@@ -110,3 +113,23 @@ def test_mixed_prefill_budget_keeps_restorable_intermediate_states(monkeypatch):
     for ids in inputs[1:]:
         assert cache.prefix_cache.match_prefix(ids).cuda_handle.cached_len == 64
     cache.check_integrity()
+
+
+@pytest.mark.parametrize(
+    "start,fork,page,quantum,expected",
+    [
+        (0, 8, 2, 4, 20),
+        (4, 12, 2, 4, 20),
+        (0, 8, 2, None, 8),
+        (2, 8, 2, 4, 6),
+        (0, 6, 6, 4, 6),
+    ],
+)
+def test_only_startup_portfolio_and_aligned_fork_relax_chunk_cap(
+    start, fork, page, quantum, expected
+):
+    cache = object.__new__(CacheManager)
+    cache.page_size, cache._checkpoint_quantum = page, quantum
+    adder = PrefillAdder(20, 0, cache, None)
+    handle = SimpleNamespace(replay_until=fork)
+    assert adder._chunk_size(SimpleNamespace(input_len=40), handle, start) == expected
