@@ -63,6 +63,33 @@ class WorkerOwner:
             os._exit(1)
 
 
+def _prepare_head_all_gather(model, config):
+    """Optional dense-head metadata; unsupported model heads keep transport fallback."""
+    from minisgl.distributed.parallel import TensorParallel
+    from minisgl.layers.linear import Linear
+
+    parallel = TensorParallel()
+    head = getattr(model, "lm_head", None)
+    rows = width = dtype = None
+    if (
+        type(head) is Linear
+        and head.weight_format == "dense"
+        and head.bias is None
+        and head.weight.is_meta
+        and head.weight.ndim == 2
+        and head.weight.dtype == config.dtype == torch.bfloat16
+        and head.weight.shape[0] * parallel.size == config.model_config.vocab_size
+    ):
+        rows = max(
+            128,
+            config.max_running_req,
+            getattr(config, "cuda_graph_max_bs", None) or 0,
+            max(getattr(config, "cuda_graph_bs", None) or (0,)),
+        )
+        width, dtype = head.weight.shape[0], head.weight.dtype
+    return parallel.prepare_all_gather(max_rows=rows, shard_width=width, dtype=dtype)
+
+
 class Engine:
     def __init__(self, config: EngineConfig, *, worker_owner: WorkerOwner | None = None):
         assert not torch.cuda.is_initialized()
@@ -91,13 +118,6 @@ class Engine:
         if config.model_config.is_moe:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
             self.moe_backend.validate_precision(config.mxfp4_activation_precision)
-        # Hybrid rank capacities must agree with the least-free TP device.
-        init_free_memory = self._sync_get_memory()[
-            0 if (config.model_config.cache_config is not None) else 1
-        ]
-        if config.model_config.cache_config is not None:
-            self._initial_free_memory = self._local_free_memory
-        logger.info_rank0(f"Free memory before loading model: {mem_GB(init_free_memory)}")
 
         # ======================= Model initialization ========================
         set_rope_device(self.device)
@@ -114,6 +134,21 @@ class Engine:
                 else None
             )
         )
+        # Native persistent gather storage must be counted before cache sizing.
+        try:
+            _prepare_head_all_gather(self.model, config)
+        except BaseException as error:
+            if worker_owner is not None:
+                worker_owner.abort(error)
+            raise
+
+        # Hybrid rank capacities must agree with the least-free TP device.
+        init_free_memory = self._sync_get_memory()[
+            0 if (config.model_config.cache_config is not None) else 1
+        ]
+        if config.model_config.cache_config is not None:
+            self._initial_free_memory = self._local_free_memory
+        logger.info_rank0(f"Free memory before loading model: {mem_GB(init_free_memory)}")
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
             self.model.load_weights(self._iter_weights(config), device=self.device)

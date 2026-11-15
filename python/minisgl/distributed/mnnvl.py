@@ -15,7 +15,13 @@ from typing import Protocol
 import torch
 import torch.distributed as dist
 
-from .impl import DistributedCommunicator, DistributedImpl, _all_reduce_options
+from .impl import (
+    DistributedCommunicator,
+    DistributedImpl,
+    _all_reduce_options,
+    _gather_last_dim,
+    _validate_all_gather_dim,
+)
 
 
 class MNNVLProvider(Protocol):
@@ -59,6 +65,22 @@ class MNNVLAllReduceProvider:
         self._capturing = False
         self._closed = False
 
+    def _agree_preparation(self, spec, action, error, available, *, label):
+        """Reuse the reservation protocol for instance-bound preparation."""
+        peers = [None] * dist.get_world_size(self.output_group)
+        dist.all_gather_object(
+            peers, (spec, action, error, bool(available)), group=self.output_group
+        )
+        errors = [peer[2] for peer in peers if peer[2] is not None]
+        if errors:
+            kind, message = errors[0]
+            raise (ValueError if kind == "value" else RuntimeError)(message)
+        if any(peer[0] != peers[0][0] for peer in peers):
+            raise ValueError(f"{label} differs across communicator ranks")
+        if any(peer[1] != peers[0][1] for peer in peers):
+            raise RuntimeError(f"{label} reuse/new state differs across ranks")
+        return all(peer[3] for peer in peers)
+
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
     ):
@@ -99,20 +121,9 @@ class MNNVLAllReduceProvider:
         )
         # Every call agrees before returning, including cache hits and local
         # validation errors. A rank must never reuse while a peer rendezvouses.
-        peers = [None] * dist.get_world_size(self.output_group)
-        dist.all_gather_object(
-            peers, (spec, action, error, bool(available)), group=self.output_group
-        )
-        errors = [peer[2] for peer in peers if peer[2] is not None]
-        if errors:
-            kind, message = errors[0]
-            raise (ValueError if kind == "value" else RuntimeError)(message)
-        if any(peer[0] != peers[0][0] for peer in peers):
-            raise ValueError("Output reservation differs across communicator ranks")
-        if any(peer[1] != peers[0][1] for peer in peers):
-            raise RuntimeError("Output reservation reuse/new state differs across ranks")
-        if not all(peer[3] for peer in peers):
+        if not self._agree_preparation(spec, action, error, available, label="Output reservation"):
             return None
+        peers = [None] * dist.get_world_size(self.output_group)
         if action == "reuse":
             return previous[0]
         shape = tuple(shape)
@@ -243,8 +254,35 @@ class MNNVLDistributedImpl(DistributedImpl):
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         return self.provider.all_reduce(x)
 
-    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
-        return self.provider.all_gather(x)
+    def all_gather(self, x: torch.Tensor, *, dim: int = 0) -> torch.Tensor:
+        _validate_all_gather_dim(x, dim)
+        return self.provider.all_gather(x) if dim == 0 else self._all_gather_last_dim(x)
+
+    def _supports_last_dim_all_gather(self, x):
+        supports = getattr(self.provider, "supports_all_gather_last_dim", None)
+        return (
+            bool(supports(x))
+            if supports is not None
+            else self.supports_all_gather(x.movedim(-1, 0))
+        )
+
+    def _all_gather_last_dim(self, x):
+        gather = getattr(self.provider, "all_gather_last_dim", None)
+        return gather(x) if gather is not None else _gather_last_dim(self.provider.all_gather, x)
+
+    def prepare_all_gather(
+        self,
+        *,
+        max_rows: int | None = None,
+        shard_width: int | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> bool:
+        prepare = getattr(self.provider, "prepare_all_gather", None)
+        return (
+            bool(prepare(max_rows=max_rows, shard_width=shard_width, dtype=dtype))
+            if prepare
+            else False
+        )
 
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True

@@ -50,7 +50,10 @@ class _SimulatedComm:
     def all_reduce(self, tensor):
         return self.group.run(self.rank, "sum", tensor)
 
-    def all_gather(self, tensor):
+    def all_gather(self, tensor, *, dim=0):
+        if dim == -1:
+            leading = tensor.movedim(-1, 0).contiguous()
+            return self.group.run(self.rank, "gather", leading).movedim(0, -1).contiguous()
         return self.group.run(self.rank, "gather", tensor)
 
 
@@ -68,6 +71,7 @@ def _model_config(config):
     layout = cache_config(config)
     return SimpleNamespace(
         hf_config=config,
+        attention_configs=(),
         cache_config=layout,
         is_kda_layer=layout.recurrent_layers.__contains__,
     )
@@ -112,6 +116,7 @@ def _config(*, vocab=24, full_gate=True, latent=4, shared=1, q_lora=4):
 def _batch(tokens, start=0, slot=0, uid=10):
     n = len(tokens)
     return SimpleNamespace(
+        is_decode=False,
         reqs=[
             SimpleNamespace(
                 uid=uid, table_idx=slot, cached_len=start, device_len=start + n, extend_len=n
@@ -407,6 +412,15 @@ def test_simulated_collectives_packed_checkpoint_tp2_vs_dense_tp1(tmp_path, monk
     from minisgl.models.kimi_weight import load_kimi_weight
     from minisgl.utils import cached_load_hf_config, torch_dtype
 
+    # The current MLA backend requires the batch's explicit execution mode.
+    original_batch_for = runtime.batch_for
+
+    def prefill_batch(*args, **kwargs):
+        batch = original_batch_for(*args, **kwargs)
+        batch.is_decode = False
+        return batch
+
+    monkeypatch.setattr(runtime, "batch_for", prefill_batch)
     previous_threads = torch.get_num_threads()
     torch.set_num_threads(1)
     try:

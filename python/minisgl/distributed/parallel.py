@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from .impl import DistributedCommunicator, _all_reduce_options
+from .impl import DistributedCommunicator, _all_reduce_options, _validate_all_gather_dim
 from .info import DistributedInfo, local_size, try_get_tp_info
 
 
@@ -32,8 +32,22 @@ class TensorParallel:
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
         return self._comm.all_reduce(x) if self.size > 1 else x
 
-    def all_gather(self, x: torch.Tensor) -> torch.Tensor:
-        return self._comm.all_gather(x) if self.size > 1 else x
+    def all_gather(self, x: torch.Tensor, *, dim: int = 0) -> torch.Tensor:
+        _validate_all_gather_dim(x, dim)
+        if self.size == 1:
+            return x
+        return self._comm.all_gather(x) if dim == 0 else self._comm.all_gather(x, dim=-1)
+
+    def prepare_all_gather(
+        self,
+        *,
+        max_rows: int | None = None,
+        shard_width: int | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> bool:
+        return self.size > 1 and self._comm.prepare_all_gather(
+            max_rows=max_rows, shard_width=shard_width, dtype=dtype
+        )
 
     def supports_linear_all_gather(self, x, weight, addend) -> bool:
         return self.size > 1 and self._comm.supports_linear_all_gather(x, weight, addend)
