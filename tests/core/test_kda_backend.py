@@ -4,8 +4,8 @@ import pytest
 import torch
 from minisgl.attention.kda.registry import (
     KDA_KERNELS,
-    KDADecodeResult,
     KDAKernelSpec,
+    KDAResult,
     get_kda_kernel,
     load_kda_provider,
 )
@@ -18,7 +18,7 @@ def test_builtin_kda_backends_are_registered():
 
 
 def test_decode_result_keeps_norm_stage_explicit():
-    result = KDADecodeResult(output="core", state="state", normed=True)
+    result = KDAResult(output="core", state="state", normed=True)
     assert result.output == "core"
     assert result.state == "state"
     assert result.normed

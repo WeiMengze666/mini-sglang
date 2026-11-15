@@ -30,7 +30,7 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
     Callers select/load their recurrence before entering this function. Once the
     convolution starts, errors propagate: retrying would advance state twice.
     """
-    from .sgl import _kernels, project
+    from .sgl import _kernels, _project_with_gate
 
     if (
         not metadata.lengths
@@ -74,7 +74,8 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
             [op.weight.squeeze(1) for op in (layer.q_conv1d, layer.k_conv1d, layer.v_conv1d)]
         ),
     )
-    q, k, v, forget, beta = project(layer, x)
+    projected, gate = _project_with_gate(layer, x)
+    q, k, v, forget, beta = projected
     if any(
         value.dtype != torch.bfloat16 or value.device != x.device
         for value in (q, k, v, forget, beta)
@@ -111,12 +112,15 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
     if beta.data_ptr() % 16:
         beta = beta.clone()
     return (
-        q.contiguous().view(shape),
-        k.contiguous().view(shape),
-        v.contiguous().view(shape),
-        forget.contiguous().view(shape),
-        beta,
-        recurrent,
-        plan,
-        plan["indices"],
+        (
+            q.contiguous().view(shape),
+            k.contiguous().view(shape),
+            v.contiguous().view(shape),
+            forget.contiguous().view(shape),
+            beta,
+            recurrent,
+            plan,
+            plan["indices"],
+        ),
+        gate,
     )

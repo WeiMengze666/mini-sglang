@@ -12,7 +12,7 @@ from minisgl.core import get_global_ctx
 from minisgl.kvcache.recurrent_pool import CheckpointWrite
 
 from ..base import BaseAttnBackend, SequenceAttnMetadata
-from .registry import KDAKernelSpec, get_kda_kernel
+from .registry import KDAKernelSpec, KDAResult, get_kda_kernel
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,7 @@ class KDAMetadata(SequenceAttnMetadata):
     has_initial_states: tuple[bool, ...] = ()
     kernel_data: dict = field(default_factory=dict)
     checkpoints: KDACheckpoints | None = None
+    projection_stream: torch.cuda.Stream | None = None
 
 
 class KDAAttentionBackend(BaseAttnBackend):
@@ -48,6 +49,7 @@ class KDAAttentionBackend(BaseAttnBackend):
         self._capture_metadata = {}
         self._capture_reqs = []
         self._graph_sizes = set()
+        self._projection_stream = None
         self.checkpoint_layer_configs: Mapping[int, KDAConfig] | None = None
 
     def prepare_model(self, attention_configs):
@@ -193,6 +195,14 @@ class KDAAttentionBackend(BaseAttnBackend):
                 if output is None and getattr(batch, "checkpoint_plan", ()):
                     raise ValueError("Validated checkpoint prefill cannot silently fall back")
                 if output is not None:
+                    if isinstance(output, KDAResult):
+                        return layer.finish(
+                            x,
+                            output.output,
+                            normed=output.normed,
+                            gate=output.gate,
+                            residual=residual,
+                        )
                     return layer.finish(x, output, residual=residual)
             except BaseException as error:
                 self._abort_checkpoints(batch, error)
@@ -254,6 +264,15 @@ class KDAAttentionBackend(BaseAttnBackend):
         ):
             raise ValueError("KDA graph decode supports BF16 and head_dim=128")
         self._graph_sizes = set(bs_list)
+        if (
+            bs_list
+            and self._projection_stream is None
+            and self.kernel.project is not None
+            and self.kvcache.device.type == "cuda"
+        ):
+            # One backend-owned resource, ready before graph warmup/capture.
+            # Provider eligibility still decides whether to use the hint.
+            self._projection_stream = torch.cuda.Stream(device=self.kvcache.device)
 
     def prepare_for_capture(self, batch):
         if batch.size not in self._graph_sizes:
@@ -262,6 +281,7 @@ class KDAAttentionBackend(BaseAttnBackend):
             raise RuntimeError("Capture requires an idle recurrent pool before admission")
         self._capture_reqs = batch.reqs
         self.prepare_metadata(batch)
+        batch.attn_metadata.projection_stream = self._projection_stream
         self._capture_metadata[batch.size] = batch.attn_metadata
 
     def finish_capture(self, batch):

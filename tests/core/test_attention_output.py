@@ -250,7 +250,7 @@ def test_decoder_bank_snapshots_survive_shared_slot_reuse_and_mlp_returns_owned_
 )
 def test_kda_all_return_paths_forward_the_explicit_residual(path):
     from minisgl.attention.kda.backend import KDAAttentionBackend
-    from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
+    from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
     from minisgl.layers.kda import KDALayer
 
     x = torch.zeros(4 if path == "packed_fallback" else 2, 3)
@@ -284,10 +284,10 @@ def test_kda_all_return_paths_forward_the_explicit_residual(path):
     spec = KDAKernelSpec(
         "residual-test",
         get_kda_kernel("torch").recurrence,
-        decode=(lambda layer, value, state: KDADecodeResult(value + 1, "final", normed=True))
+        decode=(lambda layer, value, state: KDAResult(value + 1, "final", normed=True))
         if path == "functional_decode"
         else None,
-        indexed_decode=(lambda layer, value, *args: KDADecodeResult(value + 1, normed=True))
+        indexed_decode=(lambda layer, value, *args: KDAResult(value + 1, normed=True))
         if path == "indexed_decode"
         else None,
         indexed_prefill=(lambda layer, value, *args: value + 1)

@@ -52,26 +52,26 @@ class RecurrenceKernel(Protocol):
 
 
 ProjectionKernel = Callable[["KDALayer", "torch.Tensor"], tuple["torch.Tensor", ...]]
-DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDADecodeResult | None"]
+DecodeKernel = Callable[["KDALayer", "torch.Tensor", "KDAState | None"], "KDAResult | None"]
 IndexedDecodeKernel = Callable[
     ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor", "KDAMetadata"],
-    "KDADecodeResult | None",
+    "KDAResult | None",
 ]
 
 IndexedPrefillKernel = Callable[
     ["KDALayer", "torch.Tensor", "RecurrentStatePool", int, "torch.Tensor", "KDAMetadata"],
-    "torch.Tensor | None",
+    "torch.Tensor | KDAResult | None",
 ]
 
 
 @dataclass(frozen=True)
-class KDADecodeResult:
-    """Core decode output and updated state returned by a fused backend.
+class KDAResult:
+    """Native KDA core output with an optional updated functional state.
 
     ``normed`` is true when the backend already applied KDA's gated output
     normalization. The layer owns the output projection and collective.
-    Functional decode returns state; indexed decode updates its owned pool and
-    leaves ``state`` unset. An optional output gate stays local to this result
+    Functional decode returns state; indexed decode/prefill update their owned
+    pool and leave ``state`` unset. An optional output gate stays local to this result
     when output normalization remains outside the recurrence kernel.
     """
 
@@ -249,7 +249,7 @@ register_kda_kernel(
 
 
 __all__ = [
-    "KDADecodeResult",
+    "KDAResult",
     "KDAKernelSpec",
     "KDA_KERNELS",
     "get_kda_kernel",

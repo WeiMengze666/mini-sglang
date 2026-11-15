@@ -142,8 +142,8 @@ def _projection_plan(layer):
     )
 
 
-def _project_forget_beta(layer, x):
-    """Offer the SDK's skinny gate dispatch without projecting Q, K or V."""
+def _gate_projection_plan(layer, x):
+    """Prepare immutable skinny weights before either projection branch launches."""
     weight = getattr(layer.f_b_proj, "weight", None)
     if (
         not x.is_cuda
@@ -157,8 +157,15 @@ def _project_forget_beta(layer, x):
     ):
         return None
     plan = _projection_plan(layer)
-    if plan is None:
+    return None if plan is None else (plan, weight)
+
+
+def _project_forget_beta(layer, x):
+    """Offer the SDK's skinny gate dispatch without projecting Q, K or V."""
+    prepared = _gate_projection_plan(layer, x)
+    if prepared is None:
         return None
+    plan, weight = prepared
     gemm, stream = _projection_kernels()
     with stream():
         bfa = gemm(x, plan.weight)
@@ -175,22 +182,54 @@ def project(layer, x):
     gates = _project_forget_beta(layer, x)
     if gates is None:
         return layer.project(x)
-    return (
-        layer.q_proj.forward(x), layer.k_proj.forward(x), layer.v_proj.forward(x), *gates
-    )
+    return (layer.q_proj.forward(x), layer.k_proj.forward(x), layer.v_proj.forward(x), *gates)
 
 
-def _project_decode(layer, x):
-    prepare = getattr(layer, "project_qkvg", None)
-    merged = prepare(x) if prepare is not None else None
-    if merged is None:
+@cache
+def _projection_overlap_limit(device):
+    from sglang.srt.utils.common import is_blackwell_supported
+
+    # Same hardware predicate as the official K3 bfa policy; no Engine globals.
+    return 128 if is_blackwell_supported() else 64
+
+
+def _project_with_gate(layer, x, *, projection_stream=None):
+    """Reuse the wide QKVG projection while keeping its output gate explicit."""
+    plan = getattr(layer, "_qkvg", None)
+    if plan is None or x.dtype != torch.bfloat16 or x.device != plan.weight.device:
         return project(layer, x), None
-    gates = _project_forget_beta(layer, x)
+    # Resolving the gate plan may materialize weights on the invoking stream.
+    # Do that before the fork edge and before either projection GEMM launches.
+    gate_plan = _gate_projection_plan(layer, x)
+    limit = (
+        _projection_overlap_limit(x.device)
+        if projection_stream is not None and gate_plan is not None
+        else 0
+    )
+    overlap = 0 < len(x) <= limit and torch.cuda.is_current_stream_capturing()
+    if overlap:
+        if projection_stream.device != x.device:
+            raise ValueError("KDA projection stream differs from the local input device")
+        main = torch.cuda.current_stream(device=x.device)
+        projection_stream.wait_stream(main)
+        x.record_stream(projection_stream)
+        # Official CUDA capture order: main wide GEMM first, then side skinny GEMMs.
+        merged = layer.project_qkvg(x)
+        with torch.cuda.stream(projection_stream):
+            gates = _project_forget_beta(layer, x)
+        main.wait_stream(projection_stream)
+        if gates is None:
+            raise RuntimeError("Prepared KDA gate projection declined after selection")
+        for value in gates:
+            value.record_stream(main)
+    else:
+        merged = layer.project_qkvg(x)
+        gates = _project_forget_beta(layer, x)
+    if merged is None:
+        raise RuntimeError("Prepared KDA QKVG projection declined after selection")
     if gates is None:
         gates = (
-            layer.f_b_proj.forward(layer.f_a_proj.forward(x)).reshape(
-                -1, layer._heads, layer._dim
-            ),
+            layer.f_b_proj.forward(layer.f_a_proj.forward(x)).reshape(-1, layer._heads, layer._dim),
             layer.b_proj.forward(x),
         )
     return (merged["q"], merged["k"], merged["v"], *gates), merged["gate"]
@@ -240,7 +279,7 @@ def decode(layer, x, state):
             state.conv.permute(0, 3, 1, 2).flatten(2).clone(memory_format=torch.contiguous_format)
         )
         pool = state.recurrent.transpose(-1, -2).clone(memory_format=torch.contiguous_format)
-    projected, gate = _project_decode(layer, x)
+    projected, gate = _project_with_gate(layer, x)
     q, k, v, forget, beta = projected
     mixed = torch.cat((q, k, v), dim=-1)
     gate = gate if gate is not None else layer.g_proj.forward(x)
@@ -271,11 +310,11 @@ def decode(layer, x, state):
             lower_bound=layer._config.gate_lower_bound,
         )
     from .reference import KDAState
-    from .registry import KDADecodeResult
+    from .registry import KDAResult
 
     history = conv.reshape(batch, 3, 3, heads * dim).permute(0, 2, 3, 1).contiguous()
     recurrent = pool.transpose(-1, -2).contiguous()
-    return KDADecodeResult(output[0], KDAState(history, recurrent), normed=True)
+    return KDAResult(output[0], KDAState(history, recurrent), normed=True)
 
 
 def indexed_decode(layer, x, pool, layer_id, indices, metadata):
@@ -285,7 +324,7 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
     separate allocations; only the active indices may mutate these pool views.
     """
     from .causal_conv import _kernels as conv_kernels
-    from .registry import KDADecodeResult
+    from .registry import KDAResult
 
     if (
         not x.is_cuda
@@ -306,7 +345,9 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
             [op.weight.squeeze(1) for op in (layer.q_conv1d, layer.k_conv1d, layer.v_conv1d)]
         ),
     )
-    projected, gate = _project_decode(layer, x)
+    projected, gate = _project_with_gate(
+        layer, x, projection_stream=getattr(metadata, "projection_stream", None)
+    )
     q, k, v, forget, beta = projected
     _, update_conv = conv_kernels()
     _, update_kda, stream = _kernels()
@@ -345,7 +386,7 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
                 use_qk_l2norm_in_kernel=True,
             )
             output = packed[:, 0]
-    return KDADecodeResult(output=output, gate=gate)
+    return KDAResult(output=output, gate=gate)
 
 
 def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
@@ -368,9 +409,8 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
             dtype=torch.int32,
         )
         metadata.kernel_data["sgl_prefill_chunks"] = chunks
-    q, k, v, g, beta, recurrent, plan, indices = prepare(
-        layer, x, pool, layer_id, indices, metadata
-    )
+    prepared, gate = prepare(layer, x, pool, layer_id, indices, metadata)
+    q, k, v, g, beta, recurrent, plan, indices = prepared
     with stream():
         output = chunk(
             q=q,
@@ -388,4 +428,6 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
             beta_is_raw=True,
             chunk_indices=chunks,
         )
-    return output[0]
+    from .registry import KDAResult
+
+    return KDAResult(output=output[0], gate=gate)

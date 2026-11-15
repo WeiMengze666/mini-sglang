@@ -9,7 +9,7 @@ from minisgl.attention.kda import (
     causal_conv1d,
     gated_rms_norm,
 )
-from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
+from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
 from minisgl.layers.linear import Linear, LinearRowParallel, MergedLinear
@@ -164,8 +164,8 @@ class KDALayer(BaseOP):
         result = kernel.decode(self, x, state)
         if result is None:
             return None
-        if not isinstance(result, KDADecodeResult):
-            raise TypeError("KDA decode backend must return KDADecodeResult or None")
+        if not isinstance(result, KDAResult):
+            raise TypeError("KDA decode backend must return KDAResult or None")
         if result.state is None:
             raise ValueError("Functional KDA decode must return its updated state")
         return self.finish(

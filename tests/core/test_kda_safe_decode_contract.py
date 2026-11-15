@@ -7,7 +7,7 @@ import pytest
 import torch
 from minisgl.attention.kda import sgl
 from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
-from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
+from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
 
 
 @pytest.mark.parametrize("state_dtype", [torch.bfloat16, torch.float32])
@@ -61,7 +61,7 @@ def test_indexed_callback_receives_shared_metadata_without_rebuilding_offsets():
     def indexed(layer, x, pool, layer_id, slots, batch_metadata):
         assert pool is cache.recurrent and slots is indices and batch_metadata is metadata
         calls.append(batch_metadata.cu_seqlens_q)
-        return KDADecodeResult(x + 1)
+        return KDAResult(x + 1)
 
     spec = KDAKernelSpec(
         "metadata-test", get_kda_kernel("torch").recurrence, indexed_decode=indexed

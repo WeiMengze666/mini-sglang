@@ -155,6 +155,11 @@ def native_spies(case, monkeypatch):
     q = (torch.arange(tokens * width).reshape(tokens, width) % 13).to(torch.bfloat16)
     k, v = q + 16, q + 32
     raw = torch.cat((q, k, v), dim=-1)
+
+    def finish(x, output, *, normed=False, gate=None, residual=None):
+        assert normed is False and gate is None
+        return output
+
     layer = SimpleNamespace(
         _config=case.configs[0],
         _heads=1,
@@ -165,7 +170,7 @@ def native_spies(case, monkeypatch):
         k_conv1d=SimpleNamespace(weight=torch.zeros(width, 1, 4, dtype=torch.bfloat16)),
         v_conv1d=SimpleNamespace(weight=torch.zeros(width, 1, 4, dtype=torch.bfloat16)),
         prepare_kernel=lambda name, create: create(),
-        finish=lambda x, output, *, residual=None: output,
+        finish=finish,
     )
     monkeypatch.setattr(sgl, "_kernels", lambda: (None, None, nullcontext))
     monkeypatch.setattr(

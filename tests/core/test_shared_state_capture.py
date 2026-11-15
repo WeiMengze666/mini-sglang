@@ -7,7 +7,7 @@ import pytest
 import torch
 from minisgl.attention.base import HybridAttnBackend
 from minisgl.attention.kda.backend import KDAAttentionBackend
-from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
+from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
 from minisgl.core import Batch, Req, SamplingParams
 from minisgl.engine.engine import _graph_batch_capacity
 from minisgl.engine.graph import GraphRunner
@@ -95,7 +95,7 @@ def test_real_capture_cleanup_returns_working_and_tracking_before_real_uid(
 
     def indexed(layer, x, pool, layer_id, indices, metadata):
         seen.append(indices.clone())
-        return KDADecodeResult(x)
+        return KDAResult(x)
 
     kernel = KDAKernelSpec(
         "cpu-capture-protocol", get_kda_kernel("torch").recurrence, indexed_decode=indexed

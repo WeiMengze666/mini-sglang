@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from minisgl.attention.config import KDAConfig
 from minisgl.attention.kda import sgl
 from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
-from minisgl.attention.kda.registry import KDADecodeResult, KDAKernelSpec, get_kda_kernel
+from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
 from minisgl.distributed import DistributedInfo
 from minisgl.layers.kda import KDALayer
 from minisgl.models.kimi_parallel import shard_spec
@@ -116,12 +116,12 @@ def test_decode_one_merged_linear_carries_gate_without_stash(monkeypatch):
     for op in layer._qkvg_projections().values():
         monkeypatch.setattr(op, "forward", lambda value: pytest.fail("independent Q/K/V/g decode GEMM"))
     x = torch.ones(2, 8, dtype=torch.bfloat16)
-    projected, gate = sgl._project_decode(layer, x)
+    projected, gate = sgl._project_with_gate(layer, x)
     saved = gate.clone()
     assert len(calls) == 1 and calls[0][1] is layer._qkvg.weight
     assert len(projected) == 5 and all(t.dtype == torch.bfloat16 for t in projected)
     assert gate.shape == projected[0].shape == (2, 8)
-    second, second_gate = sgl._project_decode(layer, x * 2)
+    second, second_gate = sgl._project_with_gate(layer, x * 2)
     assert len(calls) == 2 and second_gate is not gate
     torch.testing.assert_close(gate, saved)
     torch.testing.assert_close(second_gate, gate * 2)
@@ -130,10 +130,10 @@ def test_decode_one_merged_linear_carries_gate_without_stash(monkeypatch):
     assert not torch.cuda.is_initialized()
 
 
-def test_prefill_public_project_does_not_use_decode_merge(monkeypatch):
+def test_public_project_keeps_five_tensor_abi_without_a_gate_carrier(monkeypatch):
     layer = build_layer(monkeypatch)
     layer.load_weights(payload_for(layer).items(), device=torch.device("cpu"))
-    monkeypatch.setattr(layer, "project_qkvg", lambda value: pytest.fail("prefill used decode merge"))
+    monkeypatch.setattr(layer, "project_qkvg", lambda value: pytest.fail("five-tensor public projection used a gate-carrying merge"))
     assert len(sgl.project(layer, torch.ones(2, 8, dtype=torch.bfloat16))) == 5
     assert not torch.cuda.is_initialized()
 
@@ -160,7 +160,7 @@ def test_indexed_result_gate_is_forwarded_as_the_same_object():
     cache = SimpleNamespace(recurrent=object())
     spec = KDAKernelSpec(
         "gate-test", get_kda_kernel("torch").recurrence,
-        indexed_decode=lambda *args: KDADecodeResult(torch.zeros(2, 8), gate=gate),
+        indexed_decode=lambda *args: KDAResult(torch.zeros(2, 8), gate=gate),
     )
     backend = KDAAttentionBackend(SimpleNamespace(), spec, cache=cache)
     seen = []

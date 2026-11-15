@@ -239,9 +239,8 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
             if tracked is not None
             else {}
         )
-        q, k, v, g, beta, recurrent, plan, indices = prepare(
-            layer, x, pool, layer_id, indices, metadata, **conv_tracking
-        )
+        prepared, gate = prepare(layer, x, pool, layer_id, indices, metadata, **conv_tracking)
+        q, k, v, g, beta, recurrent, plan, indices = prepared
         tracking = {}
         if tracked is not None:
             snapshots = recurrent.new_empty(
@@ -277,4 +276,6 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
             for (_, recurrent_state), snapshot in zip(destinations, snapshots):
                 # Public destination is K,V; the mature kernel snapshot is V,K.
                 recurrent_state.transpose(-1, -2).copy_(snapshot)
-        return output[0]
+        from .registry import KDAResult
+
+        return KDAResult(output=output[0], gate=gate)
