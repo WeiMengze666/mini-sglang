@@ -9,7 +9,13 @@ from minisgl.distributed.context import ContextParallel
 from minisgl.distributed.layout import get_parallel_layout
 from minisgl.distributed.parallel import TensorParallel, local_size
 from minisgl.layers.base import BaseOP
-from minisgl.layers.linear import Linear, LinearRowParallel, headwise_linear, linear_bf16
+from minisgl.layers.linear import (
+    Linear,
+    LinearRowParallel,
+    MergedLinear,
+    headwise_linear,
+    linear_bf16,
+)
 from minisgl.layers.norm import TorchRMSNorm
 
 
@@ -46,8 +52,25 @@ class MLALayer(BaseOP):
         self._key_weight = self._value_weight = None
         self._decode_q_weight = self._decode_key_weight = None
         self._inference_prepared = False
+        self._qkv_a = None
+        projections = self._qkv_a_projections()
+        if projections and self.q_a_proj.weight.is_meta:
+            # Preserve the checkpoint names while declaring one stream-load group.
+            MergedLinear.try_create(projections)
+
+    def _qkv_a_projections(self):
+        if self._config.q_lora_rank is None:
+            return {}
+        projections = {"q": self.q_a_proj, "kv": self.kv_a_proj_with_mqa}
+        # Adapters and packed executors retain their own forward contracts.
+        if any(
+            type(op) is not Linear or op.weight_format != "dense" for op in projections.values()
+        ):
+            return {}
+        return projections
 
     def after_load(self) -> None:
+        self._qkv_a = MergedLinear.try_create(self._qkv_a_projections())
         self._key_weight = self._value_weight = None
         self._decode_q_weight = self._decode_key_weight = None
         self._inference_prepared = False
@@ -89,11 +112,17 @@ class MLALayer(BaseOP):
         self._inference_prepared = True
 
     def project(self, x, positions, *, is_decode=False):
+        projected = None
+        plan = self._qkv_a
+        if plan is not None and x.dtype == plan.weight.dtype and x.device == plan.weight.device:
+            # MLA QKV-A returns input dtype, unlike an FP32-accumulator MoE front.
+            projected = plan.forward(x, output_dtype=x.dtype)
         if self._config.q_lora_rank is None:
             query, source = self.q_proj, x
         else:
             query = self.q_b_proj
-            source = self.q_a_layernorm.forward(self.q_a_proj.forward(x))
+            q_lora = self.q_a_proj.forward(x) if projected is None else projected["q"]
+            source = self.q_a_layernorm.forward(q_lora)
         if is_decode and self._decode_q_weight is not None:
             q = linear_bf16(source, self._decode_q_weight)
             heads = self._decode_heads
@@ -105,7 +134,8 @@ class MLALayer(BaseOP):
             # Quantized or other unsupported projection formats keep their
             # normal Linear executor; exchange activations, never reinterpret weights.
             q = self._cp.gather_heads(q, dim=1)
-        latent, key = self.kv_a_proj_with_mqa.forward(x).split((self._latent, self._rope), -1)
+        kv = self.kv_a_proj_with_mqa.forward(x) if projected is None else projected["kv"]
+        latent, key = kv.split((self._latent, self._rope), -1)
         latent = self.kv_a_layernorm.forward(latent)
         if not self._skip_rope and self._rope:
             theta = getattr(self._config, "rope_theta", 10000.0)
