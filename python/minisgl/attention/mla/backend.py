@@ -35,6 +35,14 @@ class MLAAttentionBackend(BaseAttnBackend):
         self._capture_pages = []
         self._graph_sizes = set()
 
+    def prepare_communication(self, *, dtype: torch.dtype):
+        cp = ContextParallel()
+        if cp.size == 1:
+            return
+        describe = getattr(self.attention, "decode_partial_spec", None)
+        spec = describe(self.config.attention_configs, dtype=dtype) if callable(describe) else None
+        cp.prepare_exchange(spec, enabled=spec is not None)
+
     def prepare_metadata(self, batch):
         metadata = MLAMetadata.from_batch(batch, self.kvcache.device)
         if hasattr(self.attention, "decode") and batch.is_decode:

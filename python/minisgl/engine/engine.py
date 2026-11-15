@@ -86,7 +86,7 @@ class Engine:
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
-        init_context_parallel(backend="nccl", device=self.device)
+        init_context_parallel(backend="nccl", device=self.device, cpu_group=self.tp_cpu_group)
         if config.model_config.is_moe:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
             self.moe_backend.validate_precision(config.mxfp4_activation_precision)
@@ -209,6 +209,7 @@ class Engine:
 
         # Layer-owned replicas are deliberately allocated after the cache budget.
         try:
+            self.attn_backend.prepare_communication(dtype=self.dtype)
             self.model.apply(lambda op: op.prepare_inference())
         except BaseException as error:
             if worker_owner is not None:

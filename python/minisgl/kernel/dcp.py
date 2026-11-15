@@ -14,7 +14,7 @@ def _native_lse_combine():
     return dcp_lse_combine_triton
 
 
-def combine_partial_attention(output: torch.Tensor, lse: torch.Tensor):
+def combine_partial_attention(output: torch.Tensor, lse: torch.Tensor, *, is_lse_base_on_e=True):
     """Try native FP32 combination while preserving empty/corrupt-row semantics."""
     if (
         not output.is_cuda
@@ -32,7 +32,7 @@ def combine_partial_attention(output: torch.Tensor, lse: torch.Tensor):
     # Empty shards can contain undefined outputs. The native kernel consumes
     # those values even at zero weight, so supply zeros for empty rows.
     safe = output.float().masked_fill(torch.isneginf(lse)[..., None], 0)
-    combined, _ = combine(safe, lse, is_lse_base_on_e=True)
+    combined, _ = combine(safe, lse, is_lse_base_on_e=is_lse_base_on_e)
     # Native sanitization must not hide a corrupt active producer from callers.
     invalid = (torch.isnan(lse) | torch.isposinf(lse)).any(0)
     return combined.masked_fill(invalid[..., None], torch.nan)
