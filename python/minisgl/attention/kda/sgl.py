@@ -317,6 +317,34 @@ def decode(layer, x, state):
     return KDAResult(output[0], KDAState(history, recurrent), normed=True)
 
 
+def _conv_qkv_input(q, k, v):
+    """Reuse adjacent projection slices without imposing a packed row stride.
+
+    Native convolution receives every input stride. The combined view ends at
+    the already-valid V slice, and PyTorch still checks its storage bounds.
+    Independent projections or autograd retain the original concatenation.
+    """
+    parts = (q, k, v)
+    if (
+        q.ndim == 2
+        and all(
+            part.shape == q.shape
+            and part.dtype == q.dtype
+            and part.device == q.device
+            and not part.requires_grad
+            and not (part.is_conj() or part.is_neg())
+            and part.stride() == q.stride()
+            and part.stride(-1) == 1
+            for part in parts
+        )
+        and all(torch._C._is_alias_of(q, part) for part in parts[1:])
+        and k.storage_offset() == q.storage_offset() + q.shape[-1]
+        and v.storage_offset() == q.storage_offset() + 2 * q.shape[-1]
+    ):
+        return q.as_strided((q.shape[0], 3 * q.shape[-1]), q.stride())
+    return torch.cat(parts, dim=-1)
+
+
 def indexed_decode(layer, x, pool, layer_id, indices, metadata):
     """Update BF16 working rows with official convolution and KDA kernels.
 
@@ -353,7 +381,7 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
     _, update_kda, stream = _kernels()
     with stream():
         mixed = update_conv(
-            torch.cat((q, k, v), -1),
+            _conv_qkv_input(q, k, v),
             conv,
             weights,
             conv_state_indices=indices,

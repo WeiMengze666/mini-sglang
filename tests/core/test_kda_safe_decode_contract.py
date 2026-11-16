@@ -78,8 +78,8 @@ def test_indexed_callback_receives_shared_metadata_without_rebuilding_offsets():
     assert calls == [metadata.cu_seqlens_q]
 
 
-@pytest.mark.parametrize("bound", [None, -5.0])
-def test_indexed_safe_dispatch_keeps_metadata_and_pool_identity(monkeypatch, bound):
+@pytest.mark.parametrize("bound,merged", [(None, False), (-5.0, False), (-5.0, True)])
+def test_indexed_safe_dispatch_keeps_metadata_and_pool_identity(monkeypatch, bound, merged):
     # Mark only the guard property; all storage/ops remain CPU and no native module loads.
     class GuardTensor(torch.Tensor):
         @property
@@ -107,10 +107,17 @@ def test_indexed_safe_dispatch_keeps_metadata_and_pool_identity(monkeypatch, bou
     projected = [torch.zeros(2, 256, dtype=torch.bfloat16) for _ in range(4)] + [
         torch.zeros(2, 2, dtype=torch.bfloat16)
     ]
+    if merged:
+        qkvg = torch.zeros(2, 4 * 256, dtype=torch.bfloat16)
+        projected[:3] = qkvg.split(256, dim=-1)[:3]
     calls = []
 
     def convolution(mixed, cache, weights, **kw):
         assert cache is conv and kw["conv_state_indices"] is indices
+        assert torch.equal(mixed, torch.cat(projected[:3], -1))
+        assert torch._C._is_alias_of(mixed, projected[0]) is merged
+        if merged:
+            assert mixed.stride() == (4 * 256, 1)
         return mixed
 
     def safe(mixed, forget, beta, a, dt, cache, slots, qsl, lower):
