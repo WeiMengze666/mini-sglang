@@ -67,7 +67,7 @@ def shard_readers(index):
     by_file = {}
     for name, file in index.items():
         by_file.setdefault(file, []).append(name)
-    for file, names in by_file.items():
+    for file, names in sorted(by_file.items()):
         with safetensors.safe_open(file, framework="pt", device="cpu") as reader:
-            for name in names:
+            for name in sorted(names):
                 yield name, reader
