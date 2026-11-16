@@ -49,6 +49,32 @@ def setup(monkeypatch, layout):
     api.get_autotune_process_group = lambda: state.group
     api.set_autotune_process_group = lambda group: setattr(state, "group", group)
     monkeypatch.setitem(sys.modules, "flashinfer.autotuner", api)
+    calibration = ModuleType("flashinfer.fused_moe.shared.tuning")
+    state.calibration_calls = []
+
+    def route_initializer(num_experts, *, packed):
+        def initialize(shape, dtype, device):
+            ids = (
+                (
+                    torch.arange(shape[0], device=device)[:, None] * 3
+                    + torch.arange(shape[1], device=device)[None, :] * 5
+                    + 1
+                )
+                % num_experts
+            ).to(torch.int32)
+            value = (
+                (ids << 16)
+                | torch.ones(shape, dtype=torch.bfloat16, device=device).view(torch.int16)
+                if packed
+                else ids
+            )
+            state.calibration_calls.append((num_experts, packed, value.clone()))
+            return value
+
+        return initialize
+
+    calibration.moe_topk_ids_init = route_initializer
+    monkeypatch.setitem(sys.modules, calibration.__name__, calibration)
     monkeypatch.setattr(sys.modules["flashinfer"], "__version__", "cpu-fake", raising=False)
     monkeypatch.setattr(runtime, "_domain", lambda *args: ("same-cpu-fi-domain",))
     monkeypatch.setattr(torch.cuda, "synchronize", lambda *args: None)
@@ -121,7 +147,13 @@ def test_real_forward_and_startup_share_identical_prepared_arguments(monkeypatch
         monkeypatch.setitem(sys.modules, module.__name__, module)
     prepared = op.prepare_inputs(backend, x, routing)
     captured = []
-    monkeypatch.setattr(op, "_run", lambda *args: captured.append(args) or "same-kernel")
+
+    def observe_run(*args, out=None):
+        assert out is None
+        captured.append(args)
+        return "same-kernel"
+
+    monkeypatch.setattr(op, "_run", observe_run)
     assert backend.forward_experts(op, x, routing) == "same-kernel"
     for actual, expected in zip(captured[0], prepared):
         if isinstance(actual, tuple):
@@ -185,6 +217,7 @@ def test_refuses_unqualified_contracts_before_any_profile(monkeypatch, fault):
     with pytest.raises(ValueError):
         FusedMoe().prepare(model(op), ctx)
     assert not calls and not state.entries and state.group is previous
+    assert not state.calibration_calls
 
 
 def test_failure_restores_group_and_requires_supervisor_not_recovery(monkeypatch):
@@ -353,6 +386,7 @@ def test_unqualified_dry_run_only_allocates_meta(monkeypatch):
     with pytest.raises(ValueError, match="fresh exclusive"):
         FusedMoe().prepare(model(op), replace(context(), fresh_worker=False))
     assert devices == ["meta"] and not calls and not state.entries and state.clears == 0
+    assert not state.calibration_calls
     assert not torch.cuda.is_initialized()
 
 
@@ -396,3 +430,82 @@ def test_routing_bias_abi_is_part_of_metadata_plan(monkeypatch):
     after = layer.prepare_runtime(context(), dry_run=True)
     assert before != after and not calls and state.clears == 0 and not state.entries
     assert not torch.cuda.is_initialized()
+
+
+@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize("rows", [1, 48])
+@pytest.mark.parametrize("ep,rank", [(1, 0), (2, 0), (2, 1), (8, 0), (8, 7)])
+def test_prepare_calibrates_global_routes_preserving_local_work_and_buffers(
+    monkeypatch, packed, rows, ep, rank
+):
+    layout = ParallelLayout(DistributedInfo(rank, 8), ep_size=ep)
+    op, _, state = setup(monkeypatch, layout)
+    root = model(op)
+    layer = root.blocks.get_op("0")
+    original = op.prepare_inputs
+    prepared_inputs = []
+    if packed:
+
+        def make_inputs(backend, x, routing):
+            value = (
+                x,
+                torch.ones(rows, 8, dtype=torch.uint8),
+                torch.zeros(rows, 2, dtype=torch.int32),
+                2,
+            )
+            prepared_inputs.append(value)
+            return value
+    else:
+
+        def make_inputs(*args):
+            value = original(*args)
+            prepared_inputs.append(value)
+            return value
+
+    monkeypatch.setattr(op, "prepare_inputs", make_inputs)
+    native_calls = []
+    monkeypatch.setattr(op, "_run", lambda *args: native_calls.append(args))
+    rng = torch.random.get_rng_state().clone()
+    runtime.prepare_local(FusedMoe(), op, layer.gate.routing, context(layout, local_rows=(rows,)))
+    assert torch.equal(torch.random.get_rng_state(), rng)
+    assert len(native_calls) == len(prepared_inputs) == len(state.calibration_calls) == 1
+    actual, before = native_calls[0], prepared_inputs[0]
+    assert all(a is b for a, b in zip(actual[:3], before[:3]))
+    assert actual[3] == before[3] == 2
+    experts, mode, sampled = state.calibration_calls[0]
+    assert experts == 8 and mode is packed
+    routes = actual[2]
+    value = routes if packed else routes[0]
+    ids = value >> 16 if packed else value
+    initial_ids = sampled >> 16 if packed else sampled
+    assert ids.shape == (rows, 2) and ids.dtype == torch.int32
+    assert ((ids >= 0) & (ids < 8)).all() and (ids[:, 0] != ids[:, 1]).all()
+    if ep == 1:
+        assert torch.equal(value, sampled)  # Exact mature payload values, no shift.
+    else:
+        assert int(ids[0, 0]) == op._start
+        shift = (ids - initial_ids).remainder(8)
+        assert shift.eq(shift[0, 0]).all()  # One global bijection, not local-only pruning.
+    assert ((ids >= op._start) & (ids < op._start + op._experts)).any()
+    if packed:
+        assert torch.equal(value & 0xFFFF, sampled & 0xFFFF)
+    else:
+        assert routes[1].eq(1).all() and routes[1].dtype == before[2][1].dtype
+    assert not torch.cuda.is_initialized()
+
+
+def test_packed_calibration_preserves_unsigned_ids_and_bf16_weight_bits(monkeypatch):
+    setup(monkeypatch, ParallelLayout())
+    source_ids = torch.tensor([[65535, 32768]], dtype=torch.int32)
+    bits = torch.ones((1, 2), dtype=torch.bfloat16).view(torch.int16)
+    sampled = (source_ids << 16) | bits
+    api = sys.modules["flashinfer.fused_moe.shared.tuning"]
+    monkeypatch.setattr(api, "moe_topk_ids_init", lambda *a, **k: lambda *args: sampled.clone())
+    target = torch.zeros_like(sampled)
+    pointer = target.data_ptr()
+    runtime._calibrate_routes(
+        SimpleNamespace(_global_experts=65536, _experts=8192, _start=57344), target
+    )
+    assert ((target >> 16) & 0xFFFF).tolist() == [[57344, 24577]]
+    assert torch.equal(target & 0xFFFF, sampled & 0xFFFF)
+    assert target.dtype == torch.int32 and target.data_ptr() == pointer
