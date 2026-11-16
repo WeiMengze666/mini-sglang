@@ -103,6 +103,27 @@ def _domain(context, version):
     )
 
 
+def _calibrate_routes(executor, routes):
+    # FI.7 profiles small buckets from these actual rows. Use its own sampler
+    # rather than calibrating every token against the same few local experts.
+    from flashinfer.fused_moe.shared.tuning import moe_topk_ids_init
+
+    packed = isinstance(routes, torch.Tensor)
+    target = routes if packed else routes[0]
+    sampled = moe_topk_ids_init(executor._global_experts, packed=packed)(
+        tuple(target.shape), target.dtype, target.device
+    )
+    if executor._experts < executor._global_experts:
+        ids = ((sampled >> 16) & 0xFFFF) if packed else sampled
+        # One global bijection retains distinct/diverse routes and guarantees
+        # local work even for a single-token EP calibration, without resampling.
+        ids = (ids + executor._start - ids[0, 0]).remainder(executor._global_experts)
+        sampled = (ids << 16) | (sampled & 0xFFFF) if packed else ids
+    target.copy_(sampled)
+    if not packed:
+        routes[1].fill_(1)
+
+
 def prepare_local(backend, executor, routing_builder, context, *, dry_run=False):
     if not isinstance(executor, FlashInferMXFP4Experts):
         return None
@@ -128,7 +149,8 @@ def prepare_local(backend, executor, routing_builder, context, *, dry_run=False)
             routing = routing_builder(logits.expand(rows, -1).contiguous())
             prepared = executor.prepare_inputs(backend, x, routing)
             routes = prepared[2]
-            ids = routes[0] if isinstance(routes, tuple) else routes >> 16
+            _calibrate_routes(executor, routes)
+            ids = routes[0] if isinstance(routes, tuple) else ((routes >> 16) & 0xFFFF)
             if not bool(
                 ((ids >= executor._start) & (ids < executor._start + executor._experts)).any()
             ):
