@@ -25,7 +25,12 @@ class MLAAttentionBackend(BaseAttnBackend):
     Both phases retain the same compressed persistent cache and TP weight layout.
     """
 
-    supports_graph_padding = False
+    @property
+    def supports_graph_padding(self):
+        return (
+            getattr(self.attention, "supports_graph_padding", False) and self.kvcache.arena is None
+        )
+
     cache_implementation = "torch"
 
     def __init__(self, config, *, attention=mla_attention, cache=None):
@@ -49,9 +54,12 @@ class MLAAttentionBackend(BaseAttnBackend):
         if hasattr(self.attention, "decode") and batch.is_decode:
             if any(req.extend_len != 1 for req in batch.reqs):
                 raise ValueError("MLA decode requires one new token per request")
+            # The scheduler already supplied dummy input/KV rows for graph padding.
+            # A fresh object also refreshes native plans that cache metadata identity.
+            rows = batch.padded_reqs if self.supports_graph_padding else batch.reqs
             metadata.decode = self.kvcache.mla.decode_metadata(
-                [req.table_idx for req in batch.reqs],
-                [req.device_len for req in batch.reqs],
+                [req.table_idx for req in rows],
+                [req.device_len for req in rows],
                 get_global_ctx().page_table,
             )
         if not batch.is_decode and hasattr(self.attention, "prepare_prefill"):
@@ -86,6 +94,10 @@ class MLAAttentionBackend(BaseAttnBackend):
             )
             if partial is not None:
                 return layer.finish(x, partial, residual=residual)
+            if self.supports_graph_padding and (
+                paged.capture_size is not None or len(x) > len(batch.reqs)
+            ):
+                raise RuntimeError("Selected padded MLA decode declined")
         if deferred:
             # None guarantees that the selected decoder has not written any KV.
             write.store()
@@ -206,12 +218,13 @@ class MLAAttentionBackend(BaseAttnBackend):
         self._capture_pages = []
 
     def prepare_for_replay(self, batch):
-        if batch.size not in self._graph_sizes:
+        size = batch.padded_size
+        if size not in self._graph_sizes:
             raise ValueError("No MLA CUDA graph was initialized for this batch size")
         metadata = batch.attn_metadata.decode
-        captured = self._capture_metadata[batch.size].decode
+        captured = self._capture_metadata[size].decode
         if metadata.nonempty is None:
             captured.nonempty.fill_(True)
         else:
             captured.nonempty.copy_(metadata.nonempty)
-        self.attention.prepare_replay(metadata, batch.size)
+        self.attention.prepare_replay(metadata, size)

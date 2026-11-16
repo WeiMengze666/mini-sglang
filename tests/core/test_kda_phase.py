@@ -8,7 +8,7 @@ import pytest
 import torch
 from minisgl.attention.config import KDAConfig
 from minisgl.attention.kda import KDAState, flashinfer, registry, sgl
-from minisgl.attention.kda.backend import KDAAttentionBackend
+from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
 from minisgl.layers.kda import KDALayer
 
 
@@ -74,7 +74,7 @@ def test_batch_phase_reaches_native_recurrence_with_bf16_state(monkeypatch, leng
     batch = SimpleNamespace(
         is_decode=is_decode,
         reqs=[SimpleNamespace(extend_len=length, table_idx=i) for i, length in enumerate(lengths)],
-        attn_metadata=SimpleNamespace(state_indices=None),
+        attn_metadata=KDAMetadata(torch.empty(0, dtype=torch.int32)),
     )
     output = backend.forward_layer(
         layer, 0, torch.ones(sum(lengths), 2).bfloat16(), batch, cache, None

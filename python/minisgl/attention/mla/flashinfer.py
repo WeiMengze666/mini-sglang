@@ -68,6 +68,7 @@ class _MLAPlan:
 class FlashInferMLAAdapter:
     # A successful decode consumes the optional write; None never does.
     supports_kv_write = True
+    supports_graph_padding = True
 
     def __init__(self, *, kv_dtype: torch.dtype | None = None):
         self.kv_dtype = kv_dtype
