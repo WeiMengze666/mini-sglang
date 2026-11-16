@@ -130,8 +130,21 @@ class Embedding(BaseOP):
             and ((input_ids < 0) | (input_ids >= self._vocab_size)).any()
         ):
             raise IndexError("Token ID is outside the vocabulary")
-        local = input_ids.long() - self._start
-        mask = (local >= 0) & (local < self.weight.shape[0])
-        output = F.embedding(local.masked_fill(~mask, 0), self.weight)
-        output = output * mask.unsqueeze(-1).to(output.dtype)
+        if (
+            input_ids.is_cuda
+            and input_ids.ndim == 1
+            and input_ids.dtype in (torch.int32, torch.int64)
+            and input_ids.is_contiguous()
+            and self.weight.is_contiguous()
+        ):
+            from minisgl.kernel import indexing
+
+            output = indexing(
+                self.weight, input_ids, vocab_range=(self._start, self.weight.shape[0])
+            )
+        else:
+            local = input_ids.long() - self._start
+            mask = (local >= 0) & (local < self.weight.shape[0])
+            output = F.embedding(local.masked_fill(~mask, 0), self.weight)
+            output = output * mask.unsqueeze(-1).to(output.dtype)
         return self._tp.all_reduce(output)
