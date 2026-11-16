@@ -98,10 +98,12 @@ def init_context_parallel(*, backend=None, device: torch.device | None = None, c
 
 
 def merge_attention(output, lse, *, lse_base="e"):
-    """Combine [shards,...,value] partial outputs using natural-log LSE.
+    """Combine neutral [shards,...,value] partials, returning the input dtype.
 
-    A shard with no visible keys contributes zero, including rows where every
-    shard is empty. Arithmetic stays FP32 until the caller's output projection.
+    Producers supply O=0/LSE=-inf for empty shards. Like the current SDK, NaN
+    and +inf LSE have zero weight; O itself is still multiplied, not sanitized.
+    FP32 O accumulation is rounded once to the producer dtype. An all-empty
+    neutral row returns zero (the current SDK clamps its denominator to one).
     """
     if lse_base not in ("e", "2"):
         raise ValueError("LSE base must be e or 2")
@@ -111,16 +113,14 @@ def merge_attention(output, lse, *, lse_base="e"):
         combined = combine_partial_attention(output, lse, is_lse_base_on_e=lse_base == "e")
         if combined is not None:
             return combined
-    maximum = lse.amax(0)
-    # Avoid -inf - -inf only for all-empty rows. Invalid active LSE must
-    # propagate instead of silently removing that shard's contribution.
+    statistics = lse.masked_fill(torch.isnan(lse) | torch.isposinf(lse), -torch.inf)
+    maximum = statistics.amax(0)
     maximum = maximum.masked_fill(torch.isneginf(maximum), 0)
-    weights = (lse - maximum).exp() if lse_base == "e" else (lse - maximum).exp2()
-    weights = weights / weights.sum(0).clamp_min(torch.finfo(weights.dtype).tiny)
-    # Empty softmax rows may have undefined outputs. Zero weight alone cannot
-    # discard them: IEEE arithmetic keeps NaN * 0 as NaN.
-    partial = output.float().masked_fill(torch.isneginf(lse)[..., None], 0)
-    return (partial * weights[..., None]).sum(0)
+    centered = statistics - maximum
+    weights = centered.exp() if lse_base == "e" else centered.exp2()
+    combined = (output.float() * weights[..., None]).sum(0)
+    combined = combined / weights.sum(0).clamp_min(1)[..., None]
+    return combined.to(output.dtype)
 
 
 class ContextParallel:
@@ -195,7 +195,9 @@ class ContextParallel:
         send = packed.view(tokens, self.size, heads // self.size, values + 1)
         send = send.transpose(0, 1).contiguous()
         received = self._comm.all_to_all(send)
-        return merge_attention(received[..., :values], received[..., values], lse_base=lse_base)
+        return merge_attention(received[..., :values], received[..., values], lse_base=lse_base).to(
+            output.dtype
+        )
 
 
 def create_expert_cpu_group(layout, tp_cpu_group):

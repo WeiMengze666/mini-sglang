@@ -41,24 +41,29 @@ def test_unsupported_partial_contract_declines_before_optional_import(monkeypatc
 
 @pytest.mark.parametrize("base", ["e", "2"])
 @pytest.mark.parametrize("empty", [False, True])
-def test_merge_keeps_fp32_empty_and_corrupt_semantics_for_both_bases(base, empty):
+def test_merge_matches_native_dtype_and_invalid_lse_contract(base, empty):
     values = torch.tensor(
         [
-            [[[float("nan"), float("nan")], [5.0, 7.0], [5.0, 7.0]]],
-            [[[4.0, 6.0], [9.0, 11.0], [9.0, 11.0]]],
+            [[[0.0, 0.0], [5.0, 7.0], [5.0, 7.0]]],
+            [[[0.0, 0.0] if empty else [4.0, 6.0], [9.0, 11.0], [9.0, 11.0]]],
         ],
         dtype=torch.bfloat16,
     )
     lse = torch.tensor([[[-torch.inf, 0.0, 0.0]], [[-torch.inf if empty else 0.0, 0.0, torch.inf]]])
     saved = values.clone()
     actual = C.merge_attention(values, lse, lse_base=base)
-    assert actual.dtype == torch.float32
+    assert actual.dtype == values.dtype
     torch.testing.assert_close(
-        actual[:, 0], torch.tensor([[0.0, 0.0] if empty else [4.0, 6.0]]), rtol=0, atol=0
+        actual[:, 0],
+        torch.tensor([[0.0, 0.0] if empty else [4.0, 6.0]]).to(values.dtype),
+        rtol=0,
+        atol=0,
     )
-    torch.testing.assert_close(actual[:, 1], torch.tensor([[7.0, 9.0]]), rtol=0, atol=0)
-    assert actual[:, 2].isnan().all()
-    torch.testing.assert_close(values, saved, equal_nan=True)
+    torch.testing.assert_close(
+        actual[:, 1], torch.tensor([[7.0, 9.0]]).to(values.dtype), rtol=0, atol=0
+    )
+    torch.testing.assert_close(actual[:, 2], values[0, :, 2], rtol=0, atol=0)
+    torch.testing.assert_close(values, saved, rtol=0, atol=0)
 
 
 def test_only_selected_decode_backend_prepares_communication():
@@ -313,7 +318,7 @@ def test_nonzero_lse_base_and_native_flag_are_explicit(monkeypatch, base):
     monkeypatch.setattr(dcp, "_native_lse_combine", lambda: native)
     dcp.combine_partial_attention(
         torch.zeros(2, 1, 1, 8).as_subclass(DeviceInput),
-        torch.zeros(2, 1, 1),
+        torch.zeros(2, 1, 1).as_subclass(DeviceInput),
         is_lse_base_on_e=base == "e",
     )
     assert calls == [base == "e"]

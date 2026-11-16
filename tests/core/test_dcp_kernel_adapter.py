@@ -1,4 +1,4 @@
-"""Host ABI and error semantics for optional native attention combination."""
+"""CPU protocol only: original storage/dtype and native preselection/errors."""
 
 import pytest
 import torch
@@ -11,38 +11,133 @@ class DeviceInput(torch.Tensor):
         return True
 
 
-@pytest.mark.parametrize("dimension", [3, 1025])
-def test_unsupported_dimensions_do_not_load_native_kernel(monkeypatch, dimension):
-    monkeypatch.setattr(dcp, "_native_lse_combine", lambda: pytest.fail("outside native coverage"))
-    x = torch.empty(2, 1, 1, dimension).as_subclass(DeviceInput)
-    assert dcp.combine_partial_attention(x, torch.zeros(2, 1, 1)) is None
+def device(value):
+    return value.as_subclass(DeviceInput)
 
 
-def test_native_adapter_preserves_empty_and_corrupt_rows_without_modifying_producers(monkeypatch):
-    def no_cuda(*a, **kw):
-        pytest.fail("Host ABI fixture must not initialize CUDA")
-
-    monkeypatch.setattr(torch.cuda, "_lazy_init", no_cuda)
-    x = torch.ones(2, 1, 3, 8).as_subclass(DeviceInput)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
+def test_native_receives_original_strided_storage_and_returns_owned_sdk_result(monkeypatch, dtype):
+    x = device(torch.arange(2 * 1 * 3 * 16).reshape(2, 1, 3, 16).to(dtype)[..., ::2])
+    lse = device(torch.zeros(2, 1, 3, 2)[..., 0])
     x[0, 0, 0] = torch.nan
-    lse = torch.zeros(2, 1, 3)
     lse[0, 0] = torch.tensor([-torch.inf, torch.nan, torch.inf])
+    saved = x.clone()
+    expected = torch.ones(1, 3, 8, dtype=dtype)
     calls = []
 
-    def native(values, actual_lse, *, is_lse_base_on_e):
-        assert values.dtype == torch.float32 and actual_lse is lse and is_lse_base_on_e
-        assert values[0, 0, 0].eq(0).all()
+    def native(values, statistics, *, is_lse_base_on_e):
+        assert values is x and statistics is lse and is_lse_base_on_e is False
+        assert values.stride(-1) == 2 and statistics.stride(-1) == 2
+        assert values[0, 0, 0].isnan().all()
         calls.append(1)
-        return torch.ones(1, 3, 8), None
+        return expected, None
 
     monkeypatch.setattr(dcp, "_native_lse_combine", lambda: native)
-    result = dcp.combine_partial_attention(x, lse)
-    assert calls == [1]
-    assert result[0, 0].eq(1).all() and result[0, 1:].isnan().all()
-    assert x[0, 0, 0].isnan().all()
+    actual = dcp.combine_partial_attention(x, lse, is_lse_base_on_e=False)
+    assert calls == [1] and actual is expected and actual.dtype == dtype
+    torch.testing.assert_close(x, saved, equal_nan=True, rtol=0, atol=0)
 
 
-def test_unavailable_native_kernel_defers_to_portable_combine(monkeypatch):
+@pytest.mark.parametrize(
+    "violation",
+    [
+        "cpu_output",
+        "cpu_lse",
+        "device",
+        "dtype",
+        "lse_dtype",
+        "rank",
+        "shape",
+        "empty_shard",
+        "empty_batch",
+        "empty_head",
+        "dimension",
+        "large_dimension",
+        "output_grad",
+        "lse_grad",
+        "output_neg",
+        "lse_neg",
+        "conj",
+        "layout",
+    ],
+)
+def test_unsupported_contract_declines_before_optional_import(monkeypatch, violation):
+    monkeypatch.setattr(
+        dcp, "_native_lse_combine", lambda: pytest.fail("unsupported input loaded SDK")
+    )
+    x, lse = device(torch.zeros(2, 1, 1, 8)), device(torch.zeros(2, 1, 1))
+    if violation == "cpu_output":
+        x = torch.zeros(2, 1, 1, 8)
+    elif violation == "cpu_lse":
+        lse = torch.zeros(2, 1, 1)
+    elif violation == "device":
+
+        class OtherDevice(DeviceInput):
+            @property
+            def device(self):
+                return torch.device("cuda:1")
+
+        lse = lse.as_subclass(OtherDevice)
+    elif violation == "dtype":
+        x = x.double()
+    elif violation == "lse_dtype":
+        lse = lse.double()
+    elif violation == "rank":
+        x = x[0]
+    elif violation == "shape":
+        lse = device(torch.zeros(2, 1, 2))
+    elif violation.startswith("empty_"):
+        shape = {
+            "empty_shard": (0, 1, 1, 8),
+            "empty_batch": (2, 0, 1, 8),
+            "empty_head": (2, 1, 0, 8),
+        }[violation]
+        x, lse = device(torch.empty(shape)), device(torch.empty(shape[:-1]))
+    elif violation in ("dimension", "large_dimension"):
+        dim = 3 if violation == "dimension" else 2048
+        x = device(torch.zeros(2, 1, 1, dim))
+    elif violation == "output_grad":
+        x.requires_grad_()
+    elif violation == "lse_grad":
+        lse.requires_grad_()
+    elif violation == "output_neg":
+        x = x._neg_view()
+    elif violation == "lse_neg":
+        lse = lse._neg_view()
+    elif violation == "conj":
+
+        class Conjugate(DeviceInput):
+            def is_conj(self):
+                return True
+
+        x = x.as_subclass(Conjugate)
+    else:
+
+        class NonStrided(DeviceInput):
+            @property
+            def layout(self):
+                return torch.sparse_coo
+
+        x = x.as_subclass(NonStrided)
+    assert dcp.combine_partial_attention(x, lse) is None
+
+
+def test_unavailable_native_kernel_declines(monkeypatch):
     monkeypatch.setattr(dcp, "_native_lse_combine", lambda: None)
-    x = torch.empty(2, 1, 1, 8).as_subclass(DeviceInput)
-    assert dcp.combine_partial_attention(x, torch.zeros(2, 1, 1)) is None
+    assert (
+        dcp.combine_partial_attention(device(torch.zeros(2, 1, 1, 8)), device(torch.zeros(2, 1, 1)))
+        is None
+    )
+
+
+def test_selected_native_error_propagates_without_retry(monkeypatch):
+    calls = []
+
+    def fail(*args, **kwargs):
+        calls.append(1)
+        raise RuntimeError("selected DCP failure")
+
+    monkeypatch.setattr(dcp, "_native_lse_combine", lambda: fail)
+    with pytest.raises(RuntimeError, match="selected DCP failure"):
+        dcp.combine_partial_attention(device(torch.zeros(2, 1, 1, 8)), device(torch.zeros(2, 1, 1)))
+    assert calls == [1]

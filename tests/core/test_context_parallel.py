@@ -11,24 +11,76 @@ from minisgl.distributed.context import ContextParallel, init_context_parallel, 
 from minisgl.distributed.layout import configure_parallel
 
 
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
 @pytest.mark.parametrize("all_empty", [False, True])
-def test_empty_shard_may_have_an_undefined_partial_output(all_empty):
-    output = torch.tensor([[[[float("nan"), float("nan")]]], [[[5.0, 7.0]]]])
+def test_neutral_empty_shards_preserve_producer_dtype(dtype, all_empty):
+    output = torch.tensor([[[[0.0, 0.0]]], [[[5.0, 7.0]]]], dtype=dtype)
+    if all_empty:
+        output[1].zero_()
     lse = torch.tensor([[[-torch.inf]], [[-torch.inf if all_empty else 0.0]]])
-    expected = torch.tensor([[[0.0, 0.0] if all_empty else [5.0, 7.0]]])
-    torch.testing.assert_close(merge_attention(output, lse), expected, rtol=0, atol=0)
-    assert output[0].isnan().all()  # Merging must not modify a producer's buffer.
+    saved = output.clone()
+    expected = torch.tensor([[[0.0, 0.0] if all_empty else [5.0, 7.0]]], dtype=dtype)
+    actual = merge_attention(output, lse)
+    assert actual.dtype == dtype
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(output, saved, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("invalid", ["output", "nan_lse", "infinite_lse"])
-def test_corrupt_active_shard_is_not_treated_as_empty(invalid):
+@pytest.mark.parametrize("invalid", [torch.nan, torch.inf])
+def test_invalid_lse_has_zero_weight_when_output_is_finite(invalid):
     output = torch.tensor([[[[3.0]]], [[[5.0]]]])
-    lse = torch.zeros(2, 1, 1)
-    if invalid == "output":
-        output[0] = torch.nan
+    lse = torch.tensor([[[invalid]], [[0.0]]])
+    torch.testing.assert_close(merge_attention(output, lse), output[1], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("lse_value", [-torch.inf, 0.0, torch.nan, torch.inf])
+@pytest.mark.parametrize("value", [torch.nan, torch.inf])
+def test_output_exceptions_are_not_sanitized_even_at_zero_weight(lse_value, value):
+    output = torch.tensor([[[[value]]], [[[5.0]]]])
+    lse = torch.tensor([[[lse_value]], [[0.0]]])
+    result = merge_attention(output, lse)
+    if value == torch.inf and lse_value == 0:
+        assert result.isposinf().all()
     else:
-        lse[0] = torch.nan if invalid == "nan_lse" else torch.inf
-    assert merge_attention(output, lse).isnan().all()
+        assert result.isnan().all()
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
+@pytest.mark.parametrize("base", ["e", "2"])
+def test_weighted_merge_matches_independent_scalar_oracle(dtype, base):
+    import math
+
+    output = torch.tensor([[[[4.0, -8.0]]], [[[8.0, 4.0]]]], dtype=dtype)
+    lse = torch.tensor([[[0.0]], [[math.log(3) if base == "e" else math.log2(3)]]])
+    expected = torch.tensor([[[7.0, 1.0]]], dtype=dtype)
+    actual = merge_attention(output, lse, lse_base=base)
+    assert actual.dtype == dtype
+    torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
+def test_portable_exchange_restores_producer_dtype_and_head_order(dtype):
+    from types import SimpleNamespace
+    from minisgl.distributed.info import DistributedInfo
+
+    cp = object.__new__(ContextParallel)
+    cp.group = DistributedInfo(0, 2)
+    output = torch.tensor([[[4.0, 8.0], [12.0, 16.0]]], dtype=dtype)
+    lse = torch.zeros(1, 2)
+    seen = []
+
+    def exchange(send):
+        seen.append(send)
+        # rank 0 destination receives one head from each KV shard.
+        return torch.stack((send[0], send[0]))
+
+    cp._comm = SimpleNamespace(_backend=lambda: object(), all_to_all=exchange)
+    actual = cp.exchange(output, lse)
+    assert seen[0].dtype == torch.float32
+    assert actual.dtype == dtype
+    torch.testing.assert_close(actual, output[:, :1], rtol=0, atol=0)
+    cp.group = DistributedInfo(0, 1)
+    assert cp.exchange(output, lse) is output
 
 
 def _worker(rank, init_file):

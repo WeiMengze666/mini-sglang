@@ -1,4 +1,4 @@
-"""Adapt the native DCP softmax combine kernel; no local numerical kernel."""
+"""Adapt the mature DCP combine kernel without changing producer precision."""
 
 from functools import cache
 
@@ -15,24 +15,30 @@ def _native_lse_combine():
 
 
 def combine_partial_attention(output: torch.Tensor, lse: torch.Tensor, *, is_lse_base_on_e=True):
-    """Try native FP32 combination while preserving empty/corrupt-row semantics."""
+    """Combine neutral partials in the input dtype, or decline before selection.
+
+    Empty shards must supply zero O and -inf LSE. The SDK accumulates in FP32,
+    treats NaN/+inf LSE as -inf, and still multiplies every O by its weight.
+    """
     if (
         not output.is_cuda
+        or not lse.is_cuda
+        or output.device != lse.device
+        or output.layout != torch.strided
+        or lse.layout != torch.strided
+        or output.dtype not in (torch.float16, torch.bfloat16, torch.float32)
         or output.ndim != 4
         or lse.shape != output.shape[:-1]
         or lse.dtype != torch.float32
-        or output.shape[-1] < 1
+        or min(output.shape) < 1
         or output.shape[-1] > 1024
         or output.shape[-1] & (output.shape[-1] - 1)
+        or any(value.requires_grad or value.is_conj() or value.is_neg() for value in (output, lse))
     ):
         return None
     combine = _native_lse_combine()
     if combine is None:
         return None
-    # Empty shards can contain undefined outputs. The native kernel consumes
-    # those values even at zero weight, so supply zeros for empty rows.
-    safe = output.float().masked_fill(torch.isneginf(lse)[..., None], 0)
-    combined, _ = combine(safe, lse, is_lse_base_on_e=is_lse_base_on_e)
-    # Native sanitization must not hide a corrupt active producer from callers.
-    invalid = (torch.isnan(lse) | torch.isposinf(lse)).any(0)
-    return combined.masked_fill(invalid[..., None], torch.nan)
+    # The SDK receives all four O strides, including the channel stride.
+    combined, _ = combine(output, lse, is_lse_base_on_e=is_lse_base_on_e)
+    return combined

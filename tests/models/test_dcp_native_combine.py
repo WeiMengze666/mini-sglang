@@ -30,14 +30,14 @@ def test_native_combine_matches_unpartitioned_attention(shards, batch, dimension
     output, lse = torch.stack(partials).float(), torch.stack(statistics).float()
     actual = merge_attention(output, lse)
     assert actual.dtype == torch.float32
-    torch.testing.assert_close(actual.double(), expected, rtol=2e-5, atol=2e-6)
+    torch.testing.assert_close(actual.double(), expected.double(), rtol=2e-5, atol=2e-6)
 
 
 @pytest.mark.parametrize("all_empty", [False, True])
-def test_native_combine_zeros_undefined_empty_shards(all_empty):
+def test_native_combine_zeros_neutral_empty_shards(all_empty):
     from minisgl.distributed.context import merge_attention
 
-    output = torch.full((8, 1, 3, 512), torch.nan, device="cuda")
+    output = torch.zeros((8, 1, 3, 512), device="cuda")
     lse = torch.full((8, 1, 3), -torch.inf, device="cuda")
     expected = torch.zeros_like(output[0])
     if not all_empty:
@@ -46,11 +46,11 @@ def test_native_combine_zeros_undefined_empty_shards(all_empty):
         expected.copy_(output[0])
     actual = merge_attention(output, lse)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    assert output[1:].isnan().all()
+    assert output[1:].eq(0).all()
 
 
 @pytest.mark.parametrize("corrupt", ["output", "nan_lse", "positive_infinite_lse"])
-def test_native_combine_does_not_hide_active_corruption(corrupt):
+def test_native_combine_matches_sdk_invalid_lse_policy(corrupt):
     from minisgl.distributed.context import merge_attention
 
     output = torch.ones(8, 1, 1, 512, device="cuda")
@@ -59,7 +59,11 @@ def test_native_combine_does_not_hide_active_corruption(corrupt):
         output[0] = torch.nan
     else:
         lse[0] = torch.nan if corrupt == "nan_lse" else torch.inf
-    assert merge_attention(output, lse).isnan().all()
+    actual = merge_attention(output, lse)
+    if corrupt == "output":
+        assert actual.isnan().all()
+    else:
+        torch.testing.assert_close(actual, output[0], rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
@@ -80,12 +84,11 @@ def test_native_combine_graph_tracks_strided_inputs(dtype):
     for _ in range(4):
         output.normal_()
         lse.normal_()
-        output[0, 0] = torch.nan
+        output[0, 0] = 0
         lse[0, 0] = -torch.inf
         weights = lse.double().softmax(0)
-        clean = output.double().masked_fill(torch.isneginf(lse)[..., None], 0)
-        expected = (clean * weights[..., None]).sum(0)
+        expected = (output.double() * weights[..., None]).sum(0).to(dtype)
         graph.replay()
-        torch.testing.assert_close(actual.double(), expected, rtol=2e-5, atol=2e-6)
+        torch.testing.assert_close(actual.double(), expected.double(), rtol=2e-5, atol=2e-6)
     torch.cuda.synchronize()
     graph.reset()
