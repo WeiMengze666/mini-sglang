@@ -58,13 +58,16 @@ def test_prefix_chunks_preserve_arbitrary_cyclic_phase_and_empty_requests(rank):
             torch.testing.assert_close(padded[valid], joined[rank::8][valid], rtol=0, atol=0)
             return joined
 
-        def cache_gather(layer_id, locations):
+        def cache_gather(layer_id, locations, *, out):
             assert layer_id == 5
             values = locations.float()
-            return values[:, None], (values + 0.5)[:, None]
+            out.copy_(torch.stack((values, values + 0.5), -1))
+            return out[:, :1], out[:, 1:]
 
         actual = chunk.gather(
-            SimpleNamespace(gather_mla=cache_gather),
+            SimpleNamespace(
+                gather_mla=cache_gather, latent_dim=1, rope_dim=1, device=torch.device("cpu")
+            ),
             5,
             SimpleNamespace(size=8, gather_interleaved=gather),
             torch.float32,
@@ -144,10 +147,10 @@ def test_native_ragged_calls_are_batched_with_fp8_boundary_and_bounded_prefixes(
     key = torch.zeros(sum(lengths), 64, dtype=torch.bfloat16)
     weight = torch.zeros(2 * 256, 4, dtype=torch.bfloat16)
     cache = SimpleNamespace(
-        gather_mla=lambda layer, locations: (
-            torch.zeros(len(locations), 4, dtype=torch.bfloat16),
-            torch.zeros(len(locations), 64, dtype=torch.bfloat16),
-        )
+        gather_mla=lambda layer, locations, *, out: out.zero_(),
+        latent_dim=4,
+        rope_dim=64,
+        device=torch.device("cpu"),
     )
     adapter = FlashInferMLAAdapter(kv_dtype=torch.float8_e4m3fn)
     adapter._expanded_workspace = torch.empty(1, dtype=torch.uint8)
@@ -232,6 +235,9 @@ def test_actual_backend_dispatches_one_batch_and_finishes_once(monkeypatch, cove
     cache = SimpleNamespace(
         device=torch.device("cpu"),
         store_mla=lambda *args, **kwargs: calls.append(("store", len(args[1]))),
+    )
+    cache.mla = SimpleNamespace(
+        _validate_write_locations=lambda locations: None, _store_mla=cache.store_mla
     )
     monkeypatch.setattr(module, "ContextParallel", lambda: cp)
     monkeypatch.setattr(module, "get_global_ctx", lambda: SimpleNamespace(page_table=table))

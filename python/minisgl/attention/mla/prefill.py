@@ -33,9 +33,13 @@ class PrefixChunk:
     has_empty: bool
 
     def gather(self, cache, layer_id, cp, dtype):
-        latent, key = cache.gather_mla(layer_id, self.locations)
-        latent_dim = latent.shape[-1]
-        local = torch.cat((latent, key), -1).to(dtype)
+        latent_dim = cache.latent_dim
+        local = torch.empty(
+            (len(self.locations), latent_dim + cache.rope_dim),
+            dtype=dtype,
+            device=cache.device,
+        )
+        cache.gather_mla(layer_id, self.locations, out=local)
         if cp.size == 1:
             return local[:, :latent_dim], local[:, latent_dim:]
         padded_rows = sum(segment[1] for segment in self.segments)

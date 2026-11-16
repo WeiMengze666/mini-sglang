@@ -294,12 +294,34 @@ class MLACache:
             0, locations // self._cp.size, torch.cat((latent, key_suffix), dim=-1).to(self._mla)
         )
 
-    def gather_mla(self, layer_id: int, locations: torch.Tensor):
+    def gather_mla(self, layer_id: int, locations: torch.Tensor, *, out=None):
         locations = self._locations(locations)
         _check(
             self._cp.owns(locations).all(),
             "MLA reads must select only this DCP rank's token positions",
         )
+        storage = self._mla if self.arena is None else self.arena.buffer
+        if out is not None:
+            if (
+                out.shape != (len(locations), self.latent_dim + self.rope_dim)
+                or out.device != self.device
+                or not out.is_floating_point()
+                or out.requires_grad
+                or out.stride(-1) != 1
+                or out.stride(0) < out.shape[1]
+                or torch._C._overlaps(out, storage)
+            ):
+                raise ValueError("MLA read output requires a separate row-major floating buffer")
+            if self.arena is None:
+                from minisgl.kernel.mla import try_gather_mla
+
+                if try_gather_mla(
+                    self._mla[self._full_layers[layer_id]],
+                    locations // self._cp.size,
+                    out[:, : self.latent_dim],
+                    out[:, self.latent_dim :],
+                ):
+                    return out[:, : self.latent_dim], out[:, self.latent_dim :]
         if self.arena is not None:
             storage, pages, offsets = self._paged_locations(locations)
             data = storage[pages, self._full_layers[layer_id], offsets]
@@ -307,4 +329,7 @@ class MLACache:
             data = self._mla[self._full_layers[layer_id]].index_select(
                 0, locations // self._cp.size
             )
+        if out is not None:
+            out.copy_(data)
+            data = out
         return data[:, : self.latent_dim], data[:, self.latent_dim :]

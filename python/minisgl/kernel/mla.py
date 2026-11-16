@@ -61,6 +61,46 @@ def store_mla(latent, key, locations, pages, storage, *, page_size, cp_size, cp_
 
 
 @cache
+def _gather_kernels():
+    from sglang.kernels.ops.kvcache.mla_buffer import get_mla_kv_buffer_triton
+    from tvm_ffi import use_torch_stream
+
+    return get_mla_kv_buffer_triton, use_torch_stream
+
+
+def try_gather_mla(storage, locations, latent, key) -> bool:
+    """Gather validated local rows into caller-owned BF16 views, or decline.
+
+    The SDK uses each output's row stride, so the two outputs may share one
+    combined allocation. Indices must already be in range and owned locally.
+    """
+    tensors = (storage, locations, latent, key)
+    dims = (latent.shape[-1], key.shape[-1])
+    if (
+        storage.ndim != 2
+        or locations.ndim != 1
+        or locations.dtype not in (torch.int32, torch.int64)
+        or storage.dtype not in (torch.bfloat16, torch.float8_e4m3fn, torch.float8_e5m2)
+        or latent.dtype != torch.bfloat16
+        or key.dtype != latent.dtype
+        or latent.shape != (len(locations), dims[0])
+        or key.shape != (len(locations), dims[1])
+        or storage.shape[1] != sum(dims)
+        or dims[0] <= 0
+        or any(dim and dim & (dim - 1) for dim in dims)
+        or any(value.stride(-1) != 1 for value in (storage, latent, key))
+        or any(value.requires_grad for value in tensors)
+        or not all(value.is_cuda and value.device == storage.device for value in tensors)
+    ):
+        return False
+    if len(locations):
+        kernel, stream = _gather_kernels()
+        with stream():
+            kernel(storage, locations.contiguous(), latent, key)
+    return True
+
+
+@cache
 def _concat_query_kernels():
     from sglang.kernels.ops.attention import set_mla_kv_concat_q
     from tvm_ffi import use_torch_stream

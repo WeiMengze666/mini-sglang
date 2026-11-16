@@ -158,8 +158,8 @@ class HybridCache(BaseKVCachePool):
     def store_mla(self, layer_id, latent, key_suffix, out_loc, **kwargs):
         self.mla.store_mla(layer_id, latent, key_suffix, out_loc, **kwargs)
 
-    def gather_mla(self, layer_id, locations):
-        return self.mla.gather_mla(layer_id, locations)
+    def gather_mla(self, layer_id, locations, *, out=None):
+        return self.mla.gather_mla(layer_id, locations, out=out)
 
     @property
     def _mla(self):

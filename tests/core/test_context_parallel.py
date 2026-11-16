@@ -61,6 +61,7 @@ def test_weighted_merge_matches_independent_scalar_oracle(dtype, base):
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
 def test_portable_exchange_restores_producer_dtype_and_head_order(dtype):
     from types import SimpleNamespace
+
     from minisgl.distributed.info import DistributedInfo
 
     cp = object.__new__(ContextParallel)
@@ -123,6 +124,33 @@ def _worker(rank, init_file):
                 local = full[rank::4, :, 1]
                 restored = cp.gather_interleaved(local, total)
                 torch.testing.assert_close(restored, full[:, :, 1], rtol=0, atol=0)
+        # Real caller-owned FP8 cache reads, ragged BF16 AG and prefix striping.
+        from types import SimpleNamespace
+
+        from minisgl.attention.mla.prefill import MLAPrefillMetadata
+        from minisgl.kvcache.mla_pool import MLACache
+
+        cache = MLACache((3,), 128, 4, 2, torch.float8_e4m3fn, "cpu", page_size=64)
+        values = ((torch.arange(128 * 6).reshape(128, 6) % 31 - 15) / 8).bfloat16()
+        # FP8 CPU index_copy is unavailable; the test targets read/AG semantics.
+        cache._mla[0].copy_(values[rank::4])
+        table = torch.stack([torch.arange(32) + row * 32 for row in range(3)])
+        prefixes = (11, 2, 0)
+        batch = SimpleNamespace(
+            reqs=[
+                SimpleNamespace(table_idx=row, cached_len=prefix, extend_len=1)
+                for row, prefix in enumerate(prefixes)
+            ]
+        )
+        plan = MLAPrefillMetadata.from_batch(batch, table, cp, capacity=10)
+        for index, chunk in enumerate(plan.prefix_chunks):
+            actual = torch.cat(chunk.gather(cache, 3, cp, torch.bfloat16), -1)
+            start = index * 3
+            ids = torch.cat(
+                [table[row, start : min(start + 3, prefix)] for row, prefix in enumerate(prefixes)]
+            )
+            expected = values.to(torch.float8_e4m3fn).bfloat16()[ids]
+            torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     finally:
         from minisgl.distributed.impl import destroy_distributed
 
