@@ -37,10 +37,20 @@ class KDAMetadata(SequenceAttnMetadata):
     kernel_data: dict = field(default_factory=dict)
     checkpoints: KDACheckpoints | None = None
     projection_stream: torch.cuda.Stream | None = None
+    native_decode_required: bool = False
 
 
 class KDAAttentionBackend(BaseAttnBackend):
-    supports_graph_padding = False
+    @property
+    def supports_graph_padding(self):
+        return (
+            self.kernel.indexed_decode_padding
+            and self.kernel.indexed_decode is not None
+            and self.kvcache.device.type == "cuda"
+            and self.kvcache.recurrent.conv_dtype == torch.bfloat16
+            and self.kvcache.recurrent.state_dtype == torch.bfloat16
+            and self.config.cache_config.head_dim == 128
+        )
 
     def __init__(self, config, kernel: KDAKernelSpec | None = None, *, cache=None):
         self.config = config
@@ -181,6 +191,11 @@ class KDAAttentionBackend(BaseAttnBackend):
                 raise
         is_decode = getattr(batch, "is_decode", False)
         single_step = all(req.extend_len == 1 for req in batch.reqs)
+        native_required = is_decode and (
+            metadata.native_decode_required or len(x) > len(batch.reqs)
+        )
+        if native_required and (not single_step or self.kernel.indexed_decode is None):
+            raise RuntimeError("Padded KDA decode requires its selected indexed kernel")
         # Packed prefill dispatch precedes the one-token-per-row shortcut.
         # All-T1 batches with more than one total token are still prefill.
         if not is_decode and self.kernel.indexed_prefill is not None:
@@ -212,6 +227,8 @@ class KDAAttentionBackend(BaseAttnBackend):
             if indices is None:
                 indices = cache.recurrent.batch_indices([req.table_idx for req in batch.reqs])
                 metadata.state_indices = indices
+            if native_required and len(indices) != len(x):
+                raise RuntimeError("Padded KDA decode requires physical state-index rows")
             if is_decode and self.kernel.indexed_decode is not None:
                 result = self.kernel.indexed_decode(
                     layer, x, cache.recurrent, layer_id, indices, metadata
@@ -220,6 +237,8 @@ class KDAAttentionBackend(BaseAttnBackend):
                     return layer.finish(
                         x, result.output, normed=result.normed, gate=result.gate, residual=residual
                     )
+                if native_required:
+                    raise RuntimeError("Selected padded KDA indexed decode declined")
             initial = cache.recurrent.get_kda_batch(layer_id, indices)
             if self.kernel.decode is not None and is_decode:
                 fused = layer.decode(x, initial, kernel=self.kernel, residual=residual)
@@ -282,6 +301,8 @@ class KDAAttentionBackend(BaseAttnBackend):
         self._capture_reqs = batch.reqs
         self.prepare_metadata(batch)
         batch.attn_metadata.projection_stream = self._projection_stream
+        # Capture has all physical rows; replay may later contain fewer real rows.
+        batch.attn_metadata.native_decode_required = self.supports_graph_padding
         self._capture_metadata[batch.size] = batch.attn_metadata
 
     def finish_capture(self, batch):
@@ -290,9 +311,13 @@ class KDAAttentionBackend(BaseAttnBackend):
         self._capture_reqs = []
 
     def prepare_for_replay(self, batch):
-        if batch.size not in self._graph_sizes:
+        size = batch.padded_size
+        if size not in self._graph_sizes:
             raise ValueError("No KDA CUDA graph was initialized for this batch size")
-        captured = self._capture_metadata[batch.size]
-        captured.state_indices.copy_(
+        captured = self._capture_metadata[size]
+        captured.state_indices.fill_(-1)
+        captured.state_indices[: batch.size].copy_(
             self.kvcache.recurrent.batch_indices([req.table_idx for req in batch.reqs])
         )
+        captured.cu_seqlens_q.fill_(batch.size)
+        captured.cu_seqlens_q[: batch.size + 1].copy_(batch.attn_metadata.cu_seqlens_q)

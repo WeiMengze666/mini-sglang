@@ -5,7 +5,7 @@ from minisgl.core import Batch
 from minisgl.engine.graph import GraphRunner, _determine_cuda_graph_bs
 
 
-@pytest.mark.parametrize("maximum,expected", [(0, []), (1, [1]), (3, [1, 2]), (8, [1, 2, 4, 8])])
+@pytest.mark.parametrize("maximum,expected", [(0, []), (1, [1]), (3, [1, 2, 3]), (8, [1, 2, 4, 8])])
 def test_graph_maximum_limits_every_bucket(maximum, expected):
     assert _determine_cuda_graph_bs(None, maximum, 90 << 30) == expected
 
@@ -20,7 +20,9 @@ def test_explicit_graph_buckets_reject_invalid_sizes(sizes):
 def test_shell_preserves_graph_preference(extra, maximum):
     from minisgl.server.args import parse_args
 
-    config, shell = parse_args(["--model-path", "unused", "--dtype", "bfloat16", "--shell-mode", *extra])
+    config, shell = parse_args(
+        ["--model-path", "unused", "--dtype", "bfloat16", "--shell-mode", *extra]
+    )
     assert shell and config.max_running_req == 1
     assert config.cuda_graph_max_bs == maximum
 
@@ -86,3 +88,8 @@ def test_graph_runner_covers_unpadded_batches_up_to_request_limit(monkeypatch):
         runner.pad_batch(batch)
         assert batch.padded_size == size
     assert not runner.can_use_cuda_graph(Batch([object()] * 6, "decode"))
+
+
+def test_padding_uses_native_sparse_buckets_and_keeps_nonstandard_maximum():
+    assert _determine_cuda_graph_bs(None, 48, 90 << 30) == [1, 2, 4, 8, 12, 16, 24, 32, 40, 48]
+    assert _determine_cuda_graph_bs(None, 49, 90 << 30)[-2:] == [48, 49]
