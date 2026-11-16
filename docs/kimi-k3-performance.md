@@ -16,42 +16,53 @@ different precision path.
 | Mini25 / `ad77135` | 289.40 | 2705.04 | 42.42 |
 | Mini27 / `ee35842` | 294.48 | 2681.33 | 43.36 |
 | Mini30 / `bdda6b8` | 296.71 | 2673.11 | 41.08 |
+| Mini43 / `e27e129` | 299.60 | 2765.25 | 39.99 |
+| Mini46 / `b10cca9` | 301.38 | 2912.53 | 39.43 |
 
-Mini30 reaches **90.22%** of the retained official
-point and gains **0.76%** over Mini27. Performance parity and
-current-source model quality remain open. These are combined, single-run
-results, without isolated causal attribution. Mini30's p95 ITL is
-79.79 ms versus
-78.45 ms in Mini27;
-p95 request latency is also worse
-(126612.53 versus
-117254.79 ms), despite the lower averages.
+Mini46 reaches **91.64%** of the retained official point, **0.59%** above
+Mini43. Avg ITL remains **14.47%** slower than official; performance parity and
+final current-source model quality remain open. Mini46 completes 397 requests,
+with 6 deadline cancellations and 0 request errors. TTFT p99 increases from
+36203.82 to 50857.88ms and request p95 from 121669.80 to 126085.87ms versus 43;
+these adverse tails remain in the evidence summary. One combined-feature run
+is not an isolated ablation or a repeated-run significance result.
 
 The configured sending window is 900s; the exported observation is about 940s
 after 30s grace and 10s cancellation-credit wait. TPS uses the original exported
-denominator. All five runs report zero request errors; deadline cancellations
-and AIPerf's cancellation-credit `ERROR`/forced session completion remain
-retained adverse evidence. Explicit 48-request warmup and the 51-request scenario
-warmup are outside the primary window. Nsight diagnostic runs are excluded.
+denominator. Explicit 48-request and 51-request scenario warmups remain outside
+it. Cancellation-credit `ERROR` and stuck-session cleanup remain separate from
+request errors. Nsight diagnostics are excluded from this table.
 
 The complete stacks differ: official946 uses SGLang 0.5.20, Torch 2.13,
 FlashInfer 0.6.18, kernel 0.4.7 and Cutlass DSL 4.6.2; Mini uses SDK baa/0.5.22,
 Torch 2.14.1+cu130, FlashInfer 0.7.1, kernel 0.4.9 and Cutlass DSL 4.8.0.
-The JSON preserves the full package inventories, source commits and accepted
-root-review/raw hashes. The research baseline remains 607dd50; bdda is the
-measured feature chain and 519eb91 carries release utility/docs cleanup.
+Reference 9 is historical, not a contemporaneous paired run. The JSON preserves
+package inventories, sources and root-review/raw hashes. Baseline 607 remains a
+historical point; the current release runtime is byte-identical to measured b10.
 
-Working, tracking and checkpoints share a physical state-slot axis; the
-canonical configuration does not use a common byte arena for MLA KV and states.
+The measured chain adapts native residual add3, strided KDA convolution inputs,
+MLA empty-row fixup, last-dimension communication, forward-scoped cache bounds
+and same-dtype DCP combine through existing framework interfaces. It adds no
+model-specific cache or collective path. Native component gates qualify these
+boundaries; their node reductions do not establish an isolated serving speedup.
+
+Working, tracking and checkpoints share a physical state-slot axis. Mini46 has
+367 shared slots and 19963904 logical KV tokens (32.13 GiB per rank); capacity is
+derived from the configured memory budgets, without a snapshot-count override.
+This canonical configuration does not use a shared byte arena for KV and state.
+The separate graph-padding candidate has206 CPU passes; native and serving
+qualification remain pending, so its sparse buckets are not included here.
+
 EP32 qualifies four synthetic NCCL configurations (EP2/8 × N1/48, shared2),
-with 32 rank-process passes. It does not qualify a whole EP model, EP graphs,
-MNNVL or all-to-all transport.
+with 32 rank-process passes. Whole-model EP, EP graph and MNNVL/all-to-all
+qualification remain separate open work. Final quality is deferred until
+performance convergence; historical BF16/Marlin scores do not qualify b10.
 
 ## Historical reports
 
 > The dated reports below retain their original 32K/other configurations,
 > software, quality scope and then-pending work. Their numbers and pending
-> statements do not describe the current 16K bdda feature. Existing links and
+> statements do not describe the current 16K b10 runtime. Existing links and
 > anchors are retained.
 
 ### Replacement-machine baseline (2026-11-11 CST)
@@ -185,8 +196,8 @@ sglang serve \
   --mamba-radix-cache-strategy extra_buffer \
   --mamba-full-memory-ratio 0.31 \
   --max-running-requests 48 \
-  --max-prefill-tokens 32768 \
-  --chunked-prefill-size 32768 \
+  --max-prefill-tokens 16384 \
+  --chunked-prefill-size 16384 \
   --cuda-graph-max-bs-decode 48 \
   --reasoning-parser kimi_k3 \
   --tool-call-parser kimi_k3 \

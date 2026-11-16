@@ -3,7 +3,7 @@
   "as_of": "2026-11-16",
   "artifact_root": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110",
   "status": "valid_unprofiled_measurements_performance_parity_and_quality_open",
-  "scope": "Accepted historical unprofiled runs only; no Nsight33 metrics, no isolated causal or repeated-run significance claim.",
+  "scope": "Accepted unprofiled runs only; profiled diagnostics excluded. Combined single-run results, historical reference9 and differing complete software stacks; no isolated causal/significance claim.",
   "parameters": {
     "tp_size": 8,
     "dcp_size": 8,
@@ -191,41 +191,260 @@
         "path": "native-attention-serving-v1-analysis/root-result-review.json",
         "sha256": "5371157af728e167fff416de3702d69c22dc6e2b1da64a8c3e245703c9eb4c62"
       }
+    },
+    "mini43": {
+      "GPUq_job": 43,
+      "source_commit": "e27e129579ba1a61c01ad407a7f47dd1902642d4",
+      "software_stack": "Mini_current",
+      "output_tokens_per_second": 299.5990529023744,
+      "avg_TTFT_ms": 2765.2484813333335,
+      "avg_ITL_ms": 39.98748352454305,
+      "profiling_phase_records": {
+        "final_requests_completed": 393,
+        "final_requests_cancelled": 6,
+        "final_request_errors": 0
+      },
+      "configured_sending_seconds": 900.0,
+      "actual_export_window_seconds": 940.0029715439999,
+      "raw_hashes": {
+        "native-serving-pipeline-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json": "5ef55ce9200995a91090a0c9a7723cd1d5c91b33d7b0d12412109ad482120895",
+        "native-serving-pipeline-gpu-v1/mini/run.json": "97872a69973c7f311aae87272cf111ce5447c6014a21e2e0dffa82e855dbf892",
+        "native-serving-pipeline-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/server_metrics_export.json": "2974044f5f742badef66684c38e066dbdaa6e1a17c5c6ea25fa494ac8f477d6a",
+        "native-serving-pipeline-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export.jsonl": "ed1abe5fb8271aae0e7797ea332dfd5dbce3da0b5046dcbc3573fb0b1612b86b"
+      },
+      "acceptance_evidence": {
+        "kind": "root_result_review",
+        "path": "native-serving-pipeline-v1-analysis/root-result-review.json",
+        "sha256": "6ba9848901356508d2e3cd7d9a6186b17c4e54791224c9d08338c3b4ec6e529a"
+      },
+      "latency_ms": {
+        "time_to_first_token": {
+          "avg": 2765.2484813333335,
+          "p50": 1346.76623,
+          "p95": 9257.203876799998,
+          "p99": 36203.81638699982
+        },
+        "inter_token_latency": {
+          "avg": 39.98748352454305,
+          "p50": 34.18715499754601,
+          "p95": 68.30518378991226,
+          "p99": 199.28650222353366
+        },
+        "request_latency": {
+          "avg": 30065.479916913486,
+          "p50": 13754.110636,
+          "p95": 121669.79943339992,
+          "p99": 207286.45434919905
+        }
+      }
+    },
+    "mini46": {
+      "GPUq_job": 46,
+      "source_commit": "b10cca967218322d3e06c933ff9ea521ef861e2b",
+      "software_stack": "Mini_current",
+      "output_tokens_per_second": 301.37979202389727,
+      "avg_TTFT_ms": 2912.5335923299745,
+      "avg_ITL_ms": 39.43250793560829,
+      "profiling_phase_records": {
+        "final_requests_completed": 397,
+        "final_requests_cancelled": 6,
+        "final_request_errors": 0
+      },
+      "configured_sending_seconds": 900.0,
+      "actual_export_window_seconds": 940.003303133,
+      "raw_hashes": {
+        "native-communication-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json": "25fd8b9df729bbe5e54a020cf905c23b2d9fae4625b70a0610d624ee4b7cb652",
+        "native-communication-serving-gpu-v1/mini/run.json": "2383de59b7d60e43b6181710645725bb3099365c3196c1c8f91f9d84684f02b4",
+        "native-communication-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/server_metrics_export.json": "9368ef80568eeecc98d1a6ac74c33ef816eb5905df7239e80cef2bd2bf16bf7d",
+        "native-communication-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export.jsonl": "2aa78cea37836e01bde554b9fa54021a172986e1d6a61aec0828f5e3dc9b48ba"
+      },
+      "acceptance_evidence": {
+        "kind": "root_result_review",
+        "path": "native-communication-serving-v1-analysis/root-result-review.json",
+        "sha256": "822f490b4c052feabf1f83c6efa422d72c54e2775a901cc8e0246bd0d4031a62"
+      },
+      "latency_ms": {
+        "time_to_first_token": {
+          "avg": 2912.5335923299745,
+          "p50": 1299.014156,
+          "p95": 9320.835060199992,
+          "p99": 50857.878501039995
+        },
+        "inter_token_latency": {
+          "avg": 39.43250793560829,
+          "p50": 33.60330039892328,
+          "p95": 65.67166986656332,
+          "p99": 178.7585803275459
+        },
+        "request_latency": {
+          "avg": 29578.34607491184,
+          "p50": 13535.280519,
+          "p95": 126085.8679538,
+          "p99": 201382.84555296125
+        }
+      }
     }
   },
   "latest": {
-    "source_commit": "bdda6b8dc2fe5bd3e1672665360acd0cf43e9639",
-    "source_tree": "cdad8604e8e534122419043f4cdc9c6f3abe2e10",
-    "percent_of_reference_TPS": 90.22262154582315,
-    "percent_change_vs27": 0.7553114127478722,
-    "p95_ITL_ms": {
-      "mini27": 78.44581576786416,
-      "mini30": 79.79387053224502
+    "source_commit": "b10cca967218322d3e06c933ff9ea521ef861e2b",
+    "source_tree": "815d2a9ebeba20a126534acc08409c0efe2cb39f",
+    "GPUq_job": 46,
+    "percent_of_reference_TPS": 91.64347279984676,
+    "percent_change_vs43": 0.594374082385074,
+    "percent_change_vs30": 1.574828163579789,
+    "latency_ms": {
+      "time_to_first_token": {
+        "avg": 2912.5335923299745,
+        "p50": 1299.014156,
+        "p95": 9320.835060199992,
+        "p99": 50857.878501039995
+      },
+      "inter_token_latency": {
+        "avg": 39.43250793560829,
+        "p50": 33.60330039892328,
+        "p95": 65.67166986656332,
+        "p99": 178.7585803275459
+      },
+      "request_latency": {
+        "avg": 29578.34607491184,
+        "p50": 13535.280519,
+        "p95": 126085.8679538,
+        "p99": 201382.84555296125
+      }
     },
-    "p95_request_latency_ms": {
-      "mini27": 117254.78903899985,
-      "mini30": 126612.52808419996
-    },
-    "retained_adverse": "10s cancel-credit ERROR/session29 forced release; p95ITL and request latency worse vs27; common381 TTFT worse; quality open; differing pinned full software stacks. Common385 cached-token totals identical to27; not old cache problem.",
-    "quality": "Original128-token readability smoke and accepted native components only. No model quality matrix or strict per-token/full-vocabulary equality acceptance."
+    "adverse_latency_differences": [
+      {
+        "baseline": "reference9",
+        "metric": "inter_token_latency",
+        "statistic": "avg",
+        "candidate": 39.43250793560829,
+        "baseline_value": 34.44796463555756,
+        "percent_increase": 14.469775944049923
+      },
+      {
+        "baseline": "reference9",
+        "metric": "inter_token_latency",
+        "statistic": "p50",
+        "candidate": 33.60330039892328,
+        "baseline_value": 30.574057874999998,
+        "percent_increase": 9.907885097582202
+      },
+      {
+        "baseline": "reference9",
+        "metric": "inter_token_latency",
+        "statistic": "p95",
+        "candidate": 65.67166986656332,
+        "baseline_value": 62.56686129999999,
+        "percent_increase": 4.962385042260897
+      },
+      {
+        "baseline": "reference9",
+        "metric": "inter_token_latency",
+        "statistic": "p99",
+        "candidate": 178.7585803275459,
+        "baseline_value": 86.65291670650717,
+        "percent_increase": 106.29262940219309
+      },
+      {
+        "baseline": "reference9",
+        "metric": "request_latency",
+        "statistic": "avg",
+        "candidate": 29578.34607491184,
+        "baseline_value": 28489.212393938244,
+        "percent_increase": 3.822968729052456
+      },
+      {
+        "baseline": "reference9",
+        "metric": "request_latency",
+        "statistic": "p50",
+        "candidate": 13535.280519,
+        "baseline_value": 12684.049524,
+        "percent_increase": 6.7110349371417355
+      },
+      {
+        "baseline": "reference9",
+        "metric": "request_latency",
+        "statistic": "p95",
+        "candidate": 126085.8679538,
+        "baseline_value": 120441.329489,
+        "percent_increase": 4.686546128931202
+      },
+      {
+        "baseline": "mini30",
+        "metric": "time_to_first_token",
+        "statistic": "avg",
+        "candidate": 2912.5335923299745,
+        "baseline_value": 2673.109015609254,
+        "percent_increase": 8.956783106212018
+      },
+      {
+        "baseline": "mini30",
+        "metric": "time_to_first_token",
+        "statistic": "p95",
+        "candidate": 9320.835060199992,
+        "baseline_value": 6853.552449799985,
+        "percent_increase": 36.000054402035154
+      },
+      {
+        "baseline": "mini30",
+        "metric": "time_to_first_token",
+        "statistic": "p99",
+        "candidate": 50857.878501039995,
+        "baseline_value": 31367.87143708002,
+        "percent_increase": 62.13366151750037
+      },
+      {
+        "baseline": "mini43",
+        "metric": "time_to_first_token",
+        "statistic": "avg",
+        "candidate": 2912.5335923299745,
+        "baseline_value": 2765.2484813333335,
+        "percent_increase": 5.326288468862073
+      },
+      {
+        "baseline": "mini43",
+        "metric": "time_to_first_token",
+        "statistic": "p95",
+        "candidate": 9320.835060199992,
+        "baseline_value": 9257.203876799998,
+        "percent_increase": 0.6873693638687506
+      },
+      {
+        "baseline": "mini43",
+        "metric": "time_to_first_token",
+        "statistic": "p99",
+        "candidate": 50857.878501039995,
+        "baseline_value": 36203.81638699982,
+        "percent_increase": 40.476567324825474
+      },
+      {
+        "baseline": "mini43",
+        "metric": "request_latency",
+        "statistic": "p95",
+        "candidate": 126085.8679538,
+        "baseline_value": 121669.79943339992,
+        "percent_increase": 3.6295519027442547
+      }
+    ],
+    "retained_adverse": "6 deadline cancellations;10s cancellation-credit ERROR and29 stuck sessions retained. TTFT avg/p95/p99 and requestp95 worse than43; ITLavg/p50/p95/p99 and requestavg/p50/p95 worse thanofficial9. No quality acceptance.",
+    "quality": "Original128token readability smoke plus component gates only; final canonical model quality open."
   },
   "timing_scope": "900s sending plus30s grace and10s cancellation-credit wait yields about940s export observation. Copy exported TPS; do not divide output tokens by nominal900s. Request-span benchmark_duration is a separate metric.",
   "state_pool": {
     "shared_axis": "Working, tracking and checkpoints share physical state slots; this is not a common byte arena for MLA KV and recurrent state.",
     "actual_capacity": {
-      "all_eight_rank_recurrent_slots": 368,
+      "all_eight_rank_recurrent_slots": 367,
       "recurrent_slots_share": "working/tracking/checkpoints",
-      "state_budget_GiB": 9.95,
+      "state_budget_GiB": 9.93,
       "request_table_capacity": 48,
-      "KV_logical_tokens": 19970048,
-      "KV_per_rank_KplusV_GiB": 32.14,
+      "KV_logical_tokens": 19963904,
+      "KV_per_rank_KplusV_GiB": 32.13,
       "DCP": 8,
-      "enable_unified_memory": false,
-      "graph_after_free_GiB": 21.71
+      "enable_unified_memory": false
     },
     "evidence": {
-      "path": "native-attention-serving-v1-analysis/software-precision-pool-log-evidence.json",
-      "sha256": "53169201da6232caa0ace27d78b869ec592b7db3390c070e0fdff15905dbefc9"
+      "path": "native-communication-serving-v1-analysis/FINAL-REVIEW.json",
+      "sha256": "a44e36952272c13ce201428bc6c21a3ded01752f36644f5f8f93fe81e5285e86"
     }
   },
   "EP_component32": {
@@ -251,14 +470,19 @@
   },
   "release_scope": {
     "research_baseline": "607dd50ed7d42e3d5cf6447b5fc83b3c21352acb",
-    "measured_feature": "bdda6b8dc2fe5bd3e1672665360acd0cf43e9639",
+    "measured_feature": "b10cca967218322d3e06c933ff9ea521ef861e2b",
     "release_cleanup_base": "519eb91c4023a818bfb7c321a6749696bb33c33e",
-    "note": "The feature/release chain is reviewable; research baseline607 remains. This documentation does not promote a runtime or complete the target."
+    "note": "Retained historical baseline607; release runtime is byte-identical to measuredb10. CPU206 graph-padding candidate remains separate until native/serving validation. Current-source full-model EP and quality remain open.",
+    "release_runtime": "b10cca967218322d3e06c933ff9ea521ef861e2b",
+    "added_after_measurement": [
+      "Reusable tests/validation/serving_lifecycle.py utility",
+      "Current evidence/documentation updates"
+    ]
   },
   "provenance": {
     "combined_summary": {
-      "path": "native-attention-serving-v1-analysis/final-serving-unprofiled-vs-reference-and21-and25-and27.json",
-      "sha256": "72d64475e5e08c51ef523d8e4d12cc44d916082c5779a6b7000fc4b8d8d11d58"
+      "path": "native-communication-serving-v1-analysis/final-serving-unprofiled-vs-reference-and30-and43.json",
+      "sha256": "a5010bdb3407068e8e6568b64dae4d416e36c520a7b34f0f7916e1c0bd37950f"
     },
     "root30": {
       "path": "native-attention-serving-v1-analysis/root-result-review.json",
@@ -267,8 +491,78 @@
     "FINAL30": {
       "path": "native-attention-serving-v1-analysis/FINAL-REVIEW.json",
       "sha256": "9634bd50e2619cf899ed7b5987ba00b9d1aed70a93309aafc44e1352c2de508d"
+    },
+    "previous_combined_summary30": {
+      "path": "native-attention-serving-v1-analysis/final-serving-unprofiled-vs-reference-and21-and25-and27.json",
+      "sha256": "72d64475e5e08c51ef523d8e4d12cc44d916082c5779a6b7000fc4b8d8d11d58"
+    },
+    "root46": {
+      "path": "native-communication-serving-v1-analysis/root-result-review.json",
+      "sha256": "822f490b4c052feabf1f83c6efa422d72c54e2775a901cc8e0246bd0d4031a62"
+    },
+    "FINAL46": {
+      "path": "native-communication-serving-v1-analysis/FINAL-REVIEW.json",
+      "sha256": "a44e36952272c13ce201428bc6c21a3ded01752f36644f5f8f93fe81e5285e86"
     }
   },
-  "quality_parity": "Open for the current canonical precision/source; historical BF16/Marlin/GSM8K records do not qualify bdda.",
-  "goal_complete": false
+  "quality_parity": "Open for canonical MXFP8/FP8KV/BF16SSM release runtimeb10; historical BF16/Marlin results do not qualify current source.",
+  "goal_complete": false,
+  "completed_request_usage_cache_fraction": {
+    "mini46": {
+      "total_usage_prompt_tokens": 46822002.0,
+      "total_usage_prompt_cache_read_tokens": 42872832.0,
+      "ratio_percent": 91.5655678285606,
+      "export_metric": {
+        "unit": "%",
+        "avg": 91.5655678285606
+      },
+      "scope": "Completed-request usage-weighted counts; unknown fields remain null. Not server cache gauge, matched-common requests, or model-input token identity."
+    },
+    "reference9": {
+      "total_usage_prompt_tokens": 48044483.0,
+      "total_usage_prompt_cache_read_tokens": 43995648.0,
+      "ratio_percent": 91.5727368738675,
+      "export_metric": {
+        "unit": "%",
+        "avg": 91.5727368738675
+      },
+      "scope": "Completed-request usage-weighted counts; unknown fields remain null. Not server cache gauge, matched-common requests, or model-input token identity."
+    },
+    "mini30": {
+      "total_usage_prompt_tokens": 45953400.0,
+      "total_usage_prompt_cache_read_tokens": 42180608.0,
+      "ratio_percent": 91.78996113454065,
+      "export_metric": {
+        "unit": "%",
+        "avg": 91.78996113454065
+      },
+      "scope": "Completed-request usage-weighted counts; unknown fields remain null. Not server cache gauge, matched-common requests, or model-input token identity."
+    },
+    "mini43": {
+      "total_usage_prompt_tokens": 46441227.0,
+      "total_usage_prompt_cache_read_tokens": 42655744.0,
+      "ratio_percent": 91.84887384650712,
+      "export_metric": {
+        "unit": "%",
+        "avg": 91.84887384650712
+      },
+      "scope": "Completed-request usage-weighted counts; unknown fields remain null. Not server cache gauge, matched-common requests, or model-input token identity."
+    }
+  },
+  "graph_geometry": {
+    "measured_mini46": "Exact batch captures1..48; executed physical batch distribution not collected by this unprofiled test.",
+    "official_default_buckets": [
+      1,
+      2,
+      4,
+      8,
+      12,
+      16,
+      24,
+      32,
+      40,
+      48
+    ],
+    "separate_padding_candidate": "462c33d17ef1901fe8ec27852dd1d9c2736cec54:206CPU passed; native/performance pending; not included in current release runtime."
+  }
 }

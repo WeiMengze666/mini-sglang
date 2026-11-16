@@ -5,12 +5,14 @@
 The [current serving table](kimi-k3-performance.md#current-canonical-16k-snapshot-2026-11-16)
 and [hashed evidence summary](validation/kimi-k3-canonical-16k-20261116.json)
 use TP8/DCP8/EP1, 16K prefill/chunks, native MXFP8 experts, FP8 KV and BF16
-persistent state. The latest unprofiled bdda result is
-296.71 output tokens/s
-(90.22% of official946's
-328.86); performance parity and final current-source quality remain open.
-The research baseline remains 607dd50; bdda/519 are reviewable feature/release
-commits. Nsight diagnostics do not enter the fair table.
+persistent state. The latest unprofiled b10 result is **301.38 output tokens/s**
+(**91.64%** of official946's 328.86), with 397 completed requests, 6 deadline
+cancellations and 0 request errors. Avg ITL remains 14.47% slower than official;
+TTFT p99 and request p95 worsen versus 43. Performance parity and final
+current-source quality remain open. Baseline 607 is retained historically;
+the release runtime is byte-identical to measured b10, with a separately reviewed
+HTTP validation utility and documentation. Nsight diagnostics are excluded.
+The 206-pass CPU graph-padding candidate remains separate and unqualified on GPU.
 
 EP32 is only four synthetic NCCL configurations, 32 rank-process passes
 (EP2/8 × N1/48, shared2). It is not full-model, EP-graph, MNNVL or all-to-all

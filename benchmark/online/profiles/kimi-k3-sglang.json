@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "Current canonical 16384 recipe; new candidate serving measurements pending",
+  "status": "Canonical16384 recipe; unprofiled Mini46b10 measured, parity and final quality open.",
   "reference": {
     "repository": "https://github.com/sgl-project/sglang",
     "inspected_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
@@ -48,7 +48,13 @@
       "0.0.0.0",
       "--port",
       "38080"
-    ]
+    ],
+    "retained_measured_baseline": {
+      "commit": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+      "version": "0.5.20",
+      "GPUq_job": 9,
+      "evidence": "docs/validation/kimi-k3-canonical-16k-20261116.json"
+    }
   },
   "required_runtime_evidence": [
     "resolved server arguments and backend fallback warnings",
@@ -159,13 +165,14 @@
       "--ui",
       "simple"
     ],
-    "status": "Final acceptance uses900s; short convergence runs may override only benchmark duration and must report that duration."
+    "status": "Canonical AgentX acceptance preserves900 sending plus30 request grace and10 cancellation-credit wait; reduced/profiler diagnostics are separate."
   },
   "baseline": {
-    "status": "Historical baselines use32768 and must not be presented as measurements of this16384 recipe.",
+    "status": "Current16384 measurements are in the canonical16K evidence summary. Older32768 points retain their own parameters and must not be mixed.",
     "evidence": [
       "docs/validation/kimi-k3-aiperf-mini-r0.json",
-      "docs/validation/kimi-k3-replacement-baseline-20261110.json"
+      "docs/validation/kimi-k3-replacement-baseline-20261110.json",
+      "docs/validation/kimi-k3-canonical-16k-20261116.json"
     ],
     "policy": "Converge performance using mature kernels and matching cache, budget and scheduling semantics. During optimization run readable-output/crash/state-boundary smoke; conduct full model-quality acceptance after performance convergence. Floating reduction/rounding differences are permitted."
   },
@@ -218,7 +225,7 @@
       "--distributed-timeout",
       "1800"
     ],
-    "status": "Current generic runtime candidate; this is not the measured historical R0 argv. GPU performance is pending.",
+    "status": "Runtimeb10 measured by unprofiled46; added release utility/docs leave runtime bytes unchanged. Performance parity, final quality and full-model EP remain open.",
     "precision": {
       "model": "torch.bfloat16",
       "moe_activation": "mxfp8 via native auto on supported MXFP4/SM100 hardware",
