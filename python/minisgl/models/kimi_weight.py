@@ -111,6 +111,8 @@ def load_kimi_weight(
     packed: bool = False,
     dcp_size: int = 1,
     ep_size: int = 1,
+    prefetch: bool = False,
+    prefetch_num_threads: int = 4,
 ) -> Iterator[tuple[str, torch.Tensor]]:
     """Stream native text weights, sharding before read/decode when applicable.
 
@@ -183,12 +185,20 @@ def load_kimi_weight(
             )
     index = checkpoint_index(folder, lambda name: normalize_kimi_name(name, num_layers))
     _validate_pairs(index, num_layers)
+    # Every local rank partitions the same shard list, before expert filtering.
+    prefetch_files = set(index.values()) if prefetch else None
     index = {
         raw: file
         for raw, file in index.items()
         if owns_expert(normalize_kimi_name(raw, num_layers), shard_config, layout)
     }
-    for raw_name, reader in shard_readers(index):
+    for raw_name, reader in shard_readers(
+        index,
+        prefetch=prefetch,
+        prefetch_num_threads=prefetch_num_threads,
+        tp_info=DistributedInfo(tp_rank, tp_size),
+        prefetch_files=prefetch_files,
+    ):
         name = normalize_kimi_name(raw_name, num_layers)
         if name.endswith(".weight_scale"):
             continue

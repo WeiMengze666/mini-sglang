@@ -73,7 +73,13 @@ def _get_expert_stack_info(key: str) -> tuple[str, int] | None:
     return f"{match.group('prefix')}.{packed_name}", int(match.group("idx"))
 
 
-def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, torch.Tensor]]:
+def load_weight(
+    model_path: str,
+    device: torch.device,
+    *,
+    prefetch: bool = False,
+    prefetch_num_threads: int = 4,
+) -> Iterator[Tuple[str, torch.Tensor]]:
     """Streaming weight loader. Yields (name, tensor) pairs already sharded, merged,
     and on device. Peak CPU memory: one full tensor + a small merge buffer."""
     from .config import ModelConfig
@@ -94,6 +100,8 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
             packed=bool(getattr(config.hf_config, "quantization_config", None)),
             dcp_size=layout.dcp_size,
             ep_size=layout.ep_size,
+            prefetch=prefetch,
+            prefetch_num_threads=prefetch_num_threads,
         )
         return
     model_folder = download_hf_weight(model_path)
@@ -114,7 +122,9 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
 
     index = checkpoint_index(Path(model_folder), normalize)
     for name, reader in tqdm(
-        shard_readers(index),
+        shard_readers(
+            index, prefetch=prefetch, prefetch_num_threads=prefetch_num_threads, tp_info=tp_info
+        ),
         total=len(index),
         desc="Loading weights",
         disable=not tp_info.is_primary(),
