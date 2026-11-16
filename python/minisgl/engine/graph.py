@@ -155,10 +155,13 @@ class GraphRunner:
                 self.buffer.set_batch(batch)
                 if locations is not None:
                     self.buffer.out_loc[:bs].copy_(locations)
-                with DistributedCommunicator().capture(), get_global_ctx().forward_batch(batch):
-                    self.buffer.logits[:bs] = model.forward()
-                    with torch.cuda.graph(graph, pool=pool, stream=self.stream):
+                ctx = get_global_ctx()
+                with DistributedCommunicator().capture(), ctx.forward_batch(batch):
+                    with ctx.kv_cache.model_forward(batch):
                         self.buffer.logits[:bs] = model.forward()
+                    with torch.cuda.graph(graph, pool=pool, stream=self.stream):
+                        with ctx.kv_cache.model_forward(batch):
+                            self.buffer.logits[:bs] = model.forward()
             finally:
                 self.attn_backend.finish_capture(batch)
             if pool is None:

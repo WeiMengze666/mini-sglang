@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import NoReturn
 
 import torch
@@ -134,6 +134,11 @@ class HybridCache(BaseKVCachePool):
                 except BaseException as exc:
                     error.add_note(f"Working state release failed: {exc}")
             raise
+
+    def model_forward(self, batch):
+        if not self._full_layers:
+            return nullcontext()
+        return self.mla._write_scope(batch.out_loc[: len(batch.input_ids)])
 
     def finish_request(self, *args):
         self.recurrent.finish_request(*args)

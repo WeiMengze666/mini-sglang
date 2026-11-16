@@ -45,9 +45,12 @@ def test_backend_write_is_consumed_exactly_once_and_uses_current_forward_locatio
     writes, offered = [], []
     x = torch.ones(1, 4)
     cache = SimpleNamespace(
-        store_mla=lambda *args, **kwargs: writes.append(args[3]),
         gather_mla=lambda *args: (x, x[:, :1]),
-        mla=SimpleNamespace(paged_storage=lambda layer: object()),
+        mla=SimpleNamespace(
+            paged_storage=lambda layer: object(),
+            _validate_write_locations=lambda locations: None,
+            _store_mla=lambda *args, **kwargs: writes.append(args[3]),
+        ),
     )
 
     class Layer:

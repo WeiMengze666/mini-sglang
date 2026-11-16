@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -29,7 +30,9 @@ class MLACacheWrite:
     implementation: str
 
     def store(self):
-        self.cache.store_mla(
+        cache = self.cache.mla
+        cache._validate_write_locations(self.locations)
+        cache._store_mla(
             self.layer_id,
             self.latent,
             self.key,
@@ -40,8 +43,15 @@ class MLACacheWrite:
     def fused_query(self, query, suffix):
         if self.implementation != "sgl":
             return None
-        return self.cache.mla.store_and_concat_query(
-            self.layer_id, self.latent, self.key, self.locations, query, suffix
+        cache = self.cache.mla
+        return cache._store_and_concat_query(
+            self.layer_id,
+            self.latent,
+            self.key,
+            self.locations,
+            query,
+            suffix,
+            validate=cache._validate_write_locations,
         )
 
 
@@ -60,6 +70,7 @@ class MLACache:
         self._full_layers = {layer: i for i, layer in enumerate(layer_ids)}
         self.num_tokens, self.latent_dim, self.rope_dim = num_tokens, latent_dim, key_dim
         self.arena, self.page_size = arena, page_size
+        self._write_locations = None
         self._cp = ContextParallel()
         if page_size % self._cp.size:
             raise ValueError("MLA page size must be divisible by DCP size")
@@ -167,11 +178,41 @@ class MLACache:
             IndexError,
         )
 
+    @contextmanager
+    def _write_scope(self, locations):
+        """Borrow read-only locations for one invocation, never across graph replay."""
+        if self._write_locations is not None:
+            raise RuntimeError("Nested MLA write scopes are not allowed")
+        try:
+            self._validate_locations(locations)
+            self._write_locations = locations
+            yield
+        finally:
+            self._write_locations = None
+
+    def _validate_write_locations(self, locations):
+        validated = self._write_locations
+        if validated is not None and (
+            locations.device == validated.device
+            and locations.dtype == validated.dtype
+            and locations.shape == validated.shape
+            and locations.stride() == validated.stride()
+            and locations.storage_offset() == validated.storage_offset()
+            and locations.untyped_storage() is validated.untyped_storage()
+        ):
+            return
+        self._validate_locations(locations)
+
     def _locations(self, locations: torch.Tensor) -> torch.Tensor:
         self._validate_locations(locations)
         return locations.to(device=self.device, dtype=torch.long)
 
     def store_and_concat_query(self, layer_id, latent, key, locations, query, suffix):
+        return self._store_and_concat_query(
+            layer_id, latent, key, locations, query, suffix, validate=self._validate_locations
+        )
+
+    def _store_and_concat_query(self, layer_id, latent, key, locations, query, suffix, *, validate):
         """Offer the mature FP8 writer for dense rows and virtual cyclic locations.
 
         Arena pages keep their existing stride-aware store. The fused SDK owns
@@ -185,7 +226,7 @@ class MLACache:
             return None
         from minisgl.kernel.mla import store_mla_and_concat_query
 
-        self._validate_locations(locations)
+        validate(locations)
         if latent.shape != (len(locations), 512) or key.shape != (len(locations), 64):
             raise ValueError("MLA token/cache shapes differ; do not write padded tokens")
         return store_mla_and_concat_query(
@@ -208,7 +249,11 @@ class MLACache:
         *,
         implementation="torch",
     ) -> None:
-        locations = self._locations(out_loc)
+        self._validate_locations(out_loc)
+        self._store_mla(layer_id, latent, key_suffix, out_loc, implementation=implementation)
+
+    def _store_mla(self, layer_id, latent, key_suffix, out_loc, *, implementation="torch"):
+        locations = out_loc.to(device=self.device, dtype=torch.long)
         if latent.shape != (len(locations), self.latent_dim) or key_suffix.shape != (
             len(locations),
             self.rope_dim,

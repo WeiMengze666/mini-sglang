@@ -84,7 +84,10 @@ def make_engine(monkeypatch, *, graph=False, copy_error=False):
     monkeypatch.setattr(torch.cuda, "Event", Event)
     engine = object.__new__(Engine)
     engine.stream, engine.result_copy_stream = forward, copy
-    engine.ctx = SimpleNamespace(forward_batch=lambda batch: nullcontext())
+    engine.ctx = SimpleNamespace(
+        forward_batch=lambda batch: nullcontext(),
+        kv_cache=SimpleNamespace(model_forward=lambda batch: nullcontext()),
+    )
     engine.model = SimpleNamespace(forward=compute)
     engine.graph_runner = SimpleNamespace(
         can_use_cuda_graph=lambda batch: graph, replay=lambda batch: compute()

@@ -21,6 +21,10 @@ class BaseKVCachePool(ABC):
         """Bracket host-side state ownership, including graph replay."""
         return nullcontext()
 
+    def model_forward(self, batch):
+        """Bracket one model invocation, separately for graph warmup and capture."""
+        return nullcontext()
+
     def stage_state(self, table_idx, uid, length):
         """Optionally preserve a committed frontier before its next update."""
         return None

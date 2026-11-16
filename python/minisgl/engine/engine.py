@@ -528,7 +528,8 @@ class Engine:
             if self.graph_runner.can_use_cuda_graph(batch):
                 logits = self.graph_runner.replay(batch)
             else:
-                logits = self.model.forward()
+                with self.ctx.kv_cache.model_forward(batch):
+                    logits = self.model.forward()
 
         for req in batch.reqs:
             req.complete_one()
