@@ -12,9 +12,11 @@ class CuTeMLADecodePlan:
         self.graph = batch_size is not None
         self.page_size = page_size
         self.max_pages = max_pages
+        self.cu_seqlens_q = None
         # FlashInfer loads complete 128-token tiles from the dense page table.
         self.page_alignment = max(1, 128 // page_size)
         if self.graph:
+            self._prepare_query_offsets(batch_size)
             self.blocks = torch.zeros(
                 (batch_size, self._aligned_width(max_pages)), dtype=torch.int32, device=self.device
             )
@@ -23,6 +25,13 @@ class CuTeMLADecodePlan:
 
     def _aligned_width(self, pages):
         return (pages + self.page_alignment - 1) // self.page_alignment * self.page_alignment
+
+    def _prepare_query_offsets(self, batch_size):
+        if self.cu_seqlens_q is not None and self.cu_seqlens_q.numel() == batch_size + 1:
+            return
+        if self.device.type == "cuda" and torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("Prepare MLA query offsets before CUDA graph capture")
+        self.cu_seqlens_q = torch.arange(batch_size + 1, device=self.device, dtype=torch.int32)
 
     def prepare(self, metadata, options):
         if self.metadata is metadata and self.options == options:
@@ -44,6 +53,7 @@ class CuTeMLADecodePlan:
             )
             self.local = metadata.local_lengths
             self.global_ = metadata.global_lengths
+        self._prepare_query_offsets(self.local.numel())
         self.metadata, self.options = metadata, options
 
     def run(self, query, pages, *, nope_dim, scale):
@@ -87,8 +97,15 @@ class CuTeMLADecodePlan:
                 return_lse=True,
                 return_lse_base="basee",
             )
+        # FI's supported one-query path returns compact BF16 O / FP32 LSE.
+        # Do not normalize an unknown caller layout merely to select this kernel.
+        compact = output.is_contiguous() and lse.is_contiguous()
         output = output.reshape(len(query), query.shape[1], 512)
         lse = lse.reshape(len(query), query.shape[1])
+        from minisgl.kernel.mla import try_fixup_zero_kv_rows
+
+        if compact and try_fixup_zero_kv_rows(output, lse, self.local, self.cu_seqlens_q):
+            return output, lse
         # Empty cyclic shards are neutral elements of the distributed merge.
         empty = self.local == 0
         return output.masked_fill(empty[:, None, None], 0), lse.masked_fill(

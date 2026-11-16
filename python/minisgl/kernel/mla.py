@@ -1,4 +1,4 @@
-"""Map generic paged storage to the mature MLA cache-write kernels."""
+"""Adapters for mature MLA cache-write and decode-result kernels."""
 
 from functools import cache
 
@@ -100,3 +100,59 @@ def store_mla_and_concat_query(storage, locations, latent, key, query, suffix, *
             dcp_world_size=cp_size,
             dcp_rank=cp_rank,
         )
+
+
+@cache
+def _zero_kv_kernels():
+    from sglang.kernels.ops.attention import fixup_zero_kv
+    from tvm_ffi import use_torch_stream
+
+    return fixup_zero_kv, use_torch_stream
+
+
+@cache
+def _warm_zero_kv_fixup():
+    sdk, _ = _zero_kv_kernels()
+    return sdk._jit_fixup_module(torch.bfloat16)
+
+
+def try_fixup_zero_kv_rows(output, lse, local_lengths, cu_seqlens_q) -> bool:
+    """Fix owned one-query decode results, or decline before native selection.
+
+    local_lengths is nonnegative cache-owned metadata; cu_seqlens_q is the
+    prepared int32 arange(B + 1). LSE is already in the caller's chosen units.
+    The SDK only writes neutral empty rows, never converts units or precision.
+    """
+    tensors = (output, lse, local_lengths, cu_seqlens_q)
+    if (
+        output.ndim != 3
+        or lse.shape != output.shape[:2]
+        or min(output.shape) <= 0
+        or output.dtype != torch.bfloat16
+        or lse.dtype != torch.float32
+        or local_lengths.shape != (output.shape[0],)
+        or cu_seqlens_q.shape != (output.shape[0] + 1,)
+        or local_lengths.dtype != torch.int32
+        or cu_seqlens_q.dtype != torch.int32
+        or not all(
+            value.is_cuda and value.device == output.device and value.is_contiguous()
+            for value in tensors
+        )
+        or output.requires_grad
+        or lse.requires_grad
+        or any(torch._C._overlaps(output, value) for value in tensors[1:])
+        or any(torch._C._overlaps(lse, value) for value in tensors[2:])
+    ):
+        return False
+    # The SDK uses compact row strides H*D and H. Misaligned row bases are
+    # explicitly handled by its scalar store path; no forced copy is needed.
+    try:
+        sdk, stream = _zero_kv_kernels()
+    except ImportError:
+        return False
+    if torch.cuda.is_current_stream_capturing() and not _warm_zero_kv_fixup.cache_info().currsize:
+        raise RuntimeError("Warm native zero-KV fixup before CUDA graph capture")
+    _warm_zero_kv_fixup()
+    with stream():
+        sdk.fixup_zero_kv_rows(output, lse, local_lengths, cu_seqlens_q, 1)
+    return True
