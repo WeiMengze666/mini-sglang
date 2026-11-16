@@ -341,6 +341,8 @@ def test_mla_all_return_paths_forward_the_explicit_residual(monkeypatch, path):
         store_mla=lambda *args, **kwargs: None,
         mla=SimpleNamespace(paged_storage=lambda *args: None),
     )
+    cache.mla._validate_write_locations = lambda locations: None
+    cache.mla._store_mla = cache.store_mla
     metadata = SimpleNamespace(
         decode=object() if path == "paged" else None,
         prefill=object() if path == "packed_prefill" else None,
