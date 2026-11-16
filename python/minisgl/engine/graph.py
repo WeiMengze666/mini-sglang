@@ -72,9 +72,13 @@ def _determine_cuda_graph_bs(
         # batch directly instead of silently falling back between sparse buckets.
         return list(range(1, cuda_graph_max_bs + 1))
 
-    return [
-        bs for bs in [1, 2, 4] + list(range(8, cuda_graph_max_bs + 1, 8)) if bs <= cuda_graph_max_bs
-    ]
+    sizes = (
+        [1, 2, 4, 8, 12]
+        + list(range(16, 257, 8))
+        + list(range(272, 512, 16))
+        + list(range(512, cuda_graph_max_bs + 1, 32))
+    )
+    return sorted({bs for bs in sizes if bs <= cuda_graph_max_bs} | {cuda_graph_max_bs})
 
 
 def mem_GB(size: int) -> str:

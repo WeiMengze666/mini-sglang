@@ -111,6 +111,9 @@ class KDAKernelSpec:
     indexed_prefill: IndexedPrefillKernel | None = None
     prepare_checkpoints: CheckpointPreparation | None = None
     checkpoint_quantum: CheckpointQuantum | None = None
+    # Opt-in: -1 indices skip state access/update; empty QSL segments carry no query.
+    # Padded output is undefined and ignored. Only a covered indexed kernel may opt in.
+    indexed_decode_padding: bool = False
 
 
 KDA_KERNELS = Registry[KDAKernelSpec]("KDA kernel backend")
@@ -126,6 +129,7 @@ def register_kda_kernel(
     indexed_prefill: IndexedPrefillKernel | None = None,
     prepare_checkpoints: CheckpointPreparation | None = None,
     checkpoint_quantum: CheckpointQuantum | None = None,
+    indexed_decode_padding: bool = False,
 ):
     """Register a recurrence backend without coupling it to a model class."""
 
@@ -139,6 +143,7 @@ def register_kda_kernel(
             indexed_prefill,
             prepare_checkpoints,
             checkpoint_quantum,
+            indexed_decode_padding,
         )
     )
 
@@ -245,6 +250,7 @@ register_kda_kernel(
     _sgl_decode,
     project=_sgl_project,
     indexed_decode=_sgl_indexed_decode,
+    indexed_decode_padding=True,
 )
 
 

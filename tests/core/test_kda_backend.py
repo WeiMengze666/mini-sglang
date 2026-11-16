@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from minisgl.attention.kda.backend import KDAMetadata
 from minisgl.attention.kda.registry import (
     KDA_KERNELS,
     KDAKernelSpec,
@@ -95,7 +96,7 @@ def test_one_token_prefill_keeps_prefill_kernel_contract(
     batch = SimpleNamespace(
         is_decode=is_decode,
         reqs=[SimpleNamespace(extend_len=1, table_idx=i) for i in range(2)],
-        attn_metadata=SimpleNamespace(state_indices=None),
+        attn_metadata=KDAMetadata(torch.empty(0, dtype=torch.int32)),
     )
     x = torch.zeros(2, 3)
     result = backend.forward_layer(Layer(), 0, x, batch, cache, None)
