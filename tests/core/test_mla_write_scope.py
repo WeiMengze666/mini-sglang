@@ -99,6 +99,45 @@ def test_only_the_exact_covered_prefix_can_skip_validation(monkeypatch, case):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+@pytest.mark.parametrize("case", ["write_neg", "canonical_neg", "both_neg", "double_neg"])
+def test_logical_index_views_cannot_borrow_a_different_prefix(monkeypatch, dtype, case):
+    from minisgl.kernel import mla as kernel
+
+    mla = MLACache((0,), 16, 512, 64, torch.float8_e4m3fn, "cpu")
+    cache = SimpleNamespace(mla=mla)
+    calls = count_validations(monkeypatch, mla)
+    backing = torch.tensor([1, 2], dtype=dtype)
+    canonical = (-backing)._neg_view() if case in ("canonical_neg", "both_neg") else backing
+    locations = {
+        "write_neg": canonical._neg_view(),
+        "canonical_neg": canonical._neg_view(),
+        "both_neg": canonical[:],
+        "double_neg": canonical._neg_view()._neg_view(),
+    }[case]
+    assert canonical.untyped_storage() is locations.untyped_storage()
+    assert canonical.shape == locations.shape and canonical.stride() == locations.stride()
+    assert canonical.storage_offset() == locations.storage_offset()
+    native_calls, result = [], object()
+    monkeypatch.setattr(
+        kernel,
+        "store_mla_and_concat_query",
+        lambda *args, **kwargs: (native_calls.append(args[1]), result)[1],
+    )
+    with mla._write_scope(canonical):
+        item = MLACacheWrite(cache, 0, torch.ones(2, 512), torch.ones(2, 64), locations, "sgl")
+        if case in ("write_neg", "canonical_neg"):
+            with pytest.raises(IndexError, match="out of range"):
+                item.fused_query(None, None)
+            assert not native_calls
+        else:
+            assert item.fused_query(None, None) is result
+            assert len(native_calls) == 1
+    # Logical views go through the old checked path. Resolved double-negation is ordinary.
+    assert len(calls) == (1 if case == "double_neg" else 2)
+    assert mla._write_locations is None
+
+
 def test_scope_keeps_storage_alive_and_never_trusts_a_later_batch(monkeypatch):
     cache = make_cache(1)
     calls = count_validations(monkeypatch, cache.mla)

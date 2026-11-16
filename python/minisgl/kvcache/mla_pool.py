@@ -193,7 +193,9 @@ class MLACache:
     def _validate_write_locations(self, locations):
         validated = self._write_locations
         if validated is not None and (
-            locations.device == validated.device
+            not (locations.is_neg() or locations.is_conj())
+            and not (validated.is_neg() or validated.is_conj())
+            and locations.device == validated.device
             and locations.dtype == validated.dtype
             and locations.shape == validated.shape
             and locations.stride() == validated.stride()
