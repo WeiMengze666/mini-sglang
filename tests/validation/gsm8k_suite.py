@@ -14,6 +14,7 @@ import os
 import re
 import time
 from decimal import Decimal
+from contextlib import contextmanager
 from pathlib import Path
 
 GSM8K_REVISION = "3101c7d5072418e28b9008a6636bde82a006892c"
@@ -232,9 +233,65 @@ def shutdown_engine(engine, primary_error=None):
         )
 
 
+
+def quality_batch(engine, active):
+    """Use real requests for ownership and physical rows for graph inputs."""
+    import torch
+    from minisgl.core import Batch
+
+    batch = Batch(active, "prefill" if active[0].cached_len == 0 else "decode")
+    engine.graph_runner.pad_batch(batch)
+    batch.input_ids = torch.cat(
+        [req.input_ids[req.cached_len : req.device_len] for req in batch.padded_reqs]
+    ).to(engine.device)
+    batch.positions = torch.cat(
+        [
+            torch.arange(req.cached_len, req.device_len, dtype=torch.int32, device=engine.device)
+            for req in batch.padded_reqs
+        ]
+    )
+    batch.out_loc = torch.cat(
+        [
+            engine.page_table[req.table_idx, req.cached_len : req.device_len]
+            for req in batch.padded_reqs
+        ]
+    )
+    engine.attn_backend.prepare_metadata(batch)
+    return batch
+
+
+@contextmanager
+def finite_sampling(engine):
+    """Quality-only observer; delegate real sampling once and restore exactly."""
+    import torch
+
+    sampler = engine.sampler
+    original = sampler.sample
+    missing = object()
+    previous = vars(sampler).get("sample", missing)
+
+    def checked(logits, sampling_args):
+        # Engine publishes real rows to its sampler; undefined padding is excluded.
+        if not torch.isfinite(logits).all():
+            raise AssertionError(
+                f"Task evaluation produced non-finite real logits: "
+                f"dtype={logits.dtype}, shape={tuple(logits.shape)}, stride={logits.stride()}"
+            )
+        return original(logits, sampling_args)
+
+    sampler.sample = checked
+    try:
+        yield
+    finally:
+        if previous is missing:
+            del sampler.sample
+        else:
+            sampler.sample = previous
+
+
 def run_mini(args, cases, stop_ids):
     import torch
-    from minisgl.core import Batch, Req, SamplingParams
+    from minisgl.core import Req, SamplingParams
     from minisgl.distributed import DistributedInfo
     from minisgl.engine import Engine, EngineConfig
     from minisgl.utils import load_tokenizer
@@ -278,14 +335,19 @@ def run_mini(args, cases, stop_ids):
     ).view(args.batch_size, args.max_context)
     engine.page_table[: args.batch_size, : args.max_context].copy_(table)
     if rank == 0:
-        (args.output / "provenance.json").write_text(
-            json.dumps(execution_identity("minisgl"), indent=2) + "\n"
-        )
+        identity = execution_identity("minisgl")
+        identity["quality_observer"] = {
+            "finite_real_logits_before_sampler": True,
+            "delegates_original_sampler_once": True,
+            "changes_seed_or_resamples": False,
+            "scope": "Validation-only; restored in finally; absent from serving performance.",
+        }
+        (args.output / "provenance.json").write_text(json.dumps(identity, indent=2) + "\n")
     rows, started = [], time.monotonic()
     group, generated, batch, logits = [], [], None, None
     failure, stage, graph = None, "setup", False
     try:
-        with torch.inference_mode():
+        with torch.inference_mode(), finite_sampling(engine):
             for begin in range(0, len(cases), args.batch_size):
                 group = cases[begin : begin + args.batch_size]
                 generated, batch, logits = [], None, None
@@ -297,7 +359,7 @@ def run_mini(args, cases, stop_ids):
                         0,
                         args.max_new_tokens,
                         begin + slot + 1,
-                        SamplingParams(),
+                        SamplingParams(max_tokens=args.max_new_tokens),
                         None,
                     )
                     for slot, case in enumerate(group)
@@ -306,38 +368,19 @@ def run_mini(args, cases, stop_ids):
                 active = list(reqs)
                 while active:
                     stage, graph = "prepare_batch", False
-                    batch = Batch(active, "prefill" if active[0].cached_len == 0 else "decode")
-                    engine.graph_runner.pad_batch(batch)
-                    batch.input_ids = torch.cat(
-                        [req.input_ids[req.cached_len :] for req in active]
-                    ).to(engine.device)
-                    batch.positions = torch.cat(
-                        [
-                            torch.arange(req.cached_len, req.device_len, device=engine.device)
-                            for req in active
-                        ]
-                    )
-                    batch.out_loc = torch.cat(
-                        [table[req.table_idx, req.cached_len : req.device_len] for req in active]
-                    )
-                    engine.attn_backend.prepare_metadata(batch)
+                    batch = quality_batch(engine, active)
+                    sampling_args = engine.sampler.prepare(batch)
                     stage = "model_forward"
-                    with engine.ctx.forward_batch(batch):
-                        graph = engine.graph_runner.can_use_cuda_graph(batch)
-                        logits = (
-                            engine.graph_runner.replay(batch) if graph else engine.model.forward()
-                        )
+                    graph = engine.graph_runner.can_use_cuda_graph(batch)
+                    forward_output = engine.forward_batch(batch, sampling_args)
                     stage = "token_transfer"
-                    tokens = logits.argmax(-1).to(torch.int32).cpu()
-                    stage = "finite_check"
-                    if not torch.isfinite(logits).all():
-                        raise AssertionError("Task evaluation produced non-finite logits")
+                    forward_output.copy_done_event.synchronize()
+                    tokens = forward_output.next_tokens_cpu
                     stage = "token_bookkeeping"
                     remaining = []
                     for index, req in enumerate(active):
                         token = int(tokens[index])
                         generated[req.table_idx].append(token)
-                        req.complete_one()
                         req.append_host(tokens[index : index + 1])
                         if (
                             token in stop_ids
@@ -391,7 +434,7 @@ def run_sglang(args, cases, stop_ids):
 
     identity = execution_identity("sglang")
     if (
-        identity["revision"] != "baa9befa381511cd4d56f83980951e5a45fffc6d"
+        identity["revision"] != args.expected_reference_revision
         or identity["tracked_changes"]
     ):
         raise RuntimeError("Official reference differs from the pinned clean source")
@@ -446,6 +489,13 @@ def run_sglang(args, cases, stop_ids):
                 results = [results]
             if len(results) != len(group):
                 raise AssertionError("Official engine returned an incomplete batch")
+            finish_reasons = [result["meta_info"]["finish_reason"] for result in results]
+            if any(reason.get("type") not in {"stop", "length"} for reason in finish_reasons):
+                (args.output / "native-terminal-error.json").write_text(
+                    json.dumps({"case_ids": [case["id"] for case in group], "results": results},
+                               ensure_ascii=False, indent=2) + "\n"
+                )
+                raise AssertionError(f"Official engine returned non-completion: {finish_reasons!r}")
             new = [
                 record(
                     case,
@@ -455,6 +505,8 @@ def run_sglang(args, cases, stop_ids):
                 )
                 for case, result in zip(group, results)
             ]
+            for row, result in zip(new, results):
+                row["native_meta_info"] = result["meta_info"]
             with (args.output / "responses.jsonl").open("a") as stream:
                 for row in new:
                     stream.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -484,6 +536,11 @@ def main():
     parser.add_argument("--dataset", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--engine", choices=["mini", "sglang"], default="mini")
+    parser.add_argument(
+        "--expected-reference-revision",
+        default="baa9befa381511cd4d56f83980951e5a45fffc6d",
+        help="Pinned clean official source; final canonical reference selects946 explicitly.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument(
@@ -517,6 +574,8 @@ def main():
     )
     parser.add_argument("--flashinfer-autotune-skip-ops", nargs="*", default=[])
     args = parser.parse_args()
+    if args.engine == "sglang" and not re.fullmatch(r"[0-9a-f]{40}", args.expected_reference_revision):
+        parser.error("--expected-reference-revision requires a full commit hash")
     if args.moe_backend == "marlin" and args.activation_precision != "bf16":
         parser.error("Marlin requires BF16 expert activations")
     if (
