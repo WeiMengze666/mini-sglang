@@ -1,6 +1,68 @@
 # Kimi-K3 serving performance target
 
-## Current canonical 16K snapshot (2026-11-16)
+## Measured graph/calibration candidate (2026-11-17 CST)
+
+GPUq57 measures runtime `2bea8ab` (tree `e7407e3`) against retained Mini46
+(`b10cca9`) and unprofiled Official9 (`94602c9`). These use the canonical 16K
+recipe: TP8/DCP8/EP1, physical page 64, context 1048576, memory fraction 0.90,
+FP8 E4M3 KV, BF16 KDA/conv state, MXFP8 expert activations, state/KV ratio 0.31,
+`extra_buffer`, running/graph cap 48, and both prefill budgets 16384. AIPerf keeps
+393 AgentX dataset entries, concurrency 48 and seed 42. Requested capacity 48 does
+not establish the executed physical batch size.
+
+| Run / measured runtime | Output tokens/s | Avg TTFT, ms | Avg ITL, ms | P99 ITL, ms |
+| --- | ---: | ---: | ---: | ---: |
+| Official9 / `94602c9` | 328.86 | 3384.76 | 34.45 | 86.65 |
+| Mini46 / `b10cca9` | 301.38 | 2912.53 | 39.43 | 178.76 |
+| Mini57 / `2bea8ab` | 312.54 | 2852.24 | 43.20 | 211.77 |
+
+Mini57 reaches **95.04%** of the retained official throughput, **3.70%** above
+Mini46. It still has **25.41%** higher mean ITL than official. Mean ITL/request
+latency and ITL P95/P99/max worsen versus Mini46. Request P99/max also increase,
+while request P95 decreases slightly. TTFT improves on average and P99 while its
+P95 worsens. Preserve the latency points below (all in ms; cell order is
+**avg / P95 / P99 / max**):
+
+| Metric | Official9 | Mini46 | Mini57 |
+| --- | ---: | ---: | ---: |
+| TTFT | 3384.76 / 10826.23 / 54521.36 / 55553.23 | 2912.53 / 9320.84 / 50857.88 / 52402.91 | 2852.24 / 11418.70 / 26401.20 / 50731.84 |
+| ITL | 34.45 / 62.57 / 86.65 / 317.23 | 39.43 / 65.67 / 178.76 / 462.50 | 43.20 / 78.08 / 211.77 / 1569.88 |
+| Request latency | 28489.21 / 120441.33 / 224965.49 / 565282.52 | 29578.35 / 126085.87 / 201382.85 / 591945.67 | 31112.54 / 125566.88 / 265986.61 / 595247.34 |
+
+Mini57 completes 393 formal requests with 5 deadline cancellations and 0 request
+errors; cancelled-credit `ERROR`/stuck-session handling remains a separate adverse
+outcome. The original 900-second sending recipe is unchanged. Its 293785 exported
+output tokens over 940.004013762 observation seconds give 312.5358995 tokens/s;
+30-second request grace and up-to-10-second cancelled-credit return are distinct
+from sending time. Explicit 48-request warmup and 51 completed scenario warmups
+remain outside the formal measurement.
+
+The candidate combines generic sparse graph padding and native FlashInfer route
+calibration through existing attention, cache, MoE and distributed interfaces.
+It adds no model-specific pool or collective. One run combining these features
+does not establish isolated feature attribution or repeated-run significance. It does not qualify
+current model quality or establish performance parity. The published main remains
+`31a6571` (runtime equivalent to b10); this candidate is not promoted to main.
+
+The full stacks and RNG behavior differ: Official9 uses Torch 2.13 / FI 0.6.18 /
+Cutlass 4.6.2 with official946; Mini uses Torch 2.14.1 / FI 0.7.1 / Cutlass 4.8.0
+with SDKbaa. Canonical API defaults agree (temperature=1, top_k=-1, top_p=1,
+ignore_eos=true),
+but server seeds/sampling implementations and exact generated tokens are not
+matched. Official9 is noncontemporaneous. CPU sequential page-cache assistance
+finished before readiness, warmup and the formal load; startup conditions were intervened, so this
+record makes no loading/startup speed claim. Nsight runs are excluded.
+
+Retained remote qualification receipts under
+`experiment/recovery-20261110/native-graph-calibration-serving-v1-analysis/`:
+
+| Receipt | SHA256 |
+| --- | --- |
+| `final-serving-unprofiled-vs-reference-and43-and46.json` | `32e90e496fec0f63a5c831e8e88924e7ba3c53dbb720e827dabac4dc89e31f81` |
+| `FINAL-SERVING-REVIEW-v1.json` | `c75c14f315b5c913db690e314e74588863440ca58fe49b0cb6af2d814b943e9f` |
+| `root-result-review.json` | `3d718a07141479b528bd1ee2ffa99648f05c6f0226820c0c66d04e016f5c3c12` |
+
+## Published canonical 16K snapshot (2026-11-16)
 
 The [compact evidence summary](validation/kimi-k3-canonical-16k-20261116.json)
 records accepted **unprofiled** TP8/DCP8/EP1 runs: both prefill budgets 16384,
@@ -50,8 +112,9 @@ Working, tracking and checkpoints share a physical state-slot axis. Mini46 has
 367 shared slots and 19963904 logical KV tokens (32.13 GiB per rank); capacity is
 derived from the configured memory budgets, without a snapshot-count override.
 This canonical configuration does not use a shared byte arena for KV and state.
-The separate graph-padding candidate has206 CPU passes; native and serving
-qualification remain pending, so its sparse buckets are not included here.
+At this published snapshot, the separate graph-padding candidate had206 CPU
+passes and pending native/serving qualification; its sparse buckets are excluded
+from Mini46. The measured Mini57 candidate is reported separately above.
 
 EP32 qualifies four synthetic NCCL configurations (EP2/8 × N1/48, shared2),
 with 32 rank-process passes. Whole-model EP, EP graph and MNNVL/all-to-all
