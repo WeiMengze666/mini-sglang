@@ -1,0 +1,361 @@
+{
+  "status": "ROOT_CANONICAL900_MEASUREMENT_QUALIFIED_CLOSE_SINGLE_POINT_FINAL_QUALITY_AND_FULL_EP_OPEN",
+  "recorded_UTC": "2026-11-17T03:13:41.542971+00:00",
+  "job": 77,
+  "source_commit": "c686f1e5ecc5386a86c7cc25745c8f4154e62447",
+  "source_tree": "ff6646f573b265685f6b6d953da77589f114b47f",
+  "source_pins_verified": 416,
+  "source_clean": true,
+  "queue_exit0": true,
+  "profile_sha256": "85fc9b69d31cf100d7963d1d5995668e80939b750ae2b9c5aadfe12f3c0f2d66",
+  "run_sha256": "581b7aef97679a732a157262c6d9ff91598901baec51e97404c117464c1d0b7d",
+  "measurements": {
+    "mini77": {
+      "export_path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-kernel-adapters-serving-gpu-v1/mini/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json",
+      "export_sha256": "1ffde5ee9f08efec1bf6b3c074ca041a50ae1b94f286db7b1e1811c05e78a438",
+      "metrics": {
+        "output_token_throughput": {
+          "unit": "tokens/sec",
+          "avg": 326.1289103417509
+        },
+        "time_to_first_token": {
+          "unit": "ms",
+          "avg": 3229.1270406157637,
+          "p1": 578.0437728999999,
+          "p5": 790.76045,
+          "p10": 840.777577,
+          "p25": 927.04092325,
+          "p50": 1408.4954845,
+          "p75": 2235.305805,
+          "p90": 5242.900595,
+          "p95": 9685.98871225,
+          "p99": 47996.561644949994,
+          "min": 531.331778,
+          "max": 49659.47586,
+          "std": 7214.326757177696,
+          "count": 406,
+          "sum": 1311025.57849
+        },
+        "inter_token_latency": {
+          "unit": "ms",
+          "avg": 34.95010958722403,
+          "p1": 13.073811118958332,
+          "p5": 18.056613659138655,
+          "p10": 19.947286918517737,
+          "p25": 24.036875325059242,
+          "p50": 31.30303176525859,
+          "p75": 40.03838618960986,
+          "p90": 51.59483637880583,
+          "p95": 64.63866554459794,
+          "p99": 87.26903181553246,
+          "min": 0.0,
+          "max": 273.280166377551,
+          "std": 19.973342739170523,
+          "count": 406,
+          "sum": 14189.744492412954
+        },
+        "request_latency": {
+          "unit": "ms",
+          "avg": 29711.04202269212,
+          "p1": 1253.6344401,
+          "p5": 3172.2542989999997,
+          "p10": 4428.093979,
+          "p25": 7518.6294585,
+          "p50": 13037.642147499999,
+          "p75": 30495.78938,
+          "p90": 62686.834935499995,
+          "p95": 124176.57901649999,
+          "p99": 231992.9581115996,
+          "min": 886.80885,
+          "max": 572457.693731,
+          "std": 53254.107810400186,
+          "count": 406,
+          "sum": 12062683.061213
+        },
+        "request_error_rate": {
+          "unit": "%",
+          "avg": 0.0
+        },
+        "completed_request_count": {
+          "unit": "requests",
+          "avg": 406.0
+        },
+        "effective_concurrency": {
+          "unit": "requests",
+          "avg": 12.832841328846314,
+          "p50": 13.0,
+          "p90": 20.0,
+          "p95": 21.0,
+          "p99": 23.0,
+          "min": 0.0,
+          "max": 23.0,
+          "std": 5.407369196838638
+        },
+        "overall_usage_prompt_cache_read_pct": {
+          "unit": "%",
+          "avg": 91.60670139772034
+        }
+      },
+      "counts": {
+        "start_ns": 1794883312744248425,
+        "requests_end_ns": 1794884252746775888,
+        "final_requests_completed": 406,
+        "final_requests_cancelled": 4,
+        "final_request_errors": 0
+      },
+      "output_tokens": 306562.0,
+      "actual_observation_seconds": 940.002527463,
+      "independent_TPS": 326.12891034175095,
+      "reported_request_span_seconds": 925.090712832,
+      "cancelled_credit_ERROR": true,
+      "start_time": "2026-11-17T02:41:52.744248",
+      "end_time": "2026-11-17T02:57:32.746776"
+    },
+    "reference9": {
+      "export_path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/canonical-stable-reference-serving-gpu-v2/reference/artifacts/moonshotai_Kimi-K3-openai-chat-concurrency48/profile_export_aiperf.json",
+      "export_sha256": "7056bce5d44bb02a01331066016f045f1708adb5d3d8408e9d46049cfb97281e",
+      "metrics": {
+        "output_token_throughput": {
+          "unit": "tokens/sec",
+          "avg": 328.86116470304825
+        },
+        "time_to_first_token": {
+          "unit": "ms",
+          "avg": 3384.760267185273,
+          "p1": 609.6648998,
+          "p5": 743.292056,
+          "p10": 786.4913329999999,
+          "p25": 856.2132399999999,
+          "p50": 1355.33566,
+          "p75": 2130.5391059999997,
+          "p90": 5081.4185879999995,
+          "p95": 10826.225059999999,
+          "p99": 54521.3575942,
+          "min": 507.11151099999995,
+          "max": 55553.229902,
+          "std": 8151.763275785121,
+          "count": 421,
+          "sum": 1424984.072485
+        },
+        "inter_token_latency": {
+          "unit": "ms",
+          "avg": 34.44796463555756,
+          "p1": 12.071777400749063,
+          "p5": 16.467559103448274,
+          "p10": 18.72106159891599,
+          "p25": 22.360870786581465,
+          "p50": 30.574057874999998,
+          "p75": 39.544904793388426,
+          "p90": 51.417161753753746,
+          "p95": 62.56686129999999,
+          "p99": 86.65291670650717,
+          "min": 0.0,
+          "max": 317.23016448924733,
+          "std": 24.53865850508319,
+          "count": 421,
+          "sum": 14502.593111569731
+        },
+        "request_latency": {
+          "unit": "ms",
+          "avg": 28489.212393938244,
+          "p1": 1303.0684887999998,
+          "p5": 3149.884544,
+          "p10": 4129.406658,
+          "p25": 6653.914806,
+          "p50": 12684.049524,
+          "p75": 27799.040782,
+          "p90": 60613.961288,
+          "p95": 120441.329489,
+          "p99": 224965.49330120045,
+          "min": 715.705711,
+          "max": 565282.521997,
+          "std": 51727.13302980664,
+          "count": 421,
+          "sum": 11993958.417848
+        },
+        "request_error_rate": {
+          "unit": "%",
+          "avg": 0.0
+        },
+        "completed_request_count": {
+          "unit": "requests",
+          "avg": 421.0
+        },
+        "effective_concurrency": {
+          "unit": "requests",
+          "avg": 12.759770583645006,
+          "p50": 12.0,
+          "p90": 20.0,
+          "p95": 22.0,
+          "p99": 23.0,
+          "min": 0.0,
+          "max": 24.0,
+          "std": 5.483690048789228
+        },
+        "overall_usage_prompt_cache_read_pct": {
+          "unit": "%",
+          "avg": 91.5727368738675
+        }
+      },
+      "counts": {
+        "start_ns": 1794724175125161642,
+        "requests_end_ns": 1794725115129738586,
+        "final_requests_completed": 421,
+        "final_requests_cancelled": 5,
+        "final_request_errors": 0
+      },
+      "output_tokens": 309131.0,
+      "actual_observation_seconds": 940.004576944,
+      "independent_TPS": 328.8611647030483,
+      "reported_request_span_seconds": 921.56763776,
+      "cancelled_credit_ERROR": true,
+      "start_time": "2026-11-15T06:29:35.125162",
+      "end_time": "2026-11-15T06:45:15.129739"
+    },
+    "mini57": {
+      "metrics": {
+        "output_token_throughput": {
+          "avg": 312.5358995268966
+        },
+        "time_to_first_token": {
+          "avg": 2852.2419221806617,
+          "p50": 1333.132308,
+          "p95": 11418.695416999992,
+          "p99": 26401.196864239828,
+          "max": 50731.842437
+        },
+        "inter_token_latency": {
+          "avg": 43.201881871544764,
+          "p50": 32.91589947159091,
+          "p95": 78.08416483416848,
+          "p99": 211.77303988278277,
+          "max": 1569.8758719166667
+        },
+        "request_latency": {
+          "avg": 31112.538297587787,
+          "p50": 13651.733681,
+          "p95": 125566.8822517998,
+          "p99": 265986.6051314386,
+          "max": 595247.339221
+        }
+      },
+      "output_tokens": 293785.0,
+      "actual_observation_seconds": 940.004013762,
+      "independent_TPS": 312.5358995268966,
+      "root_review_sha256": "3d718a07141479b528bd1ee2ffa99648f05c6f0226820c0c66d04e016f5c3c12"
+    }
+  },
+  "same_exact_benchmark_argv": true,
+  "same_resolved_workload_except_artifact_dir": true,
+  "ratios": {
+    "TPS_fraction_of_official": 0.9916917694925623,
+    "TPS_improvement_over_mini57_fraction": 0.04349263823909766,
+    "time_to_first_token": {
+      "avg": -0.04598057595935201,
+      "p50": 0.039222626592736454,
+      "p95": -0.10532169259651425,
+      "p99": -0.11967412839962221,
+      "max": -0.10609201395485046
+    },
+    "inter_token_latency": {
+      "avg": 0.014576912075326076,
+      "p50": 0.02384288972170312,
+      "p95": 0.03311344378718184,
+      "p99": 0.007110148537897043,
+      "max": -0.13854293516651395
+    },
+    "request_latency": {
+      "avg": 0.0428874484790549,
+      "p50": 0.027876950719165183,
+      "p95": 0.031013021388485607,
+      "p99": 0.031237967686849943,
+      "max": 0.012693071968069791
+    }
+  },
+  "root_owned_exit_review_sha256": "15755dd7d26841a780ea4914e62bee0aaf1344d9507cb9210cfc3d8a4938594d",
+  "warmup_scope": "48x8 explicit complete and51 originalscenario warmup complete; excluded from formalmeasurement",
+  "memory_budgets": {
+    "mini77": {
+      "shared_recurrent_slots": 367,
+      "request_table_capacity": 48,
+      "state_budget_GiB": 9.93,
+      "KV_logical_tokens": 19963904,
+      "KV_GiB": 32.13
+    },
+    "reference9": {
+      "shared_recurrent_slots": 372,
+      "KV_logical_tokens": 20252160,
+      "KV_GiB": 32.593
+    }
+  },
+  "precision": "Canonical MXFP8 MoE activations, FP8_e4m3 MLA cache, BF16 recurrent state; original flags and fixed kernels/source retained. No precision changed to achieve result.",
+  "limits": [
+    "Single unprofiled candidate vs retained historicalofficial9, not contemporary repeated pair or statistical equivalence.",
+    "Combined native embedding/MLA prefix adapter and parent changes; no isolatedfeature causal claim.",
+    "Torch/FlashInfer/Cutlass/SGL-kernel stacks differ and AIPerf counts server output; final modelquality not yet accepted.",
+    "4 candidate and5 reference deadline cancellations;10s cancelledcredit ERROR preserved despite0 request errors.",
+    "Whole685 EP backend native/NCCL/Graph/fullmodel unrun.",
+    "No main promotion or fullgoal completion."
+  ],
+  "performance_assessment": "The current canonical sample is close to the retained official point:99.17%TPS,meanITL+1.46%,p99ITL+0.71%. This qualifies a measured candidate baseline, not repeated statistical parity or final quality. TTFTavg/p99 still worsen vsMini57; no singlefeature causality.",
+  "performance_parity_claim": false,
+  "model_quality_qualified": false,
+  "goal_complete": false,
+  "child_review_sha256": "84b2f1c9b9c93ef40262861cb3bb46b0d0d4ed5c086f91b7e0a5017e68a93268",
+  "child_review_path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-kernel-adapters-serving-v1-analysis/child-result-review.json",
+  "adverse_relative_to_mini57": {
+    "time_to_first_token": {
+      "avg": 0.1321364487017136,
+      "p50": 0.0565309054830887,
+      "p95": -0.15174296550290345,
+      "p99": 0.8179691584346649,
+      "max": -0.0211379387281605
+    },
+    "inter_token_latency": {
+      "avg": -0.19100492679592795,
+      "p50": -0.04899965464180478,
+      "p95": -0.17219239417012988,
+      "p99": -0.5879124563549911,
+      "max": -0.8259224367567977
+    },
+    "request_latency": {
+      "avg": -0.045046028115434344,
+      "p50": -0.04498267750085627,
+      "p95": -0.011072212755205868,
+      "p99": -0.12780210117363178,
+      "max": -0.038286009845629576
+    }
+  },
+  "main_promotion": false,
+  "measured_runtime_commit": "c686f1e5ecc5386a86c7cc25745c8f4154e62447",
+  "publication_scope": "Documentation only; measured runtime source bytes unchanged. Finalquality/fullEPopen.",
+  "capacity_unit_review": {
+    "path": "/home/axis/mengze/mini-sglang/experiment/recovery-20261110/native-kernel-adapters-serving-v1-analysis/root-capacity-unit-review.json",
+    "sha256": "a704255197531f95adcd054506f37557f953b90a8fb926a512744d5308c4d36b",
+    "official_raw_per_rank_physical_rows": 2531520,
+    "official_logical_allocator_tokens": 20252160,
+    "physical_page_size": 64,
+    "logical_page_size": 512,
+    "official_per_rank_GiB_including_dummy_page": 32.5931396484375,
+    "source_evidence": [
+      {
+        "path": "/home/axis/mengze/mini-sglang/deps/sglang-v0.5.20-94602c9/python/sglang/srt/mem_cache/kv_cache_configurator.py",
+        "sha256": "691bef2acb4a9dfbc815bac5d130723b1b0ec8b9cb45fd751d586b17a1b633a6",
+        "start_line": 2088,
+        "end_line": 2097
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/deps/sglang-v0.5.20-94602c9/python/sglang/srt/mem_cache/kv_index_translator.py",
+        "sha256": "bb03c9dc3a363b0fdfe0799430c7908475bcb6546036b54c555017a14cd9361a",
+        "start_line": 510,
+        "end_line": 525
+      },
+      {
+        "path": "/home/axis/mengze/mini-sglang/deps/sglang-v0.5.20-94602c9/python/sglang/srt/mem_cache/memory_pool.py",
+        "sha256": "737ac340aee5a1d2a260fdf976c9023c563ca550ca1e2d47a3bbcfb674915577",
+        "start_line": 4383,
+        "end_line": 4396
+      }
+    ]
+  }
+}
