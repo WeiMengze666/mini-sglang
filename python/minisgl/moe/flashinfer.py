@@ -215,7 +215,7 @@ class FlashInferMXFP4Experts:
         if x.dtype not in allowed or not x.is_cuda:
             raise ValueError(f"FlashInfer FP4 requires CUDA inputs with dtype in {allowed}")
 
-    def _prepare_routed_inputs(self, x, routing):
+    def _prepare_routed_inputs_with_ids(self, x, routing):
         if self._precision != "mxfp8":
             return None
         self._validate_input(x)
@@ -224,9 +224,13 @@ class FlashInferMXFP4Experts:
         prepared = fused_route_quant(x, routing)
         if prepared is None:
             return None
-        _, _, packed_routes, x_input, x_scale = prepared
+        _, ids, packed_routes, x_input, x_scale = prepared
         x_scale = x_scale.view(torch.float8_e4m3fn).reshape(x.shape[0], -1)
-        return x_input, x_scale, packed_routes, routing.topk
+        return ids, (x_input, x_scale, packed_routes, routing.topk)
+
+    def _prepare_routed_inputs(self, x, routing):
+        prepared = self._prepare_routed_inputs_with_ids(x, routing)
+        return None if prepared is None else prepared[1]
 
     def _prepare_inputs(self, x, weights, ids):
         self._validate_input(x)
@@ -256,6 +260,82 @@ class FlashInferMXFP4Experts:
         return (
             prepared if prepared is not None else self._prepare_inputs(x, *routing.select(backend))
         )
+
+    def _validate_dispatch_payloads(self, ids, payloads):
+        if self._precision != "mxfp8":
+            raise NotImplementedError("Prepared token dispatch requires MXFP8 activations")
+        if ids.ndim not in (2, 3) or ids.dtype != torch.int32 or ids.shape[-1] < 1:
+            raise ValueError("Dispatch IDs must be int32 [tokens, topk] or [EP, tokens, topk]")
+        if len(payloads) != 3:
+            raise ValueError(
+                "Prepared dispatch requires activation, linear scale and route payloads"
+            )
+        x, scale, carrier = payloads
+        expected = (*ids.shape[:-1], self._hidden)
+        if x.shape != expected or scale.shape != (*ids.shape[:-1], self._hidden // 32):
+            raise ValueError("Prepared dispatch requires per-token linear UE8M0 scale bytes")
+        if x.dtype != torch.float8_e4m3fn or scale.dtype != torch.float8_e4m3fn:
+            raise NotImplementedError("Dispatch requires MXFP8 and its unchanged UE8M0 byte view")
+        if carrier.shape != ids.shape or carrier.dtype not in (
+            torch.int32,
+            torch.bfloat16,
+            torch.float32,
+        ):
+            raise NotImplementedError("Dispatch requires packed int32 or original BF16/FP32 routes")
+        if carrier.dtype == torch.int32 and self._global_experts > 32768:
+            raise NotImplementedError("Packed dispatch expert IDs must fit signed 16 bits")
+        for value in (ids, *payloads):
+            if not value.is_cuda or value.device != x.device or not value.is_contiguous():
+                raise ValueError("Dispatch payloads must be contiguous on the same CUDA device")
+            if value.requires_grad:
+                raise ValueError("Prepared token dispatch is inference-only")
+
+    def prepare_dispatch_inputs(self, backend, x, routing):
+        """Prepare the full batch before any source-owner row slicing.
+
+        Return independent global IDs and three per-token payloads. The route
+        payload is either the original packed BF16 carrier or the original
+        unpacked BF16/FP32 weights; its dtype identifies the existing native ABI.
+        The scale is an opaque UE8M0 byte view, not a numeric FP8 conversion.
+        Unsupported formats fail here, before a caller can begin dispatch.
+        """
+        if self._precision != "mxfp8":
+            raise NotImplementedError("Prepared token dispatch requires MXFP8 activations")
+        if x.shape[0] == 0:
+            raise ValueError("An empty global batch must skip dispatch on every rank")
+        routed = self._prepare_routed_inputs_with_ids(x, routing)
+        if routed is None:
+            prepared = self._prepare_inputs(x, *routing.select(backend))
+            x_input, scale, (ids, carrier), _ = prepared
+        else:
+            ids, (x_input, scale, carrier, _) = routed
+        payloads = (x_input, scale, carrier)
+        self._validate_dispatch_payloads(ids, payloads)
+        return ids, payloads
+
+    def forward_dispatched(self, ids, payloads, *, out=None):
+        """Compute local experts from fixed receive views without re-preparation.
+
+        The dispatcher only sanitizes padding token slots in independent IDs.
+        Preserve every real carrier, including foreign expert routes; the native
+        local-expert range filter handles those. Combine must not weight again.
+        """
+        self._validate_dispatch_payloads(ids, payloads)
+        if ids.ndim != 3 or ids.shape[0] == 0 or ids.shape[1] == 0:
+            raise ValueError("Received dispatch IDs require nonempty [EP, tokens, topk] geometry")
+        x, scale, carrier = payloads
+        x = x.view(-1, self._hidden)
+        scale = scale.view(-1, self._hidden // 32)
+        ids = ids.view(-1, ids.shape[-1])
+        carrier = carrier.view_as(ids)
+        self._validate_output(x, out, scale, ids, carrier)
+        if carrier.dtype == torch.int32:
+            # Same padding encoding as the mature router: ID -1 and BF16 +0.
+            routes = torch.where(ids == -1, -65536, carrier)
+        else:
+            # Keep the original route-weight dtype and bits on every real slot.
+            routes = (ids, torch.where(ids == -1, 0, carrier))
+        return self._run(x, scale, routes, ids.shape[-1], out=out)
 
     def try_forward_routed(self, x, routing, *, out=None):
         self._validate_output(x, out)
