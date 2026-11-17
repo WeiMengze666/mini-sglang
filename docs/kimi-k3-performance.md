@@ -1,5 +1,67 @@
 # Kimi-K3 serving performance target
 
+## Current canonical 16K candidate (2026-11-17)
+
+The [measured evidence](validation/native-kernel-adapters-serving-20261117.json)
+records GPUq 77 at source `c686f1e5ecc5386a86c7cc25745c8f4154e62447`, with the
+original 900-second AgentX workload: 393 entries, client concurrency 48, seed 42,
+TP8/DCP8/EP1, page size 64, context length 1048576 and both prefill limits 16384. Expert
+activations remain MXFP8, MLA cache FP8 E4M3 and persistent KDA state BF16.
+
+| Unprofiled metric | Official9 / `94602c9` | Mini57 / `2bea8ab` | Mini77 / `c686f1e` |
+| --- | ---: | ---: | ---: |
+| Output tokens/s | 328.86 | 312.54 | 326.13 |
+| TTFT mean, ms | 3384.76 | 2852.24 | 3229.13 |
+| TTFT P95, ms | 10826.23 | 11418.70 | 9685.99 |
+| TTFT P99, ms | 54521.36 | 26401.20 | 47996.56 |
+| ITL mean, ms | 34.45 | 43.20 | 34.95 |
+| ITL P95, ms | 62.57 | 78.08 | 64.64 |
+| ITL P99, ms | 86.65 | 211.77 | 87.27 |
+| Request mean, ms | 28489.21 | 31112.54 | 29711.04 |
+| Request P95, ms | 120441.33 | 125566.88 | 124176.58 |
+| Request P99, ms | 224965.49 | 265986.61 | 231992.96 |
+
+Mini77 reaches **99.17%** of the retained official throughput point. Mean ITL
+is **1.46%** slower and P99 ITL **0.71%** slower; mean/P99 request latency remain
+**4.29% / 3.12%** slower. These are close single-run measurements, not repeated-run
+statistical equivalence or an isolated feature-speedup claim. The reference is
+historical; the complete software stacks differ as listed below.
+
+Relative to Mini57, mean TTFT increases 13.21% and P99 TTFT 81.80%; those
+adverse changes remain in the table and raw evidence even though ITL improves.
+
+306562 output tokens divided by the original `start_ns` to `requests_end_ns`
+window of **940.002527463 s** reproduce **326.1289103417509 tokens/s**. The
+900-second sending interval, reported 925.09-second request span and separate
+baseline clock must not replace that denominator. All 48 × 8 explicit warmups and
+51 scenario warmups are excluded. Mini completes 406 requests, with 4 deadline
+cancellations and 0 request errors; official completes 421, with 5 cancellations.
+Both retain the 10-second cancelled-credit timeout `ERROR`; zero request errors
+does not mean an error-free client log. The configured concurrency is 48; measured
+mean effective concurrency is 12.83 (official 12.76), not a fixed GPU batch 48.
+
+The measured source adapts native embedding and MLA-prefix gather operators
+through existing layers/attention interfaces. Actual operator/Graph controls in
+job 73 qualified 3648 comparisons across 8 ranks. The combined serving point does
+not assign the gain to one adapter. The physical pools remain 367 shared state
+slots and 19963904 logical KV tokens (32.13 GiB/rank); official has 372 and 20252160
+(32.593 GiB/rank). Both derive capacities from the same 0.31 ratio/static budget;
+matching flags do not imply identical free-memory capacities.
+
+Official 2531520 is a per-rank physical row count. Its DCP8 allocator explicitly
+expands that to 20252160 logical slots and 512-token logical pages; Mini already
+logs the logical count. Neither count describes current usage. The official
+32.593 GiB includes one dummy 64-row page per MLA layer.
+
+Final current-source model quality remains unqualified. The separate explicit
+`flashinfer-ep` backend has CPU qualification only; full native EP, NCCL/Graph and
+whole-model acceptance are pending. The official Triton KDA prefill adapter is a
+separate candidate awaiting native checkpoint/restore and serving validation.
+This candidate is published separately; it does not promote the main branch or
+complete the full Kimi-K3 objective.
+
+The earlier dated snapshots below are retained as historical evidence.
+
 ## Current canonical 16K snapshot (2026-11-16)
 
 The [compact evidence summary](validation/kimi-k3-canonical-16k-20261116.json)

@@ -1,5 +1,18 @@
 # Kimi-K3 text support
 
+## Current measured candidate (2026-11-17)
+
+The [canonical serving table](kimi-k3-performance.md#current-canonical-16k-candidate-2026-11-17)
+and [evidence](validation/native-kernel-adapters-serving-20261117.json) record
+`c686f1e` at **326.13 output tokens/s** versus retained official946 **328.86**
+(**99.17%**), with mean/P99 ITL **34.95/87.27ms** versus **34.45/86.65ms**.
+Both use the original 16K AgentX workload, TP8/DCP8/EP1, MXFP8 experts, FP8 KV and
+BF16 state. This is one unprofiled point against a historical reference, not a
+repeated-run equivalence claim. Mini77 has 406 complete requests,4 deadline
+cancellations, 0 request errors and a preserved cancelled-credit timeout `ERROR`.
+Final quality and whole-model native EP remain open; this measured candidate is
+published separately from the main branch. Earlier dated snapshots follow.
+
 ## Current canonical 16K snapshot (2026-11-16)
 
 The [current serving table](kimi-k3-performance.md#current-canonical-16k-snapshot-2026-11-16)
