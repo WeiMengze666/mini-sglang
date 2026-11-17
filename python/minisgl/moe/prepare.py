@@ -10,7 +10,7 @@ import gc
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import NoReturn
+from typing import NamedTuple, NoReturn
 
 import torch
 import torch.distributed as dist
@@ -28,6 +28,36 @@ class MoePreparation:
     precision: str = "default"
     fresh_worker: bool = False
     abort: Callable[[BaseException], NoReturn] | None = None
+    tp_cpu_group: dist.ProcessGroup | None = None  # Borrowed full-TP bootstrap.
+    max_prefill_tokens: int | None = None
+    max_decode_tokens: int | None = None
+
+
+class ExpertPreparation(NamedTuple):
+    """The existing metadata signature, with names for backend resource planning."""
+
+    local_rows: tuple[int, ...]
+    tp_size: int
+    ep_size: int
+    expert_start: int
+    global_experts: int
+    local_experts: int
+    hidden: int
+    intermediate: int
+    activation_precision: str
+    activation: str
+    beta: float
+    linear_beta: float | None
+    input_dtype: str
+    top_k: int
+    num_groups: int
+    topk_groups: int
+    scoring_func: str
+    renormalize: bool
+    routed_scale: float
+    logits_dtype: str
+    bias_abi: tuple | None
+    weights_abi: tuple
 
 
 def _agree(value, context, *, error=None):
@@ -56,7 +86,7 @@ def _tensor(value, device=None):
 
 
 def _signature(executor, routing, context):
-    return (
+    return ExpertPreparation(
         context.local_rows,
         context.layout.tensor.size,
         context.layout.ep_size,
@@ -226,6 +256,7 @@ def prepare(backend, model, context):
         _agree(_domain(context, flashinfer.__version__), context)
         tuner.clear_cache()  # Owned process caches only; fresh/no-ambient contract is required.
         _agree(("owned-empty-start", len(plan)), context)
+        backend.prepare_transport(tuple(plan), context)
         try:
             set_autotune_process_group(context.cpu_group)
             with torch.inference_mode(), autotune(True, cache=None, skip_ops=set()):

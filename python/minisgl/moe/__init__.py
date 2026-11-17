@@ -26,6 +26,13 @@ def create_fused_moe_backend():
     return FusedMoe()
 
 
+@SUPPORTED_MOE_BACKENDS.register("flashinfer-ep")
+def create_flashinfer_ep_backend():
+    from .ep import FlashInferEPBackend
+
+    return FlashInferEPBackend()
+
+
 @SUPPORTED_MOE_BACKENDS.register("marlin")
 def create_marlin_moe_backend():
     from .marlin import MarlinMoeBackend
