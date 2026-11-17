@@ -404,7 +404,12 @@ class Engine:
                 else:
                     yield name, torch.randn_like(tensor, device=self.device)
             return
-        for name, tensor in load_weight(config.model_path, torch.device("cpu")):
+        for name, tensor in load_weight(
+            config.model_path,
+            torch.device("cpu"),
+            prefetch=config.weight_loader_prefetch_checkpoints,
+            prefetch_num_threads=config.weight_loader_prefetch_num_threads,
+        ):
             target = expected.get(name)
             if target is not None and target.is_floating_point() and tensor.is_floating_point():
                 tensor = tensor.to(target.dtype)
@@ -420,7 +425,12 @@ class Engine:
             expected = self.model.state_dict()
             return {
                 k: v.to(expected[k].dtype) if k in expected else v
-                for k, v in load_weight(config.model_path, self.device)
+                for k, v in load_weight(
+                    config.model_path,
+                    self.device,
+                    prefetch=config.weight_loader_prefetch_checkpoints,
+                    prefetch_num_threads=config.weight_loader_prefetch_num_threads,
+                )
             }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:

@@ -4,6 +4,12 @@
 
 Mini-SGLang supports online serving with an OpenAI-compatible API server. It provides the standard `/v1/chat/completions` endpoint, allowing seamless integration with existing tools and clients. For detailed command-line arguments and configuration options, run `python -m minisgl --help`.
 
+## Checkpoint Staging
+
+`--weight-loader-prefetch-checkpoints` optionally stages safetensors shards in the shared OS page cache while the existing loader reads its tensors. `--weight-loader-prefetch-num-threads 8` bounds concurrent readers per local worker (default:4). Both names match SGLang; prefetching is disabled by default.
+
+The generic checkpoint reader reuses SGLang's CPU sequential-read primitive, imported only when staging is enabled. Mini passes its node-local worker coordinates explicitly; no SGLang distributed world or model is initialized for file I/O. Workers partition the same sorted shard list before expert ownership filtering. Reads use the SDK's bounded blocks (16MiB by default), and staging is cancelled and joined when iteration exits. The OS shares cached pages across workers; no full-shard private tensor copy is introduced. TP slicing, packed weights and scales retain the existing load path. This option requires the native SGLang SDK and affects startup I/O, not the serving benchmark's measured interval.
+
 ## Interactive Shell Mode
 
 For demonstration and testing purposes, an interactive shell mode is available. In this mode, users can input prompts directly, and the LLM will generate responses in real-time. The shell automatically caches chat history to maintain context. To clear the conversation history and start a new session, use the `/reset` command.

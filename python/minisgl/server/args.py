@@ -207,6 +207,18 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         help="The fraction of GPU memory to use for KV cache.",
     )
 
+    parser.add_argument(
+        "--weight-loader-prefetch-checkpoints",
+        action="store_true",
+        help="Stage checkpoint files in shared OS page cache using sequential CPU reads.",
+    )
+    parser.add_argument(
+        "--weight-loader-prefetch-num-threads",
+        type=int,
+        default=ServerArgs.weight_loader_prefetch_num_threads,
+        help="Maximum concurrent checkpoint prefetch readers per local rank.",
+    )
+
     assert ServerArgs.use_dummy_weight == False
     parser.add_argument(
         "--dummy-weight",
@@ -359,6 +371,8 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     # Parse arguments
     kwargs = parser.parse_args(args).__dict__.copy()
+    if kwargs["weight_loader_prefetch_num_threads"] < 1:
+        parser.error("--weight-loader-prefetch-num-threads must be positive")
 
     if kwargs["attention_provider"] is not None:
         from minisgl.attention import load_attention_provider

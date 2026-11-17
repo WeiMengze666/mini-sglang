@@ -36,6 +36,8 @@ class EngineConfig:
     memory_ratio: float = 0.9
     distributed_timeout: float = 60.0
     use_dummy_weight: bool = False
+    weight_loader_prefetch_checkpoints: bool = False
+    weight_loader_prefetch_num_threads: int = 4
     use_pynccl: bool = True
     distributed_backend: str = "auto"
     distributed_provider: str | None = None
