@@ -1,5 +1,16 @@
 # Kimi-K3 text support
 
+## Unified integration candidate (2026-11-17)
+
+The [integration evidence](validation/native-hybrid-ep-integration-cpu-20261117.json)
+combines KDA/MLA and native EP through the existing attention, expert and
+communication backends. All 410 selected CPU checks pass, including real indexed
+checkpoint reconstruction for TP8/EP2/ETP4 and TP8/EP8/ETP1. Runtime files are
+unchanged copies from the two reviewed parents; default precision and attention
+selection are unchanged. Native full-backend and whole-model EP, final unified
+serving performance, and paired quality are still pending. The c686 measurements
+below remain a separately measured baseline.
+
 ## Current measured candidate (2026-11-17)
 
 The [canonical serving table](kimi-k3-performance.md#current-canonical-16k-candidate-2026-11-17)

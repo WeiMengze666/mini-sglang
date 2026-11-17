@@ -1,0 +1,68 @@
+{
+  "status": "UNIFIED_SOURCE_CPU_QUALIFIED_NATIVE_FULL_BACKEND_MODEL_AND_FINAL_QUALITY_PENDING",
+  "created_UTC": "2026-11-17T04:44:50.432722+00:00",
+  "tested_merge_commit": "1089d5c8e5cbdd4e0b77bf3a56b7f47248e6cb4b",
+  "tested_merge_tree": "08b7d805e0865bdf9e279292784a4f4c8a225213",
+  "source_parents": {
+    "KDA": "0352249db00f0edf683deb02a0d06712b787773a",
+    "EP": "6856899c3333b95944381dbb7436b01a706c838b",
+    "measured_documentation": "189f8c6f02d2713befb6521416dc34a41ce3d271"
+  },
+  "product_python_blob_origins": {
+    "both": 140,
+    "KDA_only": 4,
+    "EP_only": 9,
+    "new_or_synthesized": 0
+  },
+  "CPU": {
+    "unique_passed": 410,
+    "skipped": 0,
+    "errors": 0,
+    "failures": 0,
+    "deselected": 0,
+    "actual_real_Gloo_cases": 3,
+    "CUDA_init_trap_hits": 0,
+    "XML_sha256": "67386aacd038722116c937e87ed1d56a1246169f43ae974a75193f6970e107b2",
+    "delivery_sha256": "4a11e0ead69a2dfefb21089d484b5cff858a0eb2b5618390e370e5639e4aae52",
+    "manifest_sha256": "a04b8e76896a3810b2715dd134d808516c1cf51faf027ea56e1e242ff085ddaa"
+  },
+  "new_regression": {
+    "path": "tests/models/test_packed_expert_loading.py",
+    "sha256": "f35ec6a6ca2e6c1073ad1d97e17c67ab3c842cde67e44aba98d3945ccf9b0ee8",
+    "layouts": [
+      "TP8/EP2/ETP4",
+      "TP8/EP8/ETP1"
+    ],
+    "real_indexed_loader_and_complete_model_assignment": true,
+    "global_experts": 8,
+    "routed_hidden": 256,
+    "intermediate": 512,
+    "MoE_layers": [
+      1,
+      2
+    ],
+    "reconstructed_U8_weight_and_scale_tensors_per_layout": 96,
+    "oracle": "Independent global expert coordinates; concatenate W1/W3 rows and W2 packed/scale columns, no productionShardSpec/range oracle.",
+    "full_real_checkpoint_payload_test": false
+  },
+  "parent_native_evidence": {
+    "KDA85": {
+      "root_review_sha256": "fdf27795ec009158d82be16a18a91341d13514c7e3871cdf0a833b94c3d31fcf",
+      "scope": "Two-layer projected-input KDA cold/warm/16K checkpoint+restore, not unified full model."
+    },
+    "EP88": {
+      "independent_review_sha256": "0a2aa502ce13b023ca7421612f6895c2619402b71e365b705689dca9b71cf947",
+      "scope": "EP2/8 primitives, not unified expert GEMM/model."
+    }
+  },
+  "measured_baseline_source": "c686f1e5ecc5386a86c7cc25745c8f4154e62447",
+  "baseline_measurement_scope": "326.1289TPS belongs to c686, not this merged revision. Main branch promotion and final quality remain pending.",
+  "precision_or_default_policy_changed": false,
+  "new_framework_kernel_math": false,
+  "requirements_remaining": [
+    "Actual full EP backend/GEMM/Graph/DCP coexistence on this unified source",
+    "Whole-model real-weight EP2/8 loader and lifecycle/numerical-state validation",
+    "Final unified-source canonical900 performance and paired model quality"
+  ],
+  "goal_complete": false
+}
