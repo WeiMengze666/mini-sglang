@@ -32,8 +32,18 @@ class BaseMoeBackend(ABC):
 
         return create_expert_executor(experts, **options)
 
+    @property
+    def requires_preparation(self) -> bool:
+        return False
+
     def prepare(self, model, context):
         """Optional startup session; unsupported backends do not import FI."""
+
+    def prepare_transport(self, plan, context):
+        """Optional persistent resources after metadata agreement, before cache sizing."""
+
+    def close(self) -> None:
+        """Release backend resources after graphs and before borrowed groups."""
 
     def prepare_local(self, executor, routing_builder, context, *, dry_run=False):
         return None

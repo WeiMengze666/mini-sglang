@@ -118,6 +118,12 @@ class Engine:
         if config.model_config.is_moe:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
             self.moe_backend.validate_precision(config.mxfp4_activation_precision)
+            if getattr(self.moe_backend, "requires_preparation", False) and (
+                worker_owner is None
+                or not worker_owner.fresh_worker
+                or self.ctx.bf16_precision != "default"
+            ):
+                raise ValueError("This MoE backend requires a fresh owned default-precision worker")
 
         # ======================= Model initialization ========================
         set_rope_device(self.device)
@@ -177,6 +183,9 @@ class Engine:
                         precision=self.ctx.bf16_precision,
                         fresh_worker=worker_owner.fresh_worker,
                         abort=worker_owner.abort,
+                        tp_cpu_group=self.tp_cpu_group,
+                        max_prefill_tokens=config.max_forward_len,
+                        max_decode_tokens=config.max_running_req,
                     ),
                 )
                 # Normal completion only: unknown device failures terminate the owned
@@ -549,6 +558,8 @@ class Engine:
         try:
             torch.cuda.synchronize(self.device)
             self.graph_runner.destroy_cuda_graphs()
+            if hasattr(self, "moe_backend"):
+                self.moe_backend.close()
             destroy_distributed()
             torch.distributed.destroy_process_group()
         finally:
