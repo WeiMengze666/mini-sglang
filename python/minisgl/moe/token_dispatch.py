@@ -157,6 +157,9 @@ class FlashInferTokenDispatcher:
             r.failed = True
             raise ValueError("MoE producer violated its prepared layout or shared source plan")
         inputs = (expert_ids, *payloads)
+        if not n:
+            # Empty views pass PyTorch contiguity; native TVM also checks their strides.
+            inputs = tuple(value.new_empty(value.shape) for value in inputs)
         for value in inputs:
             value.record_stream(r.stream)
         m = max(counts)
@@ -165,7 +168,7 @@ class FlashInferTokenDispatcher:
             if m:
                 with r.api.stream():
                     received, offset, _ = r.api.dispatch(
-                        expert_ids,
+                        inputs[0],
                         [inputs[i] for i in self._order],
                         r.workspace,
                         r.metainfo,

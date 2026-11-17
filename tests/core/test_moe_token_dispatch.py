@@ -64,7 +64,7 @@ class Spy:
         return value[rank, :n].clone()
 
 
-def dispatcher(monkeypatch, *, rank=0, ep=2, layout=None, output=torch.float32):
+def dispatcher(monkeypatch, *, rank=0, ep=2, layout=None, output=torch.float32, top_k=2):
     layout = layout or ((torch.float32, 3), (torch.bfloat16, 2), (torch.int32, 2), (torch.uint8, 5))
     r = object.__new__(F.FlashInferMoEWorkspace)
     r.api, r.info, r.device = Spy(), DistributedInfo(rank, ep), torch.device("cuda:0")
@@ -78,7 +78,7 @@ def dispatcher(monkeypatch, *, rank=0, ep=2, layout=None, output=torch.float32):
     r.closed = r.failed = r.busy = False
     r.views = {}
     r.memory = object()
-    return FlashInferTokenDispatcher(r, 16, 2, layout, (output, 3))
+    return FlashInferTokenDispatcher(r, 16, top_k, layout, (output, 3))
 
 
 def inputs(d, n):
@@ -146,6 +146,79 @@ def test_local_empty_participates_but_common_empty_skips_native(monkeypatch):
     h = d.dispatch(ids, fields, source_counts=(0, 0))
     assert d.combine(h, tensor(torch.empty(0, 3))).shape == (0, 3)
     assert d.resource.api.calls == []
+
+
+def native_row_major(value):
+    """Independent TVM tensor.h contract: only size-one dimensions skip strides."""
+    expected = 1
+    for size, stride in reversed(tuple(zip(value.shape, value.stride()))):
+        if size == 1:
+            continue
+        if stride != expected:
+            return False
+        expected *= size
+    return True
+
+
+@pytest.mark.parametrize("n", [0, 1, 3])
+@pytest.mark.parametrize("ep", [2, 8])
+@pytest.mark.parametrize(
+    "layout",
+    [
+        (
+            (torch.float32, 3),
+            (torch.float16, 4),
+            (torch.bfloat16, 5),
+            (torch.float8_e4m3fn, 7),
+            (torch.float8_e5m2, 8),
+        ),
+        ((torch.uint8, 3), (torch.int32, 5), (torch.int64, 7)),
+    ],
+    ids=["floating-payloads", "opaque-integer-payloads"],
+)
+def test_cyclic_empty_sources_use_native_row_layout_without_changing_protocol(
+    monkeypatch, n, ep, layout
+):
+    full = (
+        torch.arange(n * 16, dtype=torch.int32).reshape(n, 16).as_subclass(DeviceTensor),
+        *(
+            torch.arange(n * width).reshape(n, width).to(dtype).as_subclass(DeviceTensor)
+            for dtype, width in layout
+        ),
+    )
+    saved = tuple(value.view(torch.uint8).clone() for value in full)
+    counts = tuple(len(range(rank, n, ep)) for rank in range(ep))
+    for rank, local_count in enumerate(counts):
+        d = dispatcher(monkeypatch, rank=rank, ep=ep, layout=layout, top_k=16)
+        local = tuple(value[rank::ep].contiguous() for value in full)
+        # The actual producer expression reproduces the PyTorch/native discrepancy.
+        if not local_count:
+            assert all(value.is_contiguous() and not native_row_major(value) for value in local)
+        selected = torch.tensor(list(range(rank, n, ep)), dtype=torch.int64)
+        for value, source in zip(local, full):
+            assert torch.equal(
+                value.view(torch.uint8), source.index_select(0, selected).view(torch.uint8)
+            )
+        h = d.dispatch(local[0], local[1:], source_counts=counts)
+        assert h.source_counts == counts
+        for original, native in zip(local, h._inputs):
+            assert native.shape == original.shape and native.dtype == original.dtype
+            assert native.device == original.device and native_row_major(native)
+            if local_count:
+                assert native is original
+            else:
+                assert native.stride() == (native.shape[1], 1)
+        if max(counts):
+            call = d.resource.api.calls[0]
+            assert call[0] == "dispatch" and call[1] is h._inputs[0]
+            assert {id(value) for value in call[2]} == {id(value) for value in h._inputs}
+            assert call[3:6] == (max(counts), rank, ep)
+        else:
+            assert d.resource.api.calls == []
+        output = d.combine(h, tensor(torch.zeros(ep * max(counts), 3)))
+        assert output.shape == (local_count, 3) and not d.resource.busy
+    for before, after in zip(saved, full):
+        assert torch.equal(before, after.view(torch.uint8))
 
 
 def test_outstanding_handle_blocks_reuse_wrong_owner_and_close(monkeypatch):
