@@ -96,6 +96,8 @@ class Scheduler(SchedulerIOMixin):
         self.stop_token_ids = get_stop_token_ids(self.tokenizer)
         self.token_pool = self.table_manager.token_pool
         self.prefill_budget = config.max_prefill_tokens
+        self.prefill_decode_interval = config.prefill_decode_interval
+        self._prefill_decode_interval_remaining = 0
         self.enable_overlap_schedule = config.enable_cache_overlap
         # self.config = config
 
@@ -455,10 +457,19 @@ class Scheduler(SchedulerIOMixin):
         return False
 
     def _schedule_next_batch(self, *, allow_retract: bool = True) -> ForwardInput | None:
-        batch = self.prefill_manager.schedule_next_batch(self.prefill_budget)
+        if self._prefill_decode_interval_remaining:
+            self._prefill_decode_interval_remaining -= 1
+            batch = None
+        else:
+            batch = self.prefill_manager.schedule_next_batch(self.prefill_budget)
         if batch is None and self._prepare_decode_capacity(allow_retract=allow_retract):
             batch = self.decode_manager.schedule_next_batch()
-        return self._prepare_batch(batch) if batch else None
+        if batch is None:
+            return None
+        forward_input = self._prepare_batch(batch)
+        if batch.is_prefill:
+            self._prefill_decode_interval_remaining = self.prefill_decode_interval
+        return forward_input
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:
         batch, sample_args, input_mapping, output_mapping = forward_input

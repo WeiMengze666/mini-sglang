@@ -15,6 +15,7 @@ def _get_pid_suffix() -> str:
 class SchedulerConfig(EngineConfig):
     max_prefill_tokens: int = 16384
     chunked_prefill_size: int = 16384
+    prefill_decode_interval: int = 0
     state_cache_strategy: str = "auto"
     cache_type: str = "radix"
     offline_mode: bool = False
@@ -25,6 +26,8 @@ class SchedulerConfig(EngineConfig):
             value = getattr(self, name)
             if type(value) is not int or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
+        if type(self.prefill_decode_interval) is not int or self.prefill_decode_interval < 0:
+            raise ValueError("prefill_decode_interval must be a non-negative integer")
         if self.state_cache_strategy not in ("auto", "extra_buffer"):
             raise ValueError("Unsupported recurrent prefix-cache strategy")
 

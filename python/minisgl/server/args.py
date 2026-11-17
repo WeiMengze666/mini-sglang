@@ -298,6 +298,12 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         default=ServerArgs.chunked_prefill_size,
         help="Shared chunk-token budget for each prefill batch.",
     )
+    parser.add_argument(
+        "--prefill-decode-interval",
+        type=int,
+        default=ServerArgs.prefill_decode_interval,
+        help="Decode scheduling opportunities after each prefill before the next prefill; 0 disables.",
+    )
 
     parser.add_argument(
         "--num-pages",

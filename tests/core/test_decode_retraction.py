@@ -84,6 +84,8 @@ def setup(monkeypatch, *, count=2, pages=4, append_latest=True, output=8):
     scheduler.decode_manager = dm
     scheduler.prefill_manager = PrefillManager(cache, tm, dm)
     scheduler.prefill_budget = 16
+    scheduler.prefill_decode_interval = 0
+    scheduler._prefill_decode_interval_remaining = 0
     scheduler.inflight_reqs = {r.uid: r for r in reqs}
     scheduler.finished_reqs, scheduler.aborted_reqs = (set(), set())
     scheduler.stop_token_ids = set()
