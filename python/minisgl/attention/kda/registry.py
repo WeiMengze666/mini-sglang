@@ -224,14 +224,20 @@ def _flashinfer_indexed_prefill(*args):
     return indexed_prefill(*args)
 
 
-def _flashinfer_prepare_checkpoints(*args, **kwargs):
-    from .flashinfer import prepare_checkpoints
+def _sgl_indexed_prefill(*args):
+    from .sgl import indexed_prefill
+
+    return indexed_prefill(*args)
+
+
+def _native_prepare_checkpoints(*args, **kwargs):
+    from .checkpoints import prepare_checkpoints
 
     return prepare_checkpoints(*args, **kwargs)
 
 
-def _flashinfer_checkpoint_quantum(*args):
-    from .flashinfer import checkpoint_quantum
+def _native_checkpoint_quantum(*args):
+    from .checkpoints import checkpoint_quantum
 
     return checkpoint_quantum(*args)
 
@@ -241,8 +247,8 @@ register_kda_kernel(
     "flashinfer",
     _flashinfer_recurrence,
     indexed_prefill=_flashinfer_indexed_prefill,
-    prepare_checkpoints=_flashinfer_prepare_checkpoints,
-    checkpoint_quantum=_flashinfer_checkpoint_quantum,
+    prepare_checkpoints=_native_prepare_checkpoints,
+    checkpoint_quantum=_native_checkpoint_quantum,
 )
 register_kda_kernel(
     "sgl",
@@ -250,6 +256,9 @@ register_kda_kernel(
     _sgl_decode,
     project=_sgl_project,
     indexed_decode=_sgl_indexed_decode,
+    indexed_prefill=_sgl_indexed_prefill,
+    prepare_checkpoints=_native_prepare_checkpoints,
+    checkpoint_quantum=_native_checkpoint_quantum,
     indexed_decode_padding=True,
 )
 

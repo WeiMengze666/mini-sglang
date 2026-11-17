@@ -1,6 +1,8 @@
 """Adapt the mature SGLang KDA kernels to Mini's functional K,V state contract."""
 
+from contextlib import ExitStack
 from functools import cache
+from itertools import accumulate
 
 import torch
 
@@ -417,45 +419,99 @@ def indexed_decode(layer, x, pool, layer_id, indices, metadata):
     return KDAResult(output=output, gate=gate)
 
 
+def _prefill_plan(metadata, device):
+    plan = metadata.kernel_data.get("sgl_prefill")
+    if plan is None:
+        counts = [(length + 63) // 64 for length in metadata.lengths]
+        plan = {
+            "chunk_indices": torch.tensor(
+                [(seq, chunk) for seq, count in enumerate(counts) for chunk in range(count)],
+                device=device,
+                dtype=torch.int32,
+            ).reshape(-1, 2),
+            "chunk_offsets": torch.tensor(
+                [0, *accumulate(counts)], device=device, dtype=torch.int32
+            ),
+        }
+        tracked = getattr(metadata, "checkpoints", None)
+        if tracked is not None:
+            chunks = [-1] * len(metadata.lengths)
+            for row, lease in zip(tracked.rows, tracked.plans):
+                # The SDK snapshots BEFORE this local chunk, unlike FI's
+                # after-chunk destination map. Global offsets are separate.
+                chunks[row] = (lease.checkpoint.length - lease.start_len) // tracked.quantum
+            plan["track_chunk_idx"] = torch.tensor(chunks, device=device, dtype=torch.int32)
+        metadata.kernel_data["sgl_prefill"] = plan
+    return plan
+
+
 def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
-    """Use official varlen convolution and chunk extend on owned native rows."""
+    """Run mature indexed Triton prefill with optional selected FP32 snapshots."""
     from .prefill import prepare, supports
 
+    tracked = getattr(metadata, "checkpoints", None)
+    if tracked is not None and torch.cuda.is_current_stream_capturing():
+        raise ValueError("Checkpoint tracking requires eager prefill")
     if not supports(layer, x, pool):
+        if tracked is not None:
+            raise ValueError("Checkpoint prefill input no longer meets its validated portfolio")
         return None
     chunk, _, stream = _kernels()
-    # Plan chunk metadata before convolution mutates its pool.
-    chunks = metadata.kernel_data.get("sgl_prefill_chunks")
-    if chunks is None:
-        chunks = torch.tensor(
+    plan = _prefill_plan(metadata, x.device)
+    with ExitStack() as borrows:
+        destinations = (
             [
-                (seq, chunk)
-                for seq, length in enumerate(metadata.lengths)
-                for chunk in range((length + 63) // 64)
-            ],
-            device=x.device,
-            dtype=torch.int32,
+                borrows.enter_context(pool.borrow_checkpoint(lease, layer_id))
+                for lease in tracked.plans
+            ]
+            if tracked is not None
+            else []
         )
-        metadata.kernel_data["sgl_prefill_chunks"] = chunks
-    prepared, gate = prepare(layer, x, pool, layer_id, indices, metadata)
-    q, k, v, g, beta, recurrent, plan, indices = prepared
-    with stream():
-        output = chunk(
-            q=q,
-            k=k,
-            v=v,
-            g=g,
-            beta=beta,
-            initial_state=recurrent,
-            initial_state_indices=indices,
-            use_qk_l2norm_in_kernel=True,
-            cu_seqlens=plan["cu_seqlens"],
-            A_log=layer.A_log.reshape(-1),
-            dt_bias=layer.dt_bias.reshape(-1),
-            lower_bound=layer._config.gate_lower_bound,
-            beta_is_raw=True,
-            chunk_indices=chunks,
+        # The SDK indexes scratch by original batch row, not checkpoint order.
+        snapshots = (
+            x.new_empty(
+                (len(metadata.lengths), layer._heads, layer._dim, layer._dim), dtype=torch.float32
+            )
+            if tracked is not None
+            else None
         )
-    from .registry import KDAResult
+        tracking = (
+            {"track_state": snapshots, "track_chunk_idx": plan["track_chunk_idx"]}
+            if tracked is not None
+            else {}
+        )
+        conv_tracking = (
+            {"checkpoint_conv": tuple(conv for conv, _ in destinations)}
+            if tracked is not None
+            else {}
+        )
+        # All leases, metadata, recurrence imports and scratch exist before the
+        # first convolution checkpoint/working-state write. Never retry after it.
+        prepared, gate = prepare(layer, x, pool, layer_id, indices, metadata, **conv_tracking)
+        q, k, v, g, beta, recurrent, conv_plan, indices = prepared
+        with stream():
+            output = chunk(
+                q=q,
+                k=k,
+                v=v,
+                g=g,
+                beta=beta,
+                initial_state=recurrent,
+                initial_state_indices=indices,
+                use_qk_l2norm_in_kernel=True,
+                cu_seqlens=conv_plan["cu_seqlens"],
+                A_log=layer.A_log.reshape(-1),
+                dt_bias=layer.dt_bias.reshape(-1),
+                lower_bound=layer._config.gate_lower_bound,
+                beta_is_raw=True,
+                chunk_indices=plan["chunk_indices"],
+                chunk_offsets=plan["chunk_offsets"],
+                **tracking,
+            )
+        if tracked is not None:
+            for (_, destination), row in zip(destinations, tracked.rows):
+                # Scratch is FP32 V,K; round once into the public K,V snapshot.
+                destination.transpose(-1, -2).copy_(snapshots[row])
+        from .registry import KDAResult
 
-    return KDAResult(output=output[0], gate=gate)
+        return KDAResult(output=output[0], gate=gate)

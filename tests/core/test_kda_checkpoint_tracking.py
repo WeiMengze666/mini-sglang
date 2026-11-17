@@ -8,7 +8,7 @@ import minisgl.core as core
 import pytest
 import torch
 from minisgl.attention.config import KDAConfig
-from minisgl.attention.kda import flashinfer, prefill, sgl
+from minisgl.attention.kda import checkpoints, flashinfer, prefill, sgl
 from minisgl.attention.kda.backend import KDAAttentionBackend
 from minisgl.attention.kda.registry import get_kda_kernel
 from minisgl.core import Batch, Req, SamplingParams
@@ -48,7 +48,7 @@ def case(monkeypatch, request):
     cfg = KDAConfig(4, 1, 128, 4, gate_lower_bound=-2)
     configs = dict.fromkeys(LAYERS, cfg)
     # Metadata/ABI tests use CPU tensors; native SM/capture selection is isolated.
-    monkeypatch.setattr(flashinfer, "_checkpoint_device_supported", lambda device: True)
+    monkeypatch.setattr(checkpoints, "_checkpoint_device_supported", lambda device: True)
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: False)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device=None: (10, 3))
     return SimpleNamespace(
@@ -121,7 +121,7 @@ def test_all_layer_or_plan_rejection_is_atomic_and_releases_leases(case, monkeyp
     elif invalid == "decode":
         case.batch.phase = "decode"
     elif invalid == "unsupported_kernel":
-        case.backend.kernel = get_kda_kernel("sgl")
+        case.backend.kernel = get_kda_kernel("torch")
     elif invalid == "capture":
         monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
 
@@ -365,7 +365,7 @@ def test_additional_prewrite_rejection_has_no_tensor_allocation(case, monkeypatc
     if invalid == "nan_gate":
         configs[2] = replace(configs[2], gate_lower_bound=float("nan"))
     elif invalid == "device":
-        monkeypatch.setattr(flashinfer, "_checkpoint_device_supported", lambda device: False)
+        monkeypatch.setattr(checkpoints, "_checkpoint_device_supported", lambda device: False)
     elif invalid == "duplicate":
         case.batch.checkpoint_plan = (case.plan, case.plan)
     elif invalid == "storage":
@@ -464,7 +464,7 @@ def test_real_k3_configs_keep_global96_while_tp8_pool_and_layer_use_local12(
     configs = dict.fromkeys(LAYERS, layer._config)
     if mismatch:
         configs[2] = replace(configs[2], num_heads=104)
-    monkeypatch.setattr(flashinfer, "_checkpoint_device_supported", lambda device: True)
+    monkeypatch.setattr(checkpoints, "_checkpoint_device_supported", lambda device: True)
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: False)
     if mismatch:
         with pytest.raises(ValueError, match="Every checkpoint layer"):

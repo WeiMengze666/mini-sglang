@@ -263,7 +263,7 @@ def test_result_event_precedes_donation_and_ordinary_cache_and_lease_cleanup(mon
 )
 def test_bound_native_capability_and_single_metadata_attachment(case, monkeypatch, unsupported):
     import minisgl.core as core
-    from minisgl.attention.kda import flashinfer
+    from minisgl.attention.kda import checkpoints
     from test_checkpoint_binding import declared
 
     case.backend.prepare_model(declared(case))
@@ -276,7 +276,7 @@ def test_bound_native_capability_and_single_metadata_attachment(case, monkeypatc
     elif unsupported == "overlap":
         case.cache.supports_overlap = True
     elif unsupported == "device":
-        monkeypatch.setattr(flashinfer, "_checkpoint_device_supported", lambda device: False)
+        monkeypatch.setattr(checkpoints, "_checkpoint_device_supported", lambda device: False)
     elif unsupported == "no_cache":
         case.states.checkpoint_enabled = False
     quantum = case.backend.checkpoint_quantum(case.batch)

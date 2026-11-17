@@ -154,7 +154,7 @@ def test_incomplete_or_unsupported_model_disables_whole_binding_before_allocatio
     elif invalid == "bool_id":
         records[1] = (True, records[1][1])
     elif invalid == "unsupported_kernel":
-        case.backend.kernel = get_kda_kernel("sgl")
+        case.backend.kernel = get_kda_kernel("torch")
     elif invalid == "inner_list":
         records[0] = list(records[0])
     elif invalid == "short_pair":
