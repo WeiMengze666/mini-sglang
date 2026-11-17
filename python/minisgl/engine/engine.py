@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import os
 from dataclasses import dataclass
 from datetime import timedelta
@@ -522,6 +523,7 @@ class Engine:
     def _sync_get_memory(self) -> Tuple[int, int]:
         """Get the min and max free memory across TP ranks."""
         torch.cuda.synchronize(self.device)
+        gc.collect()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(self.device)
         free_memory = get_free_memory(self.device)
