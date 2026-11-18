@@ -1,0 +1,143 @@
+{
+  "hardware": "8 NVIDIA B300, single node",
+  "client": "AIPerf 0.13.0",
+  "profile": "benchmark/online/profiles/kimi-k3-sglang.json",
+  "scope": "One unprofiled run per runtime on the same machine. Official 9 is an earlier measurement. Nominal send window 900 seconds plus request drain.",
+  "runs": {
+    "mini": {
+      "job": 157,
+      "commit": "c3c8b042e70121dc60125549123b14ffe2e1ded7",
+      "runtime_python_tree": "d07455a3ee6821236472556654ac0a5c5d6d598b",
+      "sglang_source": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+      "packages": {
+        "sglang": "0.5.22",
+        "torch": "2.14.1+cu130",
+        "flashinfer-python": "0.7.1",
+        "sglang-kernel": "0.4.9",
+        "nvidia-cutlass-dsl": "4.8.0",
+        "apache-tvm-ffi": "0.1.11",
+        "transformers": "5.19.0",
+        "aiperf": "0.13.0",
+        "torchcodec": null,
+        "triton": "3.8.0"
+      },
+      "output_tokens": 306704,
+      "window_ns": 940002207744,
+      "output_tokens_per_second": 326.2800847415964,
+      "completed": 413,
+      "cancelled": 5,
+      "request_errors": 0,
+      "latency_ms": {
+        "time_to_first_token": {
+          "avg": 2891.5289530895884,
+          "p50": 1151.197249,
+          "p95": 13664.096801199994,
+          "p99": 23607.291543159998
+        },
+        "inter_token_latency": {
+          "avg": 36.99585997644952,
+          "p50": 33.14122488188976,
+          "p95": 63.41504029595578,
+          "p99": 138.99602595106225
+        },
+        "request_latency": {
+          "avg": 28898.722364157384,
+          "p50": 12973.759221,
+          "p95": 109350.41131899989,
+          "p99": 237941.7329113598
+        }
+      },
+      "cancelled_credit_timeout": true,
+      "input_sha256": {
+        "run.json": "cd486854d1b048c267994d858f330fa21e0eea3a76ebb5f4acb315f4d1dbb78a",
+        "profile_export_aiperf.json": "5a8a6d60d42409663bfc72dea73d00db0bead3fd114486c8d3abf2f2d7e627d8",
+        "profile_export.jsonl": "5e9d3df966c792baf93a8ae55f28c5ea9f173c24b9b9e7b89f2a310f5a57875a",
+        "aiperf.log": "01c9d71bf4c6a4bf00624f9f67464da756237bb2e5cbcfef947a17059ad8236e"
+      },
+      "launch_profile_sha256": "5d6d8517e0437167dadfa9b14ee74171aaab727a7006d67558f595e6854ee28f"
+    },
+    "official": {
+      "job": 9,
+      "commit": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+      "runtime_python_tree": null,
+      "sglang_source": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+      "packages": {
+        "sglang": "0.5.20",
+        "torch": "2.13.0",
+        "flashinfer-python": "0.6.18",
+        "sglang-kernel": "0.4.7",
+        "nvidia-cutlass-dsl": "4.6.2",
+        "apache-tvm-ffi": "0.1.11",
+        "transformers": "5.12.1",
+        "aiperf": null,
+        "torchcodec": "0.15.0",
+        "triton": "3.7.1"
+      },
+      "output_tokens": 309131,
+      "window_ns": 940004576944,
+      "output_tokens_per_second": 328.8611647030483,
+      "completed": 421,
+      "cancelled": 5,
+      "request_errors": 0,
+      "latency_ms": {
+        "time_to_first_token": {
+          "avg": 3384.760267185273,
+          "p50": 1355.33566,
+          "p95": 10826.225059999999,
+          "p99": 54521.3575942
+        },
+        "inter_token_latency": {
+          "avg": 34.447964635557554,
+          "p50": 30.574057874999998,
+          "p95": 62.56686129999999,
+          "p99": 86.65291670650717
+        },
+        "request_latency": {
+          "avg": 28489.212393938244,
+          "p50": 12684.049524,
+          "p95": 120441.329489,
+          "p99": 224965.49330120048
+        }
+      },
+      "cancelled_credit_timeout": true,
+      "input_sha256": {
+        "run.json": "d4adf5e24785bcbaed3f6b968bc87d409e090855104c645f138d84231e061f34",
+        "profile_export_aiperf.json": "7056bce5d44bb02a01331066016f045f1708adb5d3d8408e9d46049cfb97281e",
+        "profile_export.jsonl": "e6799f82f49307136bd06b9684048cb8852628f2ba3847241d7296706a7d6b0d",
+        "aiperf.log": "9fdcd7c4bbb681ab78c81ab9868b9a63c23d06b42a629b510bdf09b8bf99ead3"
+      },
+      "launch_profile_sha256": "e43cd781471b68dc4f2a332b024f69a56ff1369054f8e140096c9cfef1dfa585"
+    }
+  },
+  "throughput_ratio": 0.9921514601343016,
+  "CPU_checks": {
+    "core": {
+      "pytest_summary": "2074 passed, 54 skipped, 3 warnings in 209.11s (0:03:29)",
+      "exit_code": 0,
+      "stdout_sha256": "d8c0ccc57d8cb0c4047e73a2a6857c2b54ddcc8a556e457bcf41adcaa5ad157d"
+    },
+    "models": {
+      "pytest_summary": "303 passed, 793 skipped, 21 warnings in 51.31s",
+      "exit_code": 0,
+      "stdout_sha256": "4e9b897e2738415e032aae575a16d36b1478ce34bd09f8b9b91bf61d51d0682d"
+    },
+    "official_sources_and_parsers": {
+      "pytest_summary": "65 passed, 2 xfailed, 5 warnings in 28.30s",
+      "exit_code": 0,
+      "stdout_sha256": "7a924e4fbd4f28f7a984fbb311e5cba65ebf3ca47ef14ad9e19b2c2c357851e2"
+    }
+  },
+  "functional_EP": {
+    "source_commit": "4436c21a9f7dc56abfd5c0964c6564743b979fa5",
+    "gpuq_job": 139,
+    "TP": 8,
+    "DCP": 8,
+    "EP": [
+      2,
+      8
+    ],
+    "completed_8_token_requests_per_layout": 102,
+    "scope": "Each layout 102 complete eight-token requests, controls on all eight ranks, cancel/discard/release and request table slot reuse, sampled shared recurrence source verified unchanged on the producer stream. Observer exit footers were not emitted upon SIGTERM stopping. Reconstructed bounds from indexed saved files. Full quality remains due after selection.",
+    "review_sha256": "fb4270de92c6a461b8ea52d05408ef24d81edf32c6e04debbed08961dbbec76f"
+  }
+}

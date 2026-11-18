@@ -1,6 +1,20 @@
 # Kimi-K3 serving performance target
 
-## Current canonical 16K candidate (2026-11-17)
+## Accepted throughput point, 16K prefill (2026-11-18)
+
+On the same eight-B300 server, Mini `c3c8b04` delivered **99.22% of the retained SGLang throughput**. Both runs used TP8/DCP8/EP1, 393 AgentX dataset entries, concurrency 48 and seed 42. The Mini server used a prefill/decode scheduling interval of 8. [Exact arguments](../benchmark/online/profiles/kimi-k3-sglang.json) · [Versions, denominators and artifact hashes](validation/kimi-k3-delivery-16k.json)
+
+| Metric | SGLang `94602c9` | Mini `c3c8b04` |
+| --- | ---: | ---: |
+| Output tokens/s | 328.86 | 326.28 |
+| TTFT p50 / p95 / p99, ms | 1,355 / 10,826 / 54,521 | 1,151 / 13,664 / 23,607 |
+| ITL mean / p95 / p99, ms | 34.45 / 62.57 / 86.65 | 37.00 / 63.42 / 139.00 |
+| Request latency p95 / p99, s | 120.44 / 224.97 | 109.35 / 237.94 |
+| Completed / deadline-cancelled / request errors | 421 / 5 / 0 | 413 / 5 / 0 |
+
+Throughput divides completed output tokens by the interval from profiling start through the last request in the AIPerf phase. Mini produced 306,704 tokens in 940.002 seconds. Both servers completed the 900-second send interval, and both clients reported a 10-second timeout waiting for cancelled credits during drain. The earlier official run and this Mini run establish a single comparison point. Mini's p99 ITL was 52.34 ms higher.
+
+## Canonical 16K candidate (2026-11-17)
 
 The [measured evidence](validation/native-kernel-adapters-serving-20261117.json)
 records GPUq 77 at source `c686f1e5ecc5386a86c7cc25745c8f4154e62447`, with the
@@ -62,7 +76,7 @@ complete the full Kimi-K3 objective.
 
 The earlier dated snapshots below are retained as historical evidence.
 
-## Current canonical 16K snapshot (2026-11-16)
+## Canonical 16K snapshot (2026-11-16)
 
 The [compact evidence summary](validation/kimi-k3-canonical-16k-20261116.json)
 records accepted **unprofiled** TP8/DCP8/EP1 runs: both prefill budgets 16384,

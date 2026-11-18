@@ -5,6 +5,10 @@ and FLA sources, without importing SGLang, FLA kernels, or a GPU stack. They
 establish **operator and MLA-only decoder-stack parity**, not full hybrid K3
 model parity, released-weight parity, or serving correctness.
 
+## Comparison with the serving reference
+
+The released checkpoint routes 16 experts per token. The HF top-1 discrepancy therefore applies to a separate configuration. For MLA, SGLang `94602c9` constructs both low-rank RMSNorms with `config.rms_norm_eps`. Mini reads the same field, which is `1e-5` in the released text configuration. The HF comparison at its fixed `1e-6` remains an expected difference. [SGLang MLA source](https://github.com/sgl-project/sglang/blob/94602c9c2b7cbdb8efd5c52802dac6a1c180089e/python/sglang/srt/models/deepseek_v2.py#L1775)
+
 ## Reproduce
 
 From the repository root, using the CPU test environment described in

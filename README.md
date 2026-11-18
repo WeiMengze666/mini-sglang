@@ -22,17 +22,14 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
   - **Optimized Kernels**: Integrates **FlashAttention** and **FlashInfer** for maximum efficiency.
   - ...
 
-## Experimental hybrid attention and Kimi-K3 text support
+## Kimi-K3 text serving
 
-Reusable KDA, gated MLA, LatentMoE, hybrid prefix checkpoints and an opt-in
-unified state/KV pool are implemented. The packed released K3 checkpoint loads
-and generates on 8×B300. DCP/EP, released-weight FP32 consistency, hybrid graph
-replay and ordinary dense/MoE graph regressions have passed. Optional
-MXFP4/KDA/MLA kernels and grouped expert execution are available. Native synthetic
-HTTP lifecycle checks pass with serial/overlap scheduling and static/unified
-pools. Strict BF16 alignment, complete paired task accuracy and performance
-parity remain unresolved. See the
-[architecture, validation results and remaining gates](docs/kimi-k3.md).
+The Kimi-K3 text runtime composes KDA and MLA attention, a hybrid prefix cache,
+context and expert parallelism, and native FlashInfer expert kernels. On eight
+B300 GPUs it measured 326.28 output tokens/s against SGLang's 328.86 on AgentX.
+The [Kimi-K3 guide](docs/kimi-k3.md) covers the launch configuration and subsystem
+interfaces. The [serving comparison](docs/kimi-k3-performance.md) includes tail
+latency, software versions and measurement boundaries.
 
 ## 🚀 Quick Start
 
