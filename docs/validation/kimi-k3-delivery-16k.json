@@ -54,7 +54,15 @@
         "profile_export.jsonl": "5e9d3df966c792baf93a8ae55f28c5ea9f173c24b9b9e7b89f2a310f5a57875a",
         "aiperf.log": "01c9d71bf4c6a4bf00624f9f67464da756237bb2e5cbcfef947a17059ad8236e"
       },
-      "launch_profile_sha256": "5d6d8517e0437167dadfa9b14ee74171aaab727a7006d67558f595e6854ee28f"
+      "launch_profile_sha256": "5d6d8517e0437167dadfa9b14ee74171aaab727a7006d67558f595e6854ee28f",
+      "cache_capacity": {
+        "shared_state_slots": 367,
+        "logical_KV_tokens": 19963904,
+        "logical_page_tokens": 512,
+        "rank_physical_page_tokens": 64,
+        "state_to_KV_byte_budget_ratio": 0.31,
+        "source_server_log_sha256": "4775c25d9f16cb59ae295a390215b069260fdea6b0b25953d7885c9e541189ed"
+      }
     },
     "official": {
       "job": 9,
@@ -106,7 +114,33 @@
         "profile_export.jsonl": "e6799f82f49307136bd06b9684048cb8852628f2ba3847241d7296706a7d6b0d",
         "aiperf.log": "9fdcd7c4bbb681ab78c81ab9868b9a63c23d06b42a629b510bdf09b8bf99ead3"
       },
-      "launch_profile_sha256": "e43cd781471b68dc4f2a332b024f69a56ff1369054f8e140096c9cfef1dfa585"
+      "launch_profile_sha256": "e43cd781471b68dc4f2a332b024f69a56ff1369054f8e140096c9cfef1dfa585",
+      "cache_capacity": {
+        "shared_state_slots": 372,
+        "logical_KV_tokens": 20252160,
+        "logical_page_tokens": 512,
+        "rank_physical_page_tokens": 64,
+        "state_to_KV_byte_budget_ratio": 0.31,
+        "source_server_log_sha256": "652b43ca4b4b6eb1f761dc2100a091e90c08cbd1761420d034588eb230971a3a"
+      },
+      "resolved_server_arguments": {
+        "attention_backend": "flashinfer",
+        "prefill_attention_backend": "trtllm_mla",
+        "decode_attention_backend": "cutedsl_mla",
+        "linear_attn_backend": "triton",
+        "linear_attn_decode_backend": "triton",
+        "linear_attn_prefill_backend": null,
+        "moe_runner_backend": "flashinfer_mxfp4",
+        "flashinfer_mxfp4_moe_precision": "default",
+        "kv_cache_dtype": "fp8_e4m3",
+        "mamba_ssm_dtype": "bfloat16",
+        "prefill_decode_interval": 0,
+        "radix_eviction_policy": "lru",
+        "mamba_radix_cache_strategy": "extra_buffer",
+        "mamba_full_memory_ratio": 0.31,
+        "ep_size": 1
+      },
+      "server_info_sha256": "d800494fe3aa35c56d8bf078f8989cde94f74f2ada7833851425c86c90e45959"
     }
   },
   "throughput_ratio": 0.9921514601343016,
@@ -125,6 +159,14 @@
       "pytest_summary": "65 passed, 2 xfailed, 5 warnings in 28.30s",
       "exit_code": 0,
       "stdout_sha256": "7a924e4fbd4f28f7a984fbb311e5cba65ebf3ca47ef14ad9e19b2c2c357851e2"
+    },
+    "combined_release_suite": {
+      "pytest_summary": "2442 passed, 780 skipped, 2 xfailed, 23 warnings in 246.00s (0:04:06)",
+      "exit_code": 0,
+      "stdout_sha256": "4207ee544c1aa70f83d1236e5204c5194a064d8be582b54a75d17b1552f2c68c",
+      "coverage": "tests/core, tests/models, tests/test_kimi_cache.py with CUDA hidden. Enables pinned HF and FLA reference sources and native parser/tokenizer integration.",
+      "HF_source_sha256": "9e3564c70ac21854ce5a090cc946c5dc76b70d1050ef50840449181a20fff44a",
+      "FLA_source_sha256": "60a32285d4b67068ff633b48bbe8ab31028066d24f00d27e12199a88fc73f016"
     }
   },
   "functional_EP": {
@@ -139,5 +181,59 @@
     "completed_8_token_requests_per_layout": 102,
     "scope": "Each layout 102 complete eight-token requests, controls on all eight ranks, cancel/discard/release and request table slot reuse, sampled shared recurrence source verified unchanged on the producer stream. Observer exit footers were not emitted upon SIGTERM stopping. Reconstructed bounds from indexed saved files. Full quality remains due after selection.",
     "review_sha256": "fb4270de92c6a461b8ea52d05408ef24d81edf32c6e04debbed08961dbbec76f"
+  },
+  "optional_async_metadata": {
+    "job": 189,
+    "source": "d1378f527b1f61b64bd9fd0fc5578a5a02190067",
+    "worker_cleanup_errors": [],
+    "output_tokens": 312149,
+    "window_seconds": 940.003265904,
+    "output_tps": 332.07225051479656,
+    "fraction_of_official": 1.009764259682799,
+    "counters": [
+      416,
+      4,
+      0
+    ],
+    "latency_ms": {
+      "time_to_first_token": {
+        "avg": 2907.8452859182694,
+        "p50": 1139.9757774999998,
+        "p95": 13879.64219575,
+        "p99": 30145.070121700137
+      },
+      "inter_token_latency": {
+        "avg": 36.91054051008603,
+        "p50": 32.49958844881381,
+        "p95": 67.62054294072695,
+        "p99": 142.44538363533238
+      },
+      "request_latency": {
+        "avg": 28876.003838560096,
+        "p50": 12919.8789305,
+        "p95": 111143.33341949999,
+        "p99": 244578.8383064012
+      }
+    },
+    "cancelled_credit_timeout": true,
+    "decision": "User accepted 99 percent throughput. Keep measured C3 frozen for the paired quality run. This later optional candidate improved the measured throughput point and had higher ITL tails.",
+    "input_sha256": {
+      "run.json": "abaa2f866c87ae441a33d387060f1bf56854e6358e566708f3ee178b9f7ba644",
+      "profile_export_aiperf.json": "9315cedb120c90272d00d3331c21efb6db4893613e1e4978caaf619e31e903b1",
+      "profile_export.jsonl": "02f2646ed0a7afa8cef05cd19b51c383a8080ba9342d9e08bd523e219d3235aa",
+      "aiperf.log": "27a8ed7d0f44356eb2eaafbaf401d5b11a909c4349ca31d4d5a6f6e0f5f7794a"
+    }
+  },
+  "quality_protocol": {
+    "cases": 1319,
+    "tokenized_cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+    "scope": "Greedy GSM8K, thinking disabled, fixed batches of 8, 4096 context, 1024 maximum output. Distinct from the 1M serving profile.",
+    "effective_environment": {
+      "NCCL_CUMEM_ENABLE": "0",
+      "NCCL_NVLS_ENABLE": "0",
+      "NCCL_GRAPH_MIXING_SUPPORT": "0",
+      "CUDA_DEVICE_MAX_CONNECTIONS": "8",
+      "TRTLLM_ENABLE_PDL": "1"
+    }
   }
 }

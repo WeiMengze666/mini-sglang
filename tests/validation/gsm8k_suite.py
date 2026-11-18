@@ -13,6 +13,7 @@ import json
 import os
 import re
 import time
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 
@@ -232,9 +233,71 @@ def shutdown_engine(engine, primary_error=None):
         )
 
 
-def run_mini(args, cases, stop_ids):
+def quality_batch(engine, active):
+    """Use real requests for ownership and physical rows for graph inputs."""
     import torch
-    from minisgl.core import Batch, Req, SamplingParams
+    from minisgl.core import Batch
+
+    batch = Batch(active, "prefill" if active[0].cached_len == 0 else "decode")
+    engine.graph_runner.pad_batch(batch)
+    batch.input_ids = torch.cat(
+        [req.input_ids[req.cached_len : req.device_len] for req in batch.padded_reqs]
+    ).to(engine.device)
+    batch.positions = torch.cat(
+        [
+            torch.arange(req.cached_len, req.device_len, dtype=torch.int32, device=engine.device)
+            for req in batch.padded_reqs
+        ]
+    )
+    batch.out_loc = torch.cat(
+        [
+            engine.page_table[req.table_idx, req.cached_len : req.device_len]
+            for req in batch.padded_reqs
+        ]
+    )
+    engine.attn_backend.prepare_metadata(batch)
+    return batch
+
+
+@contextmanager
+def finite_sampling(engine):
+    """Quality-only observer; delegate real sampling once and restore exactly."""
+    import torch
+
+    sampler = engine.sampler
+    original = sampler.sample
+    missing = object()
+    previous = vars(sampler).get("sample", missing)
+
+    def checked(logits, sampling_args):
+        # Engine publishes real rows to its sampler; undefined padding is excluded.
+        if not torch.isfinite(logits).all():
+            raise AssertionError(
+                f"Task evaluation produced non-finite real logits: "
+                f"dtype={logits.dtype}, shape={tuple(logits.shape)}, stride={logits.stride()}"
+            )
+        return original(logits, sampling_args)
+
+    sampler.sample = checked
+    try:
+        yield
+    finally:
+        if previous is missing:
+            del sampler.sample
+        else:
+            sampler.sample = previous
+
+
+def checkpoint_loader_options(args):
+    keys = ["weight_loader_prefetch_checkpoints", "weight_loader_prefetch_num_threads"]
+    if args.engine == "sglang":
+        keys.append("model_loader_extra_config")
+    return {key: getattr(args, key) for key in keys if getattr(args, key, None) is not None}
+
+
+def run_mini(args, cases, stop_ids, *, worker_owner=None):
+    import torch
+    from minisgl.core import Req, SamplingParams
     from minisgl.distributed import DistributedInfo
     from minisgl.engine import Engine, EngineConfig
     from minisgl.utils import load_tokenizer
@@ -243,7 +306,6 @@ def run_mini(args, cases, stop_ids):
     rank, world = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
     if world != args.tp_size:
         raise ValueError("torchrun world size differs from --tp-size")
-    torch.backends.cuda.matmul.allow_tf32 = False
     engine = Engine(
         EngineConfig(
             args.model,
@@ -270,7 +332,9 @@ def run_mini(args, cases, stop_ids):
             cuda_graph_bs=None if args.cuda_graph else [],
             cuda_graph_max_bs=args.cuda_graph_max_bs,
             distributed_timeout=1800,
-        )
+            **checkpoint_loader_options(args),
+        ),
+        worker_owner=worker_owner,
     )
     tokenizer = load_tokenizer(args.model)
     table = torch.arange(
@@ -278,14 +342,19 @@ def run_mini(args, cases, stop_ids):
     ).view(args.batch_size, args.max_context)
     engine.page_table[: args.batch_size, : args.max_context].copy_(table)
     if rank == 0:
-        (args.output / "provenance.json").write_text(
-            json.dumps(execution_identity("minisgl"), indent=2) + "\n"
-        )
+        identity = execution_identity("minisgl")
+        identity["quality_observer"] = {
+            "finite_real_logits_before_sampler": True,
+            "delegates_original_sampler_once": True,
+            "changes_seed_or_resamples": False,
+            "scope": "Validation-only; restored in finally; absent from serving performance.",
+        }
+        (args.output / "provenance.json").write_text(json.dumps(identity, indent=2) + "\n")
     rows, started = [], time.monotonic()
     group, generated, batch, logits = [], [], None, None
     failure, stage, graph = None, "setup", False
     try:
-        with torch.inference_mode():
+        with torch.inference_mode(), finite_sampling(engine):
             for begin in range(0, len(cases), args.batch_size):
                 group = cases[begin : begin + args.batch_size]
                 generated, batch, logits = [], None, None
@@ -297,7 +366,7 @@ def run_mini(args, cases, stop_ids):
                         0,
                         args.max_new_tokens,
                         begin + slot + 1,
-                        SamplingParams(),
+                        SamplingParams(max_tokens=args.max_new_tokens),
                         None,
                     )
                     for slot, case in enumerate(group)
@@ -306,38 +375,19 @@ def run_mini(args, cases, stop_ids):
                 active = list(reqs)
                 while active:
                     stage, graph = "prepare_batch", False
-                    batch = Batch(active, "prefill" if active[0].cached_len == 0 else "decode")
-                    engine.graph_runner.pad_batch(batch)
-                    batch.input_ids = torch.cat(
-                        [req.input_ids[req.cached_len :] for req in active]
-                    ).to(engine.device)
-                    batch.positions = torch.cat(
-                        [
-                            torch.arange(req.cached_len, req.device_len, device=engine.device)
-                            for req in active
-                        ]
-                    )
-                    batch.out_loc = torch.cat(
-                        [table[req.table_idx, req.cached_len : req.device_len] for req in active]
-                    )
-                    engine.attn_backend.prepare_metadata(batch)
+                    batch = quality_batch(engine, active)
+                    sampling_args = engine.sampler.prepare(batch)
                     stage = "model_forward"
-                    with engine.ctx.forward_batch(batch):
-                        graph = engine.graph_runner.can_use_cuda_graph(batch)
-                        logits = (
-                            engine.graph_runner.replay(batch) if graph else engine.model.forward()
-                        )
+                    graph = engine.graph_runner.can_use_cuda_graph(batch)
+                    forward_output = engine.forward_batch(batch, sampling_args)
                     stage = "token_transfer"
-                    tokens = logits.argmax(-1).to(torch.int32).cpu()
-                    stage = "finite_check"
-                    if not torch.isfinite(logits).all():
-                        raise AssertionError("Task evaluation produced non-finite logits")
+                    forward_output.copy_done_event.synchronize()
+                    tokens = forward_output.next_tokens_cpu
                     stage = "token_bookkeeping"
                     remaining = []
                     for index, req in enumerate(active):
                         token = int(tokens[index])
                         generated[req.table_idx].append(token)
-                        req.complete_one()
                         req.append_host(tokens[index : index + 1])
                         if (
                             token in stop_ids
@@ -358,6 +408,13 @@ def run_mini(args, cases, stop_ids):
                         )
                         for case, output in zip(group, generated)
                     ]
+                    for row, req in zip(new, reqs):
+                        row["logical_request"] = {
+                            "uid": req.uid,
+                            "table_idx": req.table_idx,
+                            "cached_len": req.cached_len,
+                            "device_len": req.device_len,
+                        }
                     with (args.output / "responses.jsonl").open("a") as stream:
                         for row in new:
                             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -380,6 +437,8 @@ def run_mini(args, cases, stop_ids):
             import sys
 
             print(f"Failure recording also failed: {recording}", file=sys.stderr, flush=True)
+        if worker_owner is not None:
+            worker_owner.abort(exc)
         raise
     finally:
         shutdown_engine(engine, failure)
@@ -390,10 +449,7 @@ def run_sglang(args, cases, stop_ids):
     from sglang import Engine
 
     identity = execution_identity("sglang")
-    if (
-        identity["revision"] != "baa9befa381511cd4d56f83980951e5a45fffc6d"
-        or identity["tracked_changes"]
-    ):
+    if identity["revision"] != args.expected_reference_revision or identity["tracked_changes"]:
         raise RuntimeError("Official reference differs from the pinned clean source")
     (args.output / "provenance.json").write_text(json.dumps(identity, indent=2) + "\n")
     attention_options = {
@@ -401,6 +457,7 @@ def run_sglang(args, cases, stop_ids):
         for key in ("attention_backend", "prefill_attention_backend", "decode_attention_backend")
         if getattr(args, "sglang_" + key) is not None
     }
+    loader_options = checkpoint_loader_options(args)
     engine = Engine(
         model_path=args.model,
         tp_size=args.tp_size,
@@ -422,6 +479,7 @@ def run_sglang(args, cases, stop_ids):
         ),
         enable_deterministic_inference=args.bf16_precision == "strict",
         **attention_options,
+        **loader_options,
         chunked_prefill_size=4096,
         page_size=64,
         flashinfer_autotune_skip_ops=args.flashinfer_autotune_skip_ops,
@@ -446,6 +504,17 @@ def run_sglang(args, cases, stop_ids):
                 results = [results]
             if len(results) != len(group):
                 raise AssertionError("Official engine returned an incomplete batch")
+            finish_reasons = [result["meta_info"]["finish_reason"] for result in results]
+            if any(reason.get("type") not in {"stop", "length"} for reason in finish_reasons):
+                (args.output / "native-terminal-error.json").write_text(
+                    json.dumps(
+                        {"case_ids": [case["id"] for case in group], "results": results},
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                    + "\n"
+                )
+                raise AssertionError(f"Official engine returned non-completion: {finish_reasons!r}")
             new = [
                 record(
                     case,
@@ -455,6 +524,8 @@ def run_sglang(args, cases, stop_ids):
                 )
                 for case, result in zip(group, results)
             ]
+            for row, result in zip(new, results):
+                row["native_meta_info"] = result["meta_info"]
             with (args.output / "responses.jsonl").open("a") as stream:
                 for row in new:
                     stream.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -484,6 +555,11 @@ def main():
     parser.add_argument("--dataset", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--engine", choices=["mini", "sglang"], default="mini")
+    parser.add_argument(
+        "--expected-reference-revision",
+        default="baa9befa381511cd4d56f83980951e5a45fffc6d",
+        help="Full Git revision of the official reference checkout.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument(
@@ -499,7 +575,9 @@ def main():
         "--distributed-backend", choices=["auto", "torch", "pynccl", "mnnvl"], default="auto"
     )
     parser.add_argument("--distributed-provider", help="Mini communication provider module.")
-    parser.add_argument("--moe-backend", choices=["auto", "marlin"], default="marlin")
+    parser.add_argument(
+        "--moe-backend", choices=["auto", "marlin", "flashinfer-ep"], default="marlin"
+    )
     parser.add_argument("--mxfp4-backend", choices=["torch", "flashinfer"], default="torch")
     parser.add_argument("--activation-precision", choices=["bf16", "mxfp8"], default="bf16")
     parser.add_argument("--kv-cache-dtype", choices=["bfloat16", "fp8_e4m3"], default="bfloat16")
@@ -516,7 +594,23 @@ def main():
         help="Capture capacity; requires --cuda-graph and defaults to --batch-size.",
     )
     parser.add_argument("--flashinfer-autotune-skip-ops", nargs="*", default=[])
+    parser.add_argument("--weight-loader-prefetch-checkpoints", action="store_true", default=None)
+    parser.add_argument("--weight-loader-prefetch-num-threads", type=int)
+    parser.add_argument("--model-loader-extra-config")
     args = parser.parse_args()
+    if (
+        args.weight_loader_prefetch_num_threads is not None
+        and args.weight_loader_prefetch_num_threads < 1
+    ):
+        parser.error("--weight-loader-prefetch-num-threads must be positive")
+    if args.engine == "mini" and args.model_loader_extra_config is not None:
+        parser.error("--model-loader-extra-config applies only to --engine sglang")
+    if args.moe_backend == "flashinfer-ep" and (args.engine != "mini" or args.ep_size <= 1):
+        parser.error("flashinfer-ep requires --engine mini and --ep-size greater than 1")
+    if args.engine == "sglang" and not re.fullmatch(
+        r"[0-9a-f]{40}", args.expected_reference_revision
+    ):
+        parser.error("--expected-reference-revision requires a full commit hash")
     if args.moe_backend == "marlin" and args.activation_precision != "bf16":
         parser.error("Marlin requires BF16 expert activations")
     if (
@@ -565,8 +659,16 @@ def main():
         or max(len(case["input_ids"]) + args.max_new_tokens for case in cases) > args.max_context
     ):
         raise ValueError("Empty cases or insufficient context")
-    runner = run_mini if args.engine == "mini" else run_sglang
-    runner(args, cases, set(saved["stop_token_ids"]))
+    stop_ids = set(saved["stop_token_ids"])
+    if args.engine == "mini":
+        from minisgl.engine.engine import WorkerOwner
+        from minisgl.server.launch import _abort_worker
+
+        # The CLI runs in each fresh torchrun worker, as in the serving launcher.
+        owner = WorkerOwner(fresh_worker=True, abort_callback=_abort_worker)
+        run_mini(args, cases, stop_ids, worker_owner=owner)
+    else:
+        run_sglang(args, cases, stop_ids)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 ## Accepted throughput point, 16K prefill (2026-11-18)
 
-On the same eight-B300 server, Mini `c3c8b04` delivered **99.22% of the retained SGLang throughput**. Both runs used TP8/DCP8/EP1, 393 AgentX dataset entries, concurrency 48 and seed 42. The Mini server used a prefill/decode scheduling interval of 8. [Exact arguments](../benchmark/online/profiles/kimi-k3-sglang.json) · [Versions, denominators and artifact hashes](validation/kimi-k3-delivery-16k.json)
+On the same eight-B300 server, Mini `c3c8b04` delivered **99.22% of the retained SGLang throughput**. Both runs used TP8/DCP8/EP1, 393 AgentX dataset entries, concurrency 48 and seed 42. Mini used a prefill/decode scheduling interval of 8. The official server reported its default interval of 0. Its KDA backend was Triton. Mini used the newer upstream FlashInfer KDA prefill adapter and SGLang decode backend. [Exact arguments](../benchmark/online/profiles/kimi-k3-sglang.json) · [Versions, denominators and artifact hashes](validation/kimi-k3-delivery-16k.json)
 
 | Metric | SGLang `94602c9` | Mini `c3c8b04` |
 | --- | ---: | ---: |
@@ -13,6 +13,14 @@ On the same eight-B300 server, Mini `c3c8b04` delivered **99.22% of the retained
 | Completed / deadline-cancelled / request errors | 421 / 5 / 0 | 413 / 5 / 0 |
 
 Throughput divides completed output tokens by the interval from profiling start through the last request in the AIPerf phase. Mini produced 306,704 tokens in 940.002 seconds. Both servers completed the 900-second send interval, and both clients reported a 10-second timeout waiting for cancelled credits during drain. The earlier official run and this Mini run establish a single comparison point. Mini's p99 ITL was 52.34 ms higher.
+
+A follow-up run of the asynchronous attention metadata candidate (`d1378f5`,
+GPUq 189) used the same arguments and produced 312,149 output tokens in 940.003
+seconds, or **332.07 tokens/s**. It completed 416 requests, with four deadline
+cancellations and zero request errors. Its p95/p99 ITL was 67.62/142.45 ms and
+p95/p99 TTFT was 13,880/30,145 ms. The delivery candidate remains `c3c8b04`,
+which met the throughput target with lower measured ITL tails and was frozen for
+the paired quality run.
 
 ## Canonical 16K candidate (2026-11-17)
 

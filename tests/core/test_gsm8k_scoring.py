@@ -45,7 +45,6 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
     monkeypatch, tmp_path, engine_kind, target, failure, capsys
 ):
     import sys
-    from contextlib import nullcontext
     from types import SimpleNamespace
 
     import minisgl.engine as mini_engine
@@ -56,17 +55,12 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
     seen = {}
     batch_size, capacity = (8, 48) if target else (1, 1)
     primary, cleanup = RuntimeError("primary model failure"), RuntimeError("cleanup failure")
-    original_cpu = torch.Tensor.cpu
     transfers = []
 
-    def cpu(tensor, *args, **kwargs):
+    def synchronize():
         transfers.append(1)
         if failure == "transfer" and len(transfers) == 2:
             raise primary
-        return original_cpu(tensor, *args, **kwargs)
-
-    if failure == "transfer":
-        monkeypatch.setattr(torch.Tensor, "cpu", cpu)
 
     class Engine:
         def __init__(self, config=None, **kwargs):
@@ -74,21 +68,27 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
             self.device = torch.device("cpu")
             self.page_table = torch.zeros((capacity, 4), dtype=torch.int32)
             self.graph_runner = SimpleNamespace(
-                pad_batch=lambda batch: None, can_use_cuda_graph=lambda batch: False
+                pad_batch=lambda batch: setattr(batch, "padded_reqs", batch.reqs),
+                can_use_cuda_graph=lambda batch: False,
             )
             self.attn_backend = SimpleNamespace(prepare_metadata=lambda batch: None)
-            self.ctx = SimpleNamespace(forward_batch=self.forward_batch)
-            self.model = SimpleNamespace(forward=self.forward)
+            self.sampler = SimpleNamespace(
+                prepare=lambda batch: None,
+                sample=lambda logits, args: logits.argmax(-1).to(torch.int32),
+            )
             self.kv_cache = SimpleNamespace(release_request=lambda slot, uid: None)
 
-        def forward_batch(self, batch):
+        def forward_batch(self, batch, args):
             seen["group_size"] = len(batch.reqs)
-            return nullcontext()
-
-        def forward(self):
             if failure == "model":
                 raise primary
-            return torch.tensor([[0.0, 1.0]]).repeat(seen["group_size"], 1)
+            logits = torch.tensor([[0.0, 1.0]]).repeat(batch.size, 1)
+            for req in batch.reqs:
+                req.complete_one()
+            return SimpleNamespace(
+                next_tokens_cpu=self.sampler.sample(logits, args),
+                copy_done_event=SimpleNamespace(synchronize=synchronize),
+            )
 
         def generate(self, **kwargs):
             seen["group_size"] = len(kwargs["input_ids"])
@@ -127,6 +127,7 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
     cases.write_text("{}")
     args = SimpleNamespace(
         model="unused",
+        expected_reference_revision=identity["revision"],
         output=tmp_path,
         cases=cases,
         engine=engine_kind,
@@ -181,11 +182,11 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
                 assert saved["stage"] == "token_transfer"
                 assert saved["generated_ids"] == [[1]] * batch_size
                 request = saved["requests"][0]
-                assert request["cached_len"] == 1 and request["device_len"] == 2
+                assert request["cached_len"] == 2 and request["device_len"] == 3
                 assert request["input_ids"]["values"] == [0, 1]
 
     if engine_kind == "mini":
-        assert matmul.allow_tf32 is False
+        assert matmul.allow_tf32 is True
         config = seen["config"]
         assert config.kv_cache_dtype == (torch.float8_e4m3fn if target else torch.bfloat16)
         assert config.recurrent_state_dtype == (torch.bfloat16 if target else torch.float32)
@@ -345,7 +346,11 @@ def test_quality_cli_separates_request_groups_from_engine_capacity(
     original = cases.read_bytes()
     seen = {}
 
-    def run(args, group, stop_ids):
+    def run(args, group, stop_ids, *, worker_owner=None):
+        if engine == "mini":
+            assert worker_owner.fresh_worker and callable(worker_owner.abort_callback)
+        else:
+            assert worker_owner is None
         seen.update(args=args, group=group, stop_ids=stop_ids)
 
     monkeypatch.setitem(suite["main"].__globals__, "run_" + engine, run)
@@ -389,7 +394,7 @@ def test_quality_cli_preserves_engine_provider_validation(monkeypatch, tmp_path,
     monkeypatch.setitem(
         suite["main"].__globals__,
         "run_mini",
-        lambda args, group, stop_ids: seen.update(vars(args)),
+        lambda args, group, stop_ids, *, worker_owner: seen.update(vars(args)),
     )
     monkeypatch.setattr(
         sys,
