@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import torch
 from minisgl.utils import is_sm90_supported, nvtx_annotate
+from minisgl.utils.torch_utils import make_device_tensor
 
 if TYPE_CHECKING:
     from minisgl.core import Batch
@@ -15,10 +16,6 @@ class BatchSamplingArgs:
     temperatures: torch.Tensor | None
     top_k: torch.Tensor | None = None
     top_p: torch.Tensor | None = None
-
-
-def make_device_tensor(data: List, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
-    return torch.tensor(data, dtype=dtype, pin_memory=True).to(device, non_blocking=True)
 
 
 def sample_impl(

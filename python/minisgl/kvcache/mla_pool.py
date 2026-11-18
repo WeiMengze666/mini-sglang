@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import torch
 from minisgl.attention.mla import MLAPagedMetadata
 from minisgl.distributed.context import ContextParallel
+from minisgl.utils.torch_utils import make_device_tensor
 
 if TYPE_CHECKING:
     from .hybrid_pool import HybridCache
@@ -140,11 +141,12 @@ class MLACache:
         # Dense decode kernels require a valid table width even on ranks with
         # no local tokens. Length zero prevents reads from this dummy entry.
         max_pages = max(1, max(counts, default=0))
-        blocks = page_table[table_indices, : max_pages * self.page_size : self.page_size]
+        table_rows = make_device_tensor(table_indices, torch.int64, page_table.device)
+        blocks = page_table[table_rows, : max_pages * self.page_size : self.page_size]
         blocks = blocks.long() // self.page_size
         valid = (
             torch.arange(max_pages, device=self.device)[None, :]
-            < torch.tensor(counts, device=self.device)[:, None]
+            < make_device_tensor(counts, torch.int64, self.device)[:, None]
         )
         if self.arena is not None:
             blocks = self.arena.page_map[blocks]
@@ -154,7 +156,7 @@ class MLACache:
                 RuntimeError,
             )
         blocks = blocks.masked_fill(~valid, 0).to(torch.int32)
-        local_lengths = torch.tensor(lengths, device=self.device, dtype=torch.int32)
+        local_lengths = make_device_tensor(lengths, torch.int32, self.device)
         return MLAPagedMetadata(
             torch.tensor([0] + counts, dtype=torch.int32).cumsum(0, dtype=torch.int32),
             torch.cat([blocks[row, :count] for row, count in enumerate(counts)]),
@@ -163,7 +165,7 @@ class MLACache:
             local_lengths > 0 if 0 in lengths else None,
             block_table=blocks,
             local_lengths=local_lengths,
-            global_lengths=torch.tensor(sequence_lengths, device=self.device, dtype=torch.int32),
+            global_lengths=make_device_tensor(sequence_lengths, torch.int32, self.device),
             max_seq_len=max(sequence_lengths, default=0),
             cp_size=self._cp.size,
             cp_rank=self._cp.rank,
