@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, List
 
 import torch
+from minisgl.utils.torch_utils import make_device_tensor
 
 if TYPE_CHECKING:
     from minisgl.core import Batch
@@ -27,7 +28,7 @@ class SequenceAttnMetadata(BaseAttnMetadata):
         lengths = [req.extend_len for req in batch.reqs]
         if any(length <= 0 for length in lengths):
             raise ValueError("Attention requests must contain real new tokens")
-        return cls(torch.tensor([0] + lengths, dtype=torch.int32, device=device).cumsum(0))
+        return cls(make_device_tensor([0] + lengths, torch.int32, device).cumsum(0))
 
     def get_last_indices(self, bs):
         if not 0 <= bs < self.cu_seqlens_q.numel():

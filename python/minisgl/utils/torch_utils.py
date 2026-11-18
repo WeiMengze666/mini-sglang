@@ -8,6 +8,15 @@ if TYPE_CHECKING:
     import torch
 
 
+def make_device_tensor(data, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+    """Upload host values asynchronously when the destination supports pinned memory."""
+    import torch
+
+    pin_memory = torch.device(device).type == "cuda"
+    host = torch.tensor(data, dtype=dtype, device="cpu", pin_memory=pin_memory)
+    return host.to(device, non_blocking=True)
+
+
 @contextmanager
 def torch_dtype(dtype: torch.dtype):
     import torch  # real import when used
