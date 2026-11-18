@@ -247,7 +247,10 @@ def test_native_tuple_axis_and_preconv_pair_restore_matches_written_state(case, 
     case.states.adopt_staged(checkpoint)
     case.states.restore(1, 20, checkpoint)
     case.states.begin_request(1, 20, 64)
+    batch_offsets = case.batch.attn_metadata.cu_seqlens_q
+    assert batch_offsets.dtype == torch.int64
     for layer_id, record in zip(LAYERS, records):
+        assert record["kwargs"]["query_start_loc"] is batch_offsets
         restored = case.states.get_kda_state(layer_id, 1)
         assert torch.equal(restored.recurrent, record["snapshot"].transpose(-1, -2))
         assert not torch.equal(restored.recurrent, record["snapshot"])

@@ -138,7 +138,8 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
                 beta,
                 ssm_states=recurrent,
                 cache_indices=indices,
-                query_start_loc=plan["cu_seqlens"],
+                # FlashInfer caches the layout by int64 offsets tensor identity.
+                query_start_loc=metadata.cu_seqlens_q,
                 A_log=layer.A_log,
                 dt_bias=layer.dt_bias,
                 lower_bound=lower_bound,
