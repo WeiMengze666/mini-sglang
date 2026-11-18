@@ -6,7 +6,14 @@ The released Kimi-K3 checkpoint runs through Mini's text server on eight B300 GP
 
 Use the [saved server and AIPerf commands](../benchmark/online/profiles/kimi-k3-sglang.json) with the respective environments. The Mini runtime uses SGLang kernel sources at `baa9bef`, FlashInfer 0.7.1 and Torch 2.14.1+cu130. The reference server uses SGLang `94602c9`, FlashInfer 0.6.18 and Torch 2.13.0. Both measurements use AIPerf 0.13.0. The checkpoint and trusted tokenizer are at `/data/models/Kimi-K3`.
 
+Install Mini with `python -m pip install -e ".[native]"` in the Mini environment. The measured run used Python 3.12 and loaded the pinned SGLang checkout from its `python/` directory on `PYTHONPATH`. The attention, collective and parser adapters import that SDK. Use a separate environment for the reference server. [Mini SDK revision](https://github.com/sgl-project/sglang/tree/baa9befa381511cd4d56f83980951e5a45fffc6d) · [Reference server revision](https://github.com/sgl-project/sglang/tree/94602c9c2b7cbdb8efd5c52802dac6a1c180089e)
+
+Both measured servers used the following CUDA and NCCL environment on this host.
+
 ```bash
+export NCCL_CUMEM_ENABLE=0 NCCL_NVLS_ENABLE=0 NCCL_GRAPH_MIXING_SUPPORT=0
+export CUDA_DEVICE_MAX_CONNECTIONS=8 TRTLLM_ENABLE_PDL=1
+
 python -m minisgl --trust-remote-code \
   --model-path /data/models/Kimi-K3 --served-model-name moonshotai/Kimi-K3 \
   --tp-size 8 --dcp-size 8 --page-size 64 --context-length 1048576 \
@@ -35,6 +42,16 @@ EP is 1 for this comparison. The checkpoint stores MXFP4 expert weights. The sel
 Native KDA decode is selected by the attention backend. The MLA package uses FlashInfer/TRT-LLM and CuTe-DSL kernels. New models can reuse these packages by supplying the same layer and cache contracts. [Attention backends](../python/minisgl/attention/README.md) · [Distributed backends](distributed-backends.md) · [Tokenizer and chat](kimi-k3-tokenizer.md)
 
 ## Validation
+
+The released checkpoint completed all 1,319 GSM8K test questions. Every run used the same pretokenized inputs and gold answers, greedy decoding, batch size 8, a 4,096-token context and a 1,024-token output limit. Prefix reuse was disabled. The scorer was rerun on every saved response.
+
+| Run | Correct | Accuracy | Invalid final answers | Reached the output limit |
+| --- | ---: | ---: | ---: | ---: |
+| Mini | 1,283 | 97.27% | 0 | 0 |
+| SGLang, with worker precision records | 1,281 | 97.12% | 1 | 2 |
+| SGLang, first run | 1,281 | 97.12% | 0 | 0 |
+
+Mini and the observed SGLang run gave the same numeric answer on 1,310 questions. Five were correct only on Mini and three only on SGLang. Their entire generated token sequences matched on 654 questions. The two official runs produced identical token sequences on 661. All eight workers on each side reported the same Torch math settings. Mini’s real sampling rows had finite logits throughout. Combined with the layer and state checks below, the results support accepting the measured configuration for text inference. [Paired quality evidence](validation/kimi-k3-delivery-quality.json)
 
 The combined CPU/Gloo run passed 2,442 tests, skipped 780 and retained two expected differences against HF. Coverage includes dense and packed checkpoint loading, full versus chunked prefill, concurrent requests, state restoration, slot reuse and cancellation. Independent Moonshot and FLA checks compare per-layer outputs, attention residuals and recurrent updates. The reference tokenizer and parsers also run against the released checkpoint. [Reference checks and known HF differences](kimi-k3-official-cpu-reference.md)
 

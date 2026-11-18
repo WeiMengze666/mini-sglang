@@ -29,7 +29,9 @@ context and expert parallelism, and native FlashInfer expert kernels. On eight
 B300 GPUs it measured 326.28 output tokens/s against SGLang's 328.86 on AgentX.
 The [Kimi-K3 guide](docs/kimi-k3.md) covers the launch configuration and subsystem
 interfaces. The [serving comparison](docs/kimi-k3-performance.md) includes tail
-latency, software versions and measurement boundaries.
+latency, software versions and measurement boundaries. On the complete GSM8K
+test split, Mini answered 1,283 of 1,319 questions correctly and the official
+server answered 1,281. [Paired quality results](docs/validation/kimi-k3-delivery-quality.json)
 
 ## 🚀 Quick Start
 

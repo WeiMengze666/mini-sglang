@@ -235,5 +235,64 @@
       "CUDA_DEVICE_MAX_CONNECTIONS": "8",
       "TRTLLM_ENABLE_PDL": "1"
     }
+  },
+  "server_environment": {
+    "NCCL_CUMEM_ENABLE": "0",
+    "NCCL_NVLS_ENABLE": "0",
+    "NCCL_GRAPH_MIXING_SUPPORT": "0",
+    "CUDA_DEVICE_MAX_CONNECTIONS": "8",
+    "TRTLLM_ENABLE_PDL": "1"
+  },
+  "online_prompt_lengths": {
+    "mini": {
+      "completed": 413,
+      "max_prompt_tokens": 601733,
+      "prompts_at_least_131072": 83,
+      "prompts_at_least_524288": 8
+    },
+    "official": {
+      "completed": 421,
+      "max_prompt_tokens": 601728,
+      "prompts_at_least_131072": 84,
+      "prompts_at_least_524288": 8
+    }
+  },
+  "tokenizer_replay": {
+    "original_etl": {
+      "matched_metadata": 412,
+      "exact_wire_request_pairs": 0,
+      "only_recorded_first_turn_cache_bust_prefix_differs": 412,
+      "same_completed_output_length": 412,
+      "mini_reported_prompt_delta_min_median_max": [
+        -1,
+        2,
+        7
+      ],
+      "raw_sum_prompt_delta": 1201
+    },
+    "cpu_tokenizer": {
+      "source_pairs": 8,
+      "cases_cover_every_observed_prompt_count_delta": true,
+      "body_cross_encoder_exact_token_matches": 16,
+      "official_own_prompt_usage_matches": 8,
+      "mini_own_prompt_usage_matches": 8,
+      "official_report_excludes_generation_stub_tokens": 3,
+      "max_input_tokens": 601733
+    },
+    "cache_usage": {
+      "both_reports_enabled": true,
+      "official_positive_count_only": true,
+      "mini_explicit_zero": true,
+      "numeric_hits_equal_after_known_official_zero": 378,
+      "differences": 34,
+      "count_delta_min_median_max": [
+        -7680,
+        0,
+        96768
+      ],
+      "net_mini_minus_official_cached_tokens": 38912,
+      "scope": "These terminal usage values report external cache reuse. They cannot determine the consumed prefix on a continuation step or control for cache occupancy, scheduling or admission order."
+    },
+    "review_sha256": "9f3b98549ed2e47c8500d85e465e7fd2087e9c6434ca4c469127ed066f8f8db0"
   }
 }

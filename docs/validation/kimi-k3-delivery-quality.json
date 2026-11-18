@@ -1,0 +1,235 @@
+{
+  "checkpoint": "moonshotai/Kimi-K3",
+  "mini_runtime": "c3c8b042e70121dc60125549123b14ffe2e1ded7",
+  "reference_sglang": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+  "mini_kernel_sdk": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "protocol": {
+    "dataset": "GSM8K official test split",
+    "data_revision": "3101c7d5072418e28b9008a6636bde82a006892c",
+    "thinking": false,
+    "greedy": true,
+    "batch_size": 8,
+    "context_tokens": 4096,
+    "max_new_tokens": 1024,
+    "max_running_requests": 48,
+    "prefix_reuse": false,
+    "graph_max_batch": 48,
+    "execution_contract": {
+      "model_dtype": "bfloat16",
+      "moe_activation_precision": "mxfp8",
+      "kv_cache_dtype": "fp8_e4m3",
+      "recurrent_state_dtype": "bfloat16",
+      "conv_state_dtype": "bfloat16",
+      "bf16_precision": "default",
+      "tp_size": 8,
+      "dcp_size": 8,
+      "ep_size": 1,
+      "page_size": 64
+    }
+  },
+  "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+  "scorer_sha256": "65a9e6209ebcb0565e73b472f3e89578bcb455099d6042b8affb150ac9b3ca93",
+  "runs": {
+    "mini": {
+      "correct": 1283,
+      "invalid_answers": 0,
+      "truncated": 0,
+      "generated_tokens": 142392,
+      "responses_sha256": "087039f71eaeacb4765347998dfc935f5eb7f1168f01a5ec0eac29e17c2ceaf6",
+      "report_sha256": "b7ba6f4bb866a1131232136205edba1a54db6a9eb5f89ba6ab57a0a8c2c32fc9",
+      "examples": 1319,
+      "accuracy_pct": 97.27065959059894
+    },
+    "official_observed": {
+      "correct": 1281,
+      "invalid_answers": 1,
+      "truncated": 2,
+      "generated_tokens": 142541,
+      "responses_sha256": "d952f378c477879dcc938a3ac1814626e6cb40ec37f46e5b8b755d555ac848cb",
+      "report_sha256": "4623e7c63a98671c312cf089e41b73e2d1b33864a491b4fbfbd283df1174c5c4",
+      "examples": 1319,
+      "accuracy_pct": 97.11902956785444
+    },
+    "official_first": {
+      "correct": 1281,
+      "invalid_answers": 0,
+      "truncated": 0,
+      "generated_tokens": 140496,
+      "responses_sha256": "0a3b0a144309aeb6d4bbd7253c34d67f908639959f59703e620ae6d678c7a43e",
+      "report_sha256": "278c8b1a6703d9c5e5cb6dad570f4d128788f598816c9899b42c84ba270c565e",
+      "examples": 1319,
+      "accuracy_pct": 97.11902956785444
+    }
+  },
+  "pairwise": {
+    "mini_vs_official_observed": {
+      "both_correct": 1278,
+      "both_wrong": 33,
+      "left_only_correct": 5,
+      "right_only_correct": 3,
+      "same_valid_answer": 1310,
+      "identical_token_ids": 654,
+      "score_delta_percentage_points": 0.1516300227445034
+    },
+    "mini_vs_official_first": {
+      "both_correct": 1279,
+      "both_wrong": 34,
+      "left_only_correct": 4,
+      "right_only_correct": 2,
+      "same_valid_answer": 1311,
+      "identical_token_ids": 674,
+      "score_delta_percentage_points": 0.1516300227445034
+    },
+    "official_observed_vs_official_first": {
+      "both_correct": 1280,
+      "both_wrong": 37,
+      "left_only_correct": 1,
+      "right_only_correct": 1,
+      "same_valid_answer": 1315,
+      "identical_token_ids": 661,
+      "score_delta_percentage_points": 0.0
+    }
+  },
+  "provenance": {
+    "mini_job": 194,
+    "official_first_job": 194,
+    "official_observed_job": 197,
+    "returncode_by_inference_role": {
+      "mini": 0,
+      "official_first": 0,
+      "official_observed": 0
+    },
+    "original_wrapper_exit_code": 1,
+    "original_wrapper_error": "Missing actual official worker math-policy records after both complete inference roles.",
+    "corrected_observer": "The second official run attaches to the concrete SGLang Engine class, with the same model, prompts, math, and arguments. Both full official response sets are included.",
+    "official_observed_wrapper_exit_code": 0,
+    "paired_postgate_exit_code": 0,
+    "mini_harness_sha256": "6cb2b7553f31d4f98493da2bab5c9645d3a11111d7c68bdbb94add793679734e",
+    "official_observed_harness_sha256": "603a8dfaf74125ead5ce2b8e29ffb3cb24a4e1bb6ac577deb34fe9b655eb4c87",
+    "offline_join_sha256": "f54940f951680214c25936001166793fae15a4b6a4049d584ff4d13e1828f7de",
+    "public_retokenization_comparison_sha256": "66f8f7d70a879fbcddb209714a813ece4cf0188ce52deb38a8a76637ae011809"
+  },
+  "observed_runtime": {
+    "mini_workers": 8,
+    "official_workers": 8,
+    "worker_math_matches_across_roles_and_ranks": true,
+    "torch_math": {
+      "cuda_matmul_allow_tf32": false,
+      "cuda_matmul_fp32_precision": "none",
+      "global_fp32_precision": "none",
+      "float32_matmul_precision": "highest",
+      "cuda_matmul_allow_bf16_reduced_precision_reduction": true,
+      "cuda_matmul_allow_fp16_reduced_precision_reduction": true
+    },
+    "mini": {
+      "decoded_graph_batches": [
+        1,
+        2,
+        4,
+        8,
+        12,
+        16,
+        24,
+        32,
+        40,
+        48
+      ],
+      "execution_backend": "minisgl.attention.base.PrefillDecodeAttnBackend",
+      "storage_per_rank": {
+        "MLA": {
+          "dtype": "torch.float8_e4m3fn",
+          "shape": [
+            24,
+            4160,
+            576
+          ],
+          "stride": [
+            2396160,
+            576,
+            1
+          ]
+        },
+        "SSM": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            69,
+            48,
+            12,
+            128,
+            128
+          ],
+          "stride": [
+            9437184,
+            196608,
+            16384,
+            1,
+            128
+          ]
+        },
+        "conv": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            69,
+            48,
+            3,
+            1536,
+            3
+          ],
+          "stride": [
+            663552,
+            13824,
+            1536,
+            1,
+            4608
+          ]
+        }
+      },
+      "routed_layers_per_rank": 92,
+      "experts": {
+        "class_name": "minisgl.moe.flashinfer.FlashInferMXFP4Experts",
+        "activation_precision": "mxfp8",
+        "raw_input_dtype": "torch.float32"
+      },
+      "all_real_sampler_logits_finite": true
+    },
+    "official": {
+      "resolved_server_args": {
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 1,
+        "dtype": "bfloat16",
+        "context_length": 4096,
+        "max_running_requests": 48,
+        "disable_radix_cache": true,
+        "disable_cuda_graph": false,
+        "cuda_graph_max_bs_decode": 48,
+        "mamba_ssm_dtype": "bfloat16",
+        "kv_cache_dtype": "fp8_e4m3",
+        "flashinfer_mxfp4_moe_precision": "default",
+        "attention_backend": "flashinfer",
+        "moe_runner_backend": "flashinfer_mxfp4",
+        "enable_tf32_matmul": false
+      },
+      "expert_activation_source": "sglang/srt/layers/moe/moe_runner/flashinfer_trtllm.py:1044 calls _prepare_flashinfer_mxfp8_activations under the observed default policy.",
+      "cache_storage_evidence": "Resolved server settings. Direct tensor strides were recorded only for Mini."
+    }
+  },
+  "review": {
+    "accepted_scope": "Selected full-checkpoint TP8/DCP8/EP1 text runtime on this dataset with the stated precision. All saved answers re-scored with the release scorer and identical gold labels.",
+    "score_disagreements_observed": {
+      "mini_only_correct_ids": [
+        73,
+        423,
+        754,
+        926,
+        1003
+      ],
+      "official_only_correct_ids": [
+        187,
+        425,
+        951
+      ]
+    },
+    "numerical_scope": "Paired task quality, independent hybrid math tests, native kernel and state checks. No evidence of an algorithm or state-update error in this scope. Different valid greedy continuations also arise between two runs of the official stack. Per-token causality and equality for all prompts are not established."
+  }
+}

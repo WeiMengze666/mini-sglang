@@ -14,6 +14,8 @@ On the same eight-B300 server, Mini `c3c8b04` delivered **99.22% of the retained
 
 Throughput divides completed output tokens by the interval from profiling start through the last request in the AIPerf phase. Mini produced 306,704 tokens in 940.002 seconds. Both servers completed the 900-second send interval, and both clients reported a 10-second timeout waiting for cancelled credits during drain. The earlier official run and this Mini run establish a single comparison point. Mini's p99 ITL was 52.34 ms higher.
 
+During the measured phase, eight completed prompts per runtime exceeded 524,288 tokens. The largest completed prompt reported 601,733 tokens on Mini and 601,728 on SGLang. The 1,048,576 setting is the configured limit. Among 412 requests matched by trace and turn, removing AIPerf’s run-specific first-turn cache-bust marker made the payloads identical. Replaying 16 original request bodies through both tokenizers produced identical token IDs for each body. Reported cache reuse can still differ with admission order and cache occupancy.
+
 A follow-up run of the asynchronous attention metadata candidate (`d1378f5`,
 GPUq 189) used the same arguments and produced 312,149 output tokens in 940.003
 seconds, or **332.07 tokens/s**. It completed 416 requests, with four deadline
@@ -146,8 +148,8 @@ performance convergence; historical BF16/Marlin scores do not qualify b10.
 
 > The dated reports below retain their original 32K/other configurations,
 > software, quality scope and then-pending work. Their numbers and pending
-> statements do not describe the current 16K b10 runtime. Existing links and
-> anchors are retained.
+> statements describe the scope of each historical run. The delivery figures
+> appear in the first section.
 
 ### Replacement-machine baseline (2026-11-11 CST)
 

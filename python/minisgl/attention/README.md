@@ -19,7 +19,9 @@ Hybrid metadata keeps each child backend's metadata separate. The parent delegat
 preparation, capture, replay, and cleanup to both children. KDA manages recurrent
 state; MLA manages token-page plans. Neither child implements the other's algorithm.
 
-Hybrid `auto` selects `sgl`, composing mature SGLang KDA and FlashInfer MLA.
+For a hybrid cache, `auto` selects `fi,sgl` with the `extra_buffer` strategy
+and `sgl` otherwise. In `fi,sgl`, prefill uses the FlashInfer backend and
+decode uses the SGLang backend. Both delegate MLA to FlashInfer.
 Use `--attention-backend fi` to explicitly select the FlashInfer composition. `--bf16-precision strict`
 selects the native SGLang KDA portfolio inside that backend; `default` uses FlashInfer's
 KDA recurrence. The Torch reference composition is `--attention-backend torch`.

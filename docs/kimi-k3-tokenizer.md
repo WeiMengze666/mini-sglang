@@ -1,7 +1,15 @@
-# Data-only K3 tokenizer verification
+# Kimi-K3 chat formatting and tokenization
 
-The released tokenizer requires custom Python when loaded through AutoTokenizer.
-Mini instead reads local BPE/config data with a small `tiktoken` adapter. Remote
+The measured server uses `--trust-remote-code` to load the checkpoint tokenizer
+and its formatter through Transformers. Generation stop IDs come from the
+checkpoint generation configuration. The HTTP layer delegates reasoning and
+tool-call parsing to the configured SGLang detectors, including during streaming.
+[Completion parser](../python/minisgl/server/parsers.py) · [Native parser tests](../tests/models/test_completion_parsers.py)
+
+## Data-only text tokenizer
+
+Without `--trust-remote-code`, Mini recognizes the XTML tokenizer metadata
+and reads its BPE and configuration with a small `tiktoken` adapter. Remote
 asset resolution is pinned to the commit reported by tokenizer metadata and
 allows only `tokenizer_config.json`, `tiktoken.model`, and `generation_config.json`.
 It neither downloads nor executes checkpoint Python during tokenizer loading.
@@ -17,19 +25,21 @@ markers in user text. The serving tokenizer now consumes tokenized chat directly
 The tokenizer corpus EOS is `[EOS]` (163585); generation terminates at
 `<|end_of_msg|>` (163586). Scheduler, streaming detokenizer and offline LLM share
 that generation stop set. Standard tokenizers still fall back to their EOS.
-Generated XTML thinking/response structure is not parsed into separate API
-fields; this is basic text tokenization, not complete K3 chat-protocol support.
+The tokenizer preserves XTML boundaries. With the configured parsers, the HTTP
+response exposes reasoning, assistant content and function calls in separate fields.
 
 ## Evidence and reproducibility
 
 Official assets/source were inspected at revision
 `f831ab66814297da540d832a5235f8e904f29d06` of
 [moonshotai/Kimi-K3](https://huggingface.co/moonshotai/Kimi-K3/tree/f831ab66814297da540d832a5235f8e904f29d06).
-Downloaded Python was read as source, never executed. The 2,795,286-byte BPE file
+The original data-only checks inspected the published Python as source. The 2,795,286-byte BPE file
 has SHA256 `b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103`.
 The optional real-data test verifies that digest and compares token IDs against
 an independently constructed tiktoken encoding and manually specified segments.
-It does not execute the official formatter as an independent oracle.
+A separate CPU replay checked both production tokenizers on 16 saved request
+bodies from the measured AgentX runs. Token IDs matched on each identical body,
+including the longest sampled body at 601,733 tokens.
 
 ```sh
 # Synthetic byte vocabulary and serving regressions; no network.

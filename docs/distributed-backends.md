@@ -45,11 +45,10 @@ the peer test is not skipped. Restrict `CUDA_VISIBLE_DEVICES` to the local worke
 allocation; the bootstrap verifies this boundary.
 
 The tested SDK is SGLang `baa9befa381511cd4d56f83980951e5a45fffc6d` with Torch
-2.14.1+cu130 on eight B300 devices. The [qualification record](validation/native-mnnvl.json)
-separates host lifecycle tests, real eager/graph collectives and pending model
-validation. It establishes neither multi-node qualification nor a performance
-improvement. Whole-model quality, cache lifecycle and a controlled serving
-comparison remain necessary before enabling it for a performance candidate.
+2.14.1+cu130 on eight B300 devices. The [component checks](validation/native-mnnvl.json) cover provider lifetime
+and eager and captured collectives. The [Kimi-K3 serving run](kimi-k3-performance.md)
+used this provider with TP8/DCP8 on a single node. The throughput measurement
+covers the complete runtime and does not isolate the effect of the provider.
 
 ## Collective resource lifetime
 
