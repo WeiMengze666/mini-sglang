@@ -35,7 +35,9 @@ def test_independent_layout_and_checkpoint_slices():
     assert not owns_expert("model.layers.1.mlp.experts.1.w2.weight", c, layout)
     q = shard_spec("model.layers.1.self_attn.q_b_proj.weight", c, 3, 4, dcp_size=2)
     out = shard_spec("model.layers.1.self_attn.o_proj.weight", c, 3, 4, dcp_size=2)
-    assert (q.start, q.stop, out.start, out.stop) == (8, 16, 9, 12)
+    # Projection weights stay TP-sharded. DCP gathers query heads only at decode.
+    assert (q.start, q.stop, out.start, out.stop) == (12, 16, 9, 12)
+    assert q == shard_spec("model.layers.1.self_attn.q_b_proj.weight", c, 3, 4, dcp_size=1)
     with pytest.raises(ValueError):
         ParallelLayout(DistributedInfo(0, 4), 3, 2)
     with pytest.raises(ValueError):

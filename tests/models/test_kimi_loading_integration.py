@@ -71,8 +71,12 @@ def test_engine_stream_only_casts_floating_parameters(monkeypatch):
         ("layers.0.weight", torch.ones(2, 3, dtype=torch.float64)),
         ("layers.0.scale", torch.ones(2, 1, dtype=torch.uint8)),
     ]
-    monkeypatch.setattr(module, "load_weight", lambda *args: iter(raw))
-    result = dict(engine._iter_weights(SimpleNamespace(use_dummy_weight=False, model_path="x")))
+    from minisgl.distributed import DistributedInfo
+    from minisgl.engine import EngineConfig
+
+    monkeypatch.setattr(module, "load_weight", lambda *args, **kwargs: iter(raw))
+    config = EngineConfig("x", DistributedInfo(0, 1), torch.float32)
+    result = dict(engine._iter_weights(config))
     assert result["layers.0.weight"].dtype == torch.float32
     assert result["layers.0.scale"] is raw[1][1]
 

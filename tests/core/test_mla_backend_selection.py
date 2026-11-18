@@ -38,6 +38,10 @@ def test_mla_store_policy_follows_its_executor(monkeypatch, native_mla):
         store_mla=lambda *args, **kwargs: stored.append(kwargs["implementation"]),
         gather_mla=lambda *args: (x, x[:, :1]),
     )
+    cache.mla = SimpleNamespace(
+        _validate_write_locations=lambda locations: None,
+        _store_mla=cache.store_mla,
+    )
     req = SimpleNamespace(extend_len=1, device_len=1, cached_len=0, table_idx=0)
     batch = SimpleNamespace(
         reqs=[req],
@@ -166,6 +170,10 @@ def test_prefill_uses_unquantized_current_rows_and_dequantized_cached_prefix():
         device=torch.device("cpu"),
         store_mla=lambda layer, latent, key, *args, **kwargs: writes.append((latent, key)),
         gather_mla=gather,
+    )
+    cache.mla = SimpleNamespace(
+        _validate_write_locations=lambda locations: None,
+        _store_mla=cache.store_mla,
     )
     batch = SimpleNamespace(
         positions=torch.tensor([0, 1, 2, 3, 4]),

@@ -130,7 +130,10 @@ def test_chat_usage_counts_tokens_independently_of_text(
 
     queue = SimpleNamespace(stop=lambda: None)
     state = api.FrontendManager(
-        SimpleNamespace(model_path="fixture"), queue, queue, initialized=True
+        SimpleNamespace(model_path="fixture", enable_cache_report=True, enable_metrics=True),
+        queue,
+        queue,
+        initialized=True,
     )
 
     async def feed(msg):

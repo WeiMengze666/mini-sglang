@@ -28,6 +28,9 @@ def _cache_and_table(config, dtype, device, capacity, slots):
 def _batch(pieces, starts, slots, uids, table, device):
     """Concatenate real rows; heterogeneous requests retain independent positions."""
     return SimpleNamespace(
+        is_decode=all(
+            start > 0 and len(piece) == 1 for start, piece in zip(starts, pieces, strict=True)
+        ),
         reqs=[
             SimpleNamespace(
                 uid=uid,
@@ -56,9 +59,10 @@ def _batch(pieces, starts, slots, uids, table, device):
 
 def _live_state(cache, table, slot, length):
     # MLA allocation uses torch.empty, so never inspect unwritten spare capacity.
+    conv, state = cache.recurrent._working(slot)
     return {
-        "convolution": cache.recurrent._conv[:, slot].clone(),
-        "recurrent": cache.recurrent._recurrent[:, slot].clone(),
+        "convolution": conv.clone(),
+        "recurrent": state.clone(),
         "mla": cache._mla.index_select(1, table[slot, :length]).clone(),
     }
 

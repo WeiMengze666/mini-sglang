@@ -220,6 +220,7 @@ def page_table(device):
 def batch_for(tokens, device, *, start=0, slot=0, uid=10, padding=0):
     n = len(tokens)
     return SimpleNamespace(
+        is_decode=start > 0 and n == 1,
         reqs=[
             SimpleNamespace(
                 uid=uid, table_idx=slot, cached_len=start, device_len=start + n, extend_len=n
@@ -274,7 +275,7 @@ def run_runtime_gate(root: Path, dtype=torch.float32, device=torch.device("cpu")
         model, config = load_fixture(root / kind, dtype, device)
         cache, table, metrics = cache_for(config, dtype, device), page_table(device), {}
         full = model.forward_batch(batch_for(PROMPT, device), cache, table, all_logits=True)
-        states = (cache.recurrent._conv.clone(), cache.recurrent._recurrent.clone())
+        full_conv, full_state = (x.clone() for x in cache.recurrent._working(0))
         cache.reset()
         chunks = []
         for start, end in ((0, 2), (2, 5), (5, 6), (6, 7)):
@@ -284,14 +285,16 @@ def run_runtime_gate(root: Path, dtype=torch.float32, device=torch.device("cpu")
                 )
             )
         _close(torch.cat(chunks), full, dtype, metrics, "prefill_chunk_decode")
-        _close(cache.recurrent._conv, states[0], dtype, metrics, "convolution_state")
-        _close(cache.recurrent._recurrent, states[1], dtype, metrics, "recurrent_state")
+        conv, state = cache.recurrent._working(0)
+        _close(conv, full_conv, dtype, metrics, "convolution_state")
+        _close(state, full_state, dtype, metrics, "recurrent_state")
         cache.reset()
         a, b = batch_for(PROMPT, device), batch_for([3, 15, 7], device, uid=11, slot=1)
         isolated_b = model.forward_batch(
             b, cache_for(config, dtype, device), table, all_logits=True
         )
         combined = SimpleNamespace(
+            is_decode=False,
             reqs=a.reqs + b.reqs,
             input_ids=torch.cat(
                 (a.input_ids, b.input_ids, torch.tensor([999, 999], device=device))

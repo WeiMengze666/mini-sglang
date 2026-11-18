@@ -381,6 +381,7 @@ def test_scheduler_passes_borrowed_owner_and_existing_CPU_group(monkeypatch, has
         trust_remote_code=False,
         max_prefill_tokens=17,
         chunked_prefill_size=17,
+        prefill_decode_interval=0,
         page_size=64,
         enable_cache_overlap=True,
         tp_info=DistributedInfo(0, 1),

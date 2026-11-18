@@ -118,6 +118,8 @@ def scheduler(monkeypatch):
     scheduler.inflight_reqs = {}
     scheduler.stop_token_ids = {99}
     scheduler.prefill_budget = 8
+    scheduler.prefill_decode_interval = 0
+    scheduler._prefill_decode_interval_remaining = 0
     scheduler.replies = []
     scheduler.released = []
     page_table = torch.full((3, 8), -1, dtype=torch.int32)

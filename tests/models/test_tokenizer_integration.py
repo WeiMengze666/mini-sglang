@@ -8,7 +8,7 @@ import torch
 from minisgl.core import Batch, Req, SamplingParams
 from minisgl.llm.llm import LLM, RequestStatus
 from minisgl.message import DetokenizeMsg
-from minisgl.scheduler.scheduler import Scheduler
+from minisgl.scheduler.scheduler import ForwardData, Scheduler
 from minisgl.tokenizer.detokenize import DetokenizeManager
 from minisgl.tokenizer.tokenize import TokenizeManager
 from minisgl.utils.hf import get_stop_token_ids
@@ -45,7 +45,10 @@ def test_scheduler_obeys_generation_stop_ids(ignore_eos, output_len, reason):
     scheduler.finished_reqs = set()
     scheduler.aborted_reqs = set()
     scheduler.cache_manager = SimpleNamespace(
-        lazy_free_region=nullcontext, should_cache=lambda *args: False
+        lazy_free_region=nullcontext,
+        tracks_decode=False,
+        should_cache=lambda *args: False,
+        release_checkpoint_plan=lambda plan, *, error: None,
     )
     freed, removed, replies = [], [], []
     scheduler.decode_manager = SimpleNamespace(remove_req=removed.append)
@@ -54,9 +57,10 @@ def test_scheduler_obeys_generation_stop_ids(ignore_eos, output_len, reason):
     req = Req(torch.tensor([1]), 0, 0, output_len, 7, SamplingParams(ignore_eos=ignore_eos), None)
     req.complete_one()  # The engine has processed this forward.
     batch = Batch([req], "decode")
-    data = (
+    data = ForwardData(
         SimpleNamespace(batch=batch),
         (None, torch.tensor([163586]), SimpleNamespace(synchronize=lambda: None)),
+        (req.cached_len,),
     )
     scheduler._process_last_data(data)
     assert replies[0].finish_reason == reason

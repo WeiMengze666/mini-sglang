@@ -202,9 +202,10 @@ def test_finite_detector_rejects_each_live_component(fixtures, component, value)
     with torch.inference_mode():
         model.forward_batch(batch_for(PROMPT, device), cache, table)
     assert_finite_live_state(cache, table)
+    conv, state = cache.recurrent._working(0)
     tensor = {
-        "recurrent": cache.recurrent._recurrent[:, 0],
-        "convolution": cache.recurrent._conv[:, 0],
+        "recurrent": state,
+        "convolution": conv,
         "mla": cache._mla[:, 0],
     }[component]
     tensor[(0,) * tensor.ndim] = value

@@ -64,6 +64,9 @@ def test_request_continuation_isolation_and_reuse():
         cache.begin_request(0, 100, 5)
     with pytest.raises(RuntimeError, match="prefix"):
         cache.begin_request(0, 101, 6)
+    with pytest.raises(RuntimeError, match="another owner"):
+        cache.begin_request(0, 101, 0)
+    cache.release_request(0, 100)
     cache.begin_request(0, 101, 0)
     assert not cache.get_kda_state(0, 0).conv.any()
     assert not cache.get_kda_state(0, 0).recurrent.any()
@@ -106,6 +109,7 @@ def test_metadata_only_uses_real_requests_and_portable_graphs_rejected(monkeypat
         cache=ctx.kv_cache,
     )
     batch = SimpleNamespace(
+        is_decode=False,
         reqs=[SimpleNamespace(extend_len=3), SimpleNamespace(extend_len=2)],
         padded_reqs=[SimpleNamespace(extend_len=999)],
     )
