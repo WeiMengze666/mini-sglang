@@ -157,6 +157,7 @@ def test_chat_api_composes_native_parsers_and_preserves_usage(
 
     config = SimpleNamespace(
         model_path="fixture",
+        enable_cache_report=False,
         served_model_name="org/model",
         reasoning_parser="kimi_k3",
         tool_call_parser="kimi_k3",

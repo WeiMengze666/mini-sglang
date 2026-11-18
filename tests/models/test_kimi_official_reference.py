@@ -27,6 +27,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
+from minisgl.attention import create_torch_backend
 from minisgl.attention.kda import kda_recurrence
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.layers.latent_moe import GroupedRouter, LatentMoE
@@ -273,6 +274,7 @@ def test_official_mla_only_decoder_stack(official, block_size):
         reference.load_state_dict(weights, strict=True)
         references.append(reference.eval())
     cache = HybridCache(cache_config(c), 64, 1, 1, torch.float32, torch.device("cpu"))
+    backend = create_torch_backend(model_config, cache=cache)
     reference_cache = official.KimiDynamicCache(ref_config)
     for start, end in [(0, 3), (3, 5), (5, 6)]:
         tokens = torch.tensor([2, 4, 8, 3, 9, 1])[start:end]
@@ -280,6 +282,7 @@ def test_official_mla_only_decoder_stack(official, block_size):
             uid=10, table_idx=0, cached_len=start, device_len=end, extend_len=end - start
         )
         batch = SimpleNamespace(
+            is_decode=start > 0 and end - start == 1,
             reqs=[request],
             input_ids=tokens,
             positions=torch.arange(start, end),
@@ -291,8 +294,9 @@ def test_official_mla_only_decoder_stack(official, block_size):
         ref_bank = expected.new_empty(end - start, 0, c.hidden_size)
         # Request ownership is normally begun by model.forward_batch.
         cache.begin_request(0, 10, start)
+        backend.prepare_metadata(batch)
         for layer, reference in zip(actual.model.layers.op_list, references):
-            head = layer.forward(head, bank, batch, cache, torch.arange(32)[None])
+            head = layer.forward(head, bank, batch, cache, torch.arange(32)[None], backend)
             expected, ref_bank = reference(
                 expected,
                 attention_mask=causal_mask(start, end, torch.float32),

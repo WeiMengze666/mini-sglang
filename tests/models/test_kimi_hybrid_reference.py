@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
+from minisgl.attention import create_torch_backend
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.models.config import ModelConfig
 from minisgl.models.kimi_config import cache_config
@@ -143,7 +144,8 @@ def test_hybrid_layers_logits_and_greedy_steps(
         "gate_lower_bound": lower_bound,
     }
     c = config(linear_attn_config=linear, attn_res_block_size=block_size)
-    model = KimiK3LinearForCausalLM(ModelConfig.from_hf(c))
+    model_config = ModelConfig.from_hf(c)
+    model = KimiK3LinearForCausalLM(model_config)
     initialize(model)
     rc = official_config(c)
     rc.is_kda_layer = lambda i: i + 1 in linear["kda_layers"]
@@ -160,6 +162,7 @@ def test_hybrid_layers_logits_and_greedy_steps(
         refs.append(ref.eval())
     ref_cache = hybrid_reference.KimiDynamicCache(rc)
     cache = HybridCache(cache_config(c), 32, 1, 1, torch.float32, torch.device("cpu"))
+    backend = create_torch_backend(model_config, cache=cache)
     page_table = torch.arange(32)[None]
     final_norm = hybrid_reference.KimiRMSNorm(c.hidden_size, c.rms_norm_eps)
     final_norm.load_state_dict({"weight": model.model.norm.weight.clone()})
@@ -174,6 +177,7 @@ def test_hybrid_layers_logits_and_greedy_steps(
             uid=10, table_idx=0, cached_len=start, device_len=end, extend_len=end - start
         )
         batch = SimpleNamespace(
+            is_decode=start > 0 and end - start == 1,
             reqs=[req],
             input_ids=current,
             positions=torch.arange(start, end),
@@ -183,8 +187,9 @@ def test_hybrid_layers_logits_and_greedy_steps(
         expected = head[None].clone()
         bank, ref_bank = [], head.new_empty(end - start, 0, c.hidden_size)
         cache.begin_request(0, 10, start)
+        backend.prepare_metadata(batch)
         for layer, ref in zip(model.model.layers.op_list, refs):
-            head = layer.forward(head, bank, batch, cache, page_table)
+            head = layer.forward(head, bank, batch, cache, page_table, backend)
             expected, ref_bank = ref(
                 expected,
                 attention_mask=causal_mask(start, end, torch.float32),
@@ -205,6 +210,7 @@ def test_hybrid_layers_logits_and_greedy_steps(
             uid=11, table_idx=0, cached_len=0, device_len=end, extend_len=end
         )
         whole = SimpleNamespace(
+            is_decode=False,
             reqs=[whole_req],
             input_ids=torch.tensor(tokens[:end]),
             positions=torch.arange(end),
