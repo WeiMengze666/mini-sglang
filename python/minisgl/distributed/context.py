@@ -156,8 +156,11 @@ class ContextParallel:
         if self.size == 1 or total == 0:
             return local
         rows = (total + self.size - 1) // self.size
-        padded = local.new_zeros((rows, *local.shape[1:]))
-        padded[: len(local)].copy_(local)
+        if len(local) == rows:
+            padded = local.contiguous()
+        else:
+            padded = local.new_zeros((rows, *local.shape[1:]))
+            padded[: len(local)].copy_(local)
         joined = self._comm.all_gather(padded)
         return (
             joined.view(self.size, rows, *local.shape[1:])

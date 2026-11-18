@@ -119,7 +119,7 @@ def _worker(rank, init_file):
         )
         # Restore ragged cyclic partitions, including empty ranks and strided inputs.
         for dtype in (torch.float32, torch.bfloat16):
-            for total in (0, 1, 3, 17, 65):
+            for total in (0, 1, 3, 16, 17, 65):
                 full = torch.arange(total * 6).reshape(total, 3, 2).to(dtype)
                 local = full[rank::4, :, 1]
                 restored = cp.gather_interleaved(local, total)
@@ -206,3 +206,22 @@ def test_context_bootstrap_prepares_only_member_group_before_return(monkeypatch)
     context.init_context_parallel(backend="nccl", device=torch.device("cuda:1"))
     assert events == [("group", (0, 1)), ("warmup", (0, 1)), ("group", (2, 3))]
     assert context.DistributedCommunicator.groups["context"].group == (0, 1)
+
+
+def test_interleaved_gather_reuses_aligned_contiguous_input():
+    from types import SimpleNamespace
+
+    from minisgl.distributed.info import DistributedInfo
+
+    cp = object.__new__(ContextParallel)
+    cp.group = DistributedInfo(0, 2)
+    expected = torch.arange(24, dtype=torch.bfloat16).view(8, 3)
+    local = expected[::2].contiguous()
+    peer = expected[1::2].contiguous()
+
+    def gather(value):
+        assert value is local
+        return torch.cat((value, peer))
+
+    cp._comm = SimpleNamespace(all_gather=gather)
+    torch.testing.assert_close(cp.gather_interleaved(local, 8), expected, rtol=0, atol=0)
