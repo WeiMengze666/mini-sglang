@@ -76,15 +76,17 @@ class DistributedImpl(ABC):
         """Optional collective setup before the first memory-budget snapshot."""
         return False
 
-    def supports_linear_all_gather(self, x, weight, addend) -> bool:
-        """Whether this backend covers a replicated linear projection and add."""
+    def supports_linear_all_gather(self, x, weight, addend, *, residual=None) -> bool:
+        """Whether this backend covers replicated linear projection and ordered adds."""
         return False
 
-    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
-        """Return owned x @ weight.T + addend via column GEMM and all-gather.
+    def linear_all_gather(self, x, weight, addend, *, residual=None) -> torch.Tensor:
+        """Return owned (x @ weight.T + addend) [+ residual] via column GEMM and gather.
 
         Every group member supplies the same replicated x, FULL replicated
-        weight, and already-reduced addend. Inputs are read-only and must remain
+        weight, already-reduced addend, and optional residual. Residual presence, shape
+        and dtype must agree across the group. Each add preserves its intermediate
+        output dtype rounding. Inputs are read-only and must remain
         live until current-stream consumption completes. This optional inference
         operation is not row-parallel linear or a reduction of local partials.
         Callers select capability before launch and keep their ordinary Linear
@@ -251,16 +253,18 @@ class FallbackDistributedImpl(DistributedImpl):
         backend = self.primary if self._supports(self.primary, "all_to_all", x) else self.fallback
         return backend.all_to_all(x)
 
-    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+    def supports_linear_all_gather(self, x, weight, addend, *, residual=None) -> bool:
+        options = {} if residual is None else {"residual": residual}
         return self.primary.supports_linear_all_gather(
-            x, weight, addend
-        ) or self.fallback.supports_linear_all_gather(x, weight, addend)
+            x, weight, addend, **options
+        ) or self.fallback.supports_linear_all_gather(x, weight, addend, **options)
 
-    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
+    def linear_all_gather(self, x, weight, addend, *, residual=None) -> torch.Tensor:
+        options = {} if residual is None else {"residual": residual}
         for backend in (self.primary, self.fallback):
-            if backend.supports_linear_all_gather(x, weight, addend):
-                return backend.linear_all_gather(x, weight, addend)
-        return super().linear_all_gather(x, weight, addend)
+            if backend.supports_linear_all_gather(x, weight, addend, **options):
+                return backend.linear_all_gather(x, weight, addend, **options)
+        return super().linear_all_gather(x, weight, addend, **options)
 
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True
@@ -473,11 +477,13 @@ class DistributedCommunicator:
     def all_to_all(self, x: torch.Tensor) -> torch.Tensor:
         return self._backend().all_to_all(x)
 
-    def supports_linear_all_gather(self, x, weight, addend) -> bool:
-        return self._backend().supports_linear_all_gather(x, weight, addend)
+    def supports_linear_all_gather(self, x, weight, addend, *, residual=None) -> bool:
+        options = {} if residual is None else {"residual": residual}
+        return self._backend().supports_linear_all_gather(x, weight, addend, **options)
 
-    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
-        return self._backend().linear_all_gather(x, weight, addend)
+    def linear_all_gather(self, x, weight, addend, *, residual=None) -> torch.Tensor:
+        options = {} if residual is None else {"residual": residual}
+        return self._backend().linear_all_gather(x, weight, addend, **options)
 
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True

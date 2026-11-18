@@ -258,7 +258,7 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         self._gather_state = self._gather_spec = None
         self._gather_warm = False
 
-    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+    def supports_linear_all_gather(self, x, weight, addend, *, residual=None) -> bool:
         if self._closed:
             raise RuntimeError("Cannot project on a closed communicator")
         if (
@@ -271,6 +271,12 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
             or x.ndim != 2
             or weight.ndim != 2
             or addend.ndim != 2
+        ):
+            return False
+        if residual is not None and (
+            not isinstance(residual, torch.Tensor)
+            or residual.dtype != torch.bfloat16
+            or residual.shape != addend.shape
         ):
             return False
         ops = self._linear_all_gather_ops
@@ -290,15 +296,22 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
             and consumers + 1 <= blocks
         )
 
-    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
-        """Instance-bound SDK column GEMV + AG + add with replicated operands.
+    def supports_linear_all_gather_residual(self, x, weight, addend, residual) -> bool:
+        """Advertise the optional provider extension without probing signatures."""
+        return self.supports_linear_all_gather(x, weight, addend, residual=residual)
+
+    def linear_all_gather(self, x, weight, addend, *, residual=None) -> torch.Tensor:
+        """Instance-bound SDK column GEMV + AG + ordered adds of replicated inputs.
 
         The SDK slices the FULL weight inside its producer. The returned tensor
-        owns fresh storage; x, weight and addend remain read-only. Local storage
-        violations raise after uniform capability selection, never switching one
-        rank back to a replicated GEMM. Warm the SDK module before graph capture.
+        owns fresh storage; x, weight, addend and residual remain read-only.
+        The optional BF16 residual is added after the BF16 projection + addend,
+        preserving the existing two-add rounding. Its strided or unaligned local
+        storage is normalized without changing the collective algorithm. Other
+        local storage violations raise after uniform capability selection, never
+        switching one rank back to a replicated GEMM. Warm before graph capture.
         """
-        if not self.supports_linear_all_gather(x, weight, addend):
+        if not self.supports_linear_all_gather(x, weight, addend, residual=residual):
             raise ValueError("Native linear all-gather does not cover these operands")
         for value, alignment in ((x, 32), (weight, 32), (addend, 16)):
             if (
@@ -310,6 +323,13 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
                 raise ValueError(
                     "Native linear all-gather requires aligned contiguous local inference operands"
                 )
+        if residual is not None:
+            if residual.device != self.device or residual.requires_grad:
+                raise ValueError(
+                    "Native linear all-gather requires local inference residual storage"
+                )
+            if not residual.is_contiguous() or residual.data_ptr() % 16:
+                residual = residual.clone(memory_format=torch.contiguous_format)
         if (
             "_linear_all_gather_kernel" not in self.__dict__
             and torch.cuda.is_current_stream_capturing()
@@ -318,8 +338,8 @@ class SGLangMNNVLProvider(MNNVLAllReduceProvider):
         kernel = self._linear_all_gather_kernel
         output = torch.empty_like(addend)
         with self.execution_context():
-            # b is already-reduced shared; c belongs to the outer residual owner.
-            kernel.run(self.comm.obj, x, weight, addend, None, output)
+            # SDK consumer rounds (projection + reduced shared) before + residual.
+            kernel.run(self.comm.obj, x, weight, addend, residual, output)
         return output
 
     def supports_all_reduce_residual(

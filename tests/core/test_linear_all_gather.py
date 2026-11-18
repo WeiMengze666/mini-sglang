@@ -62,6 +62,8 @@ def native(full_weight):
             if self.fail:
                 raise RuntimeError("unknown native failure")
             args[-1].fill_(9)
+            if args[-2] is not None:
+                args[-1].add_(args[-2])
 
     kernel = Kernel()
 
@@ -176,10 +178,10 @@ def test_warmup_guard_and_selected_error_never_retry(native, monkeypatch):
         def all_gather(self, x):
             return x
 
-        def supports_linear_all_gather(self, *args):
+        def supports_linear_all_gather(self, *args, residual=None):
             return True
 
-        def linear_all_gather(self, *args):
+        def linear_all_gather(self, *args, residual=None):
             pytest.fail("retried after native error")
 
     backend = FallbackDistributedImpl(MNNVLDistributedImpl(p), Other())
@@ -229,13 +231,16 @@ def test_prepared_projection_uses_native_and_keeps_owned_output(monkeypatch):
     calls = []
 
     class Parallel:
-        def supports_linear_all_gather(self, a, w, c):
-            calls.append(("supports", a, w, c))
-            return True
+        def supports_linear_all_gather(self, a, w, c, *, residual=None):
+            calls.append(("supports", a, w, c, residual))
+            return residual is None or (
+                residual.dtype == torch.bfloat16 and residual.shape == c.shape
+            )
 
-        def linear_all_gather(self, a, w, c):
-            calls.append(("native", a, w, c))
-            return a @ w.t() + c
+        def linear_all_gather(self, a, w, c, *, residual=None):
+            calls.append(("native", a, w, c, residual))
+            result = a @ w.t() + c
+            return result if residual is None else result + residual
 
     monkeypatch.setattr(op, "forward", lambda x: pytest.fail("replicated GEMM ran"))
     result = create_moe_backend("fused").project_outputs(
@@ -250,6 +255,7 @@ def test_prepared_projection_uses_native_and_keeps_owned_output(monkeypatch):
     )
     assert result_with_prefix.eq(10).all() and prefix.eq(7).all() and b.eq(1).all()
     assert [c[0] for c in calls] == ["supports", "native", "supports", "native"]
+    assert calls[-1][-1] is prefix
 
 
 @pytest.mark.parametrize(
@@ -289,12 +295,12 @@ def test_noneligible_projection_keeps_original_forward_and_shared_cast(monkeypat
     monkeypatch.setattr(op, "forward", forward)
 
     class Parallel:
-        def supports_linear_all_gather(self, *args):
+        def supports_linear_all_gather(self, *args, residual=None):
             assert case == "decline"
             calls.append("supports")
             return False
 
-        def linear_all_gather(self, *args):
+        def linear_all_gather(self, *args, residual=None):
             pytest.fail("native called")
 
     # Preserve the original cast target even when custom forward returns FP32.
@@ -315,3 +321,72 @@ def test_projection_without_up_or_shared_preserves_existing_identity():
     backend = create_moe_backend("fused")
     x = torch.ones((2, 3), dtype=torch.bfloat16)
     assert backend.project_outputs(SimpleNamespace(), x, None) is x
+
+
+@pytest.mark.parametrize(
+    "case", ["aligned", "strided", "unaligned", "fp32", "broadcast", "device", "grad", "legacy"]
+)
+def test_optional_residual_native_contract_and_original_fallback(native, monkeypatch, case):
+    import minisgl.distributed.layout as layout
+
+    p, x, w, b, calls, _ = native
+    monkeypatch.setattr(layout, "get_parallel_layout", lambda: SimpleNamespace(ep_size=1))
+    residual = cuda_tensor(2, 7168) * 0.5
+    if case == "strided":
+        residual = cuda_tensor(7168, 2).t()
+    elif case == "unaligned":
+        residual = cuda_tensor(2 * 7168 + 1)[1:].view(2, 7168)
+    elif case == "fp32":
+        residual = residual.float()
+    elif case == "broadcast":
+        residual = residual[:1]
+    elif case == "device":
+        residual = torch.ones((2, 7168), dtype=torch.bfloat16)
+    elif case == "grad":
+        residual.requires_grad_()
+    saved = residual.clone()
+
+    provider = p
+    if case == "legacy":
+
+        class Legacy:
+            # Deliberately accepts exactly the original three operands.
+            def supports_linear_all_gather(self, a, weight, addend):
+                return p.supports_linear_all_gather(a, weight, addend)
+
+            def linear_all_gather(self, a, weight, addend):
+                return p.linear_all_gather(a, weight, addend)
+
+        provider = Legacy()
+    backend = MNNVLDistributedImpl(provider)
+    monkeypatch.setattr(DistributedCommunicator, "plugins", [backend])
+    tp = TensorParallel()
+    tp.group = DistributedInfo(0, 8)
+    fused = case not in ("fp32", "broadcast", "legacy")
+    assert tp.supports_linear_all_gather(x, w, b, residual=residual) is fused
+    assert calls == []  # Capability never depends on local pointers/strides/device.
+    if case in ("device", "grad"):
+        with pytest.raises(ValueError, match="local inference residual"):
+            tp.linear_all_gather(x, w, b, residual=residual)
+        assert calls == []
+        return
+
+    with torch.device("meta"):
+        projection = Linear(3584, 7168)
+    projection.weight = w
+    monkeypatch.setattr(projection, "forward", lambda _: pytest.fail("replicated GEMM ran"))
+    result = create_moe_backend("fused").project_outputs(
+        tp, x, b, projection, output_dtype=torch.bfloat16, prepared=True, residual=residual
+    )
+    args = next(c for c in calls if isinstance(c, tuple))
+    if fused:
+        assert args[4] is not None and args[4].is_contiguous() and args[4].data_ptr() % 16 == 0
+        assert torch.equal(args[4], saved)
+        assert (args[4] is residual) is (case == "aligned")
+    else:
+        assert args[4] is None  # Keep AG3 then the old promoted/broadcast add.
+    expected = torch.full_like(b, 9) + residual
+    assert result.dtype == expected.dtype
+    torch.testing.assert_close(result, expected, rtol=0, atol=0)
+    assert torch.equal(residual, saved)
+    assert all(not torch._C._overlaps(result, a) for a in (x, w, b, residual))
