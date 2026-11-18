@@ -85,20 +85,22 @@ class CpuCudaTensor(torch.Tensor):
 
 
 @pytest.mark.parametrize(
-    "prefixes,lengths,capacity",
+    "prefixes,lengths,capacity,key_dtype",
     [
-        ((0,) * 8, (2,) * 8, 128),
-        ((0,) * 48, (1,) * 48, 128),
-        ((0, 7), (2, 1), 6),
+        ((0,) * 8, (2,) * 8, 128, torch.bfloat16),
+        ((0,) * 48, (1,) * 48, 128, torch.bfloat16),
+        ((0, 7), (2, 1), 6, torch.bfloat16),
+        ((0,), (2,), 128, torch.float32),
     ],
 )
 def test_native_ragged_calls_are_batched_with_fp8_boundary_and_bounded_prefixes(
-    monkeypatch, prefixes, lengths, capacity
+    monkeypatch, prefixes, lengths, capacity, key_dtype
 ):
     batch = batch_of(prefixes, lengths)
     table = torch.stack([torch.arange(32, dtype=torch.int32) + i * 64 for i in range(len(lengths))])
     cp = SimpleNamespace(rank=0, size=1)
     plan = MLAPrefillMetadata.from_batch(batch, table, cp, capacity)
+    heads = 12
     calls, projections, merges, fixes = [], [], [], []
 
     def kernel(**kwargs):
@@ -113,14 +115,22 @@ def test_native_ragged_calls_are_batched_with_fp8_boundary_and_bounded_prefixes(
         assert kwargs["out"].dtype == torch.bfloat16
         for name in ("seq_lens", "cum_seq_lens_q", "cum_seq_lens_kv"):
             assert kwargs[name].dtype == torch.int32
+        projected = projections[-1].view(-1, heads, 256)
+        rope = key if kwargs["is_causal"] else projected.new_full((len(projected), 64), -3)
+        expected_key = torch.cat((projected[..., :128], rope[:, None].expand(-1, heads, -1)), -1)
+        expected_key = expected_key.to(torch.float8_e4m3fn)
+        assert kwargs["key"].is_contiguous()
+        assert torch.equal(kwargs["key"].view(torch.uint8), expected_key.view(torch.uint8))
         kwargs["out"].fill_(len(calls))
         if kwargs["return_lse"]:
-            return kwargs["out"], torch.zeros((sum(lengths), 2), dtype=torch.float32)
+            return kwargs["out"], torch.zeros((sum(lengths), heads), dtype=torch.float32)
         return kwargs["out"]
 
     def project(x, w):
-        projections.append(len(x))
-        return torch.zeros((len(x), len(w)), dtype=x.dtype)
+        projected = torch.arange(len(w), dtype=torch.int32).remainder_(13).sub_(6).to(x.dtype)
+        projected = projected.expand(len(x), -1).contiguous()
+        projections.append(projected)
+        return projected
 
     def merge(a, a_lse, b, b_lse, out, out_lse):
         merges.append(True)
@@ -142,12 +152,13 @@ def test_native_ragged_calls_are_batched_with_fp8_boundary_and_bounded_prefixes(
         SimpleNamespace(fixup_zero_kv_rows=lambda *args: fixes.append(True)),
     )
     monkeypatch.setattr("minisgl.layers.linear.linear_bf16", project)
-    q = torch.zeros(sum(lengths), 2, 192, dtype=torch.bfloat16).as_subclass(CpuCudaTensor)
+    q = torch.zeros(sum(lengths), heads, 192, dtype=torch.bfloat16).as_subclass(CpuCudaTensor)
     latent = torch.zeros(sum(lengths), 4, dtype=torch.bfloat16)
-    key = torch.zeros(sum(lengths), 64, dtype=torch.bfloat16)
-    weight = torch.zeros(2 * 256, 4, dtype=torch.bfloat16)
+    key = torch.arange(64, dtype=key_dtype).sub_(20).repeat(sum(lengths), 1)
+    key[:, 0] = 1.0626  # FP32 -> FP8 differs from rounding through BF16.
+    weight = torch.zeros(heads * 256, 4, dtype=torch.bfloat16)
     cache = SimpleNamespace(
-        gather_mla=lambda layer, locations, *, out: out.zero_(),
+        gather_mla=lambda layer, locations, *, out: out.fill_(-3),
         latent_dim=4,
         rope_dim=64,
         device=torch.device("cpu"),
@@ -168,7 +179,7 @@ def test_native_ragged_calls_are_batched_with_fp8_boundary_and_bounded_prefixes(
         layer_id=0,
         cp=cp,
     )
-    assert isinstance(output, MLAOutput) and output.values.shape == (sum(lengths), 2, 128)
+    assert isinstance(output, MLAOutput) and output.values.shape == (sum(lengths), heads, 128)
     assert len(calls) == len(projections) == 1 + len(plan.prefix_chunks)
     assert calls[0]["is_causal"] and calls[0]["o_sf_scale"] == 1.0
     assert len(merges) == len(fixes) == len(plan.prefix_chunks)

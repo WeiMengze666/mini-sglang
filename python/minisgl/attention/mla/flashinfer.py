@@ -250,7 +250,12 @@ class FlashInferMLAAdapter:
         if self._expanded_workspace is None or self._expanded_workspace.device != q.device:
             self._expanded_workspace = torch.empty(128 << 20, dtype=torch.uint8, device=q.device)
         expanded = linear_bf16(latent, weight).view(len(latent), q.shape[1], nope_dim + value_dim)
-        keys = torch.cat((expanded[..., :nope_dim], key[:, None].expand(-1, q.shape[1], -1)), -1)
+        keys = expanded.new_empty(
+            (*expanded.shape[:-1], nope_dim + key.shape[-1]),
+            dtype=torch.promote_types(expanded.dtype, key.dtype),
+        )
+        keys[..., :nope_dim].copy_(expanded[..., :nope_dim])
+        keys[..., nope_dim:].copy_(key[:, None])
         query, values = q.contiguous(), expanded[..., nope_dim:]
         if self.kv_dtype == torch.float8_e4m3fn:
             query, keys, values = (part.to(self.kv_dtype) for part in (query, keys, values))
