@@ -83,7 +83,7 @@ def test_runtime_worker_failure_finishes_pending_requests_and_rejects_new_ones()
                 pass
 
             state = FrontendManager(
-                SimpleNamespace(model_path="fixture"),
+                SimpleNamespace(model_path="fixture", enable_cache_report=False),
                 SimpleNamespace(put=send, stop=lambda: None),
                 SimpleNamespace(get=queue.get, stop=lambda: None),
                 workers=[worker],
@@ -199,7 +199,11 @@ def test_backend_failure_stream_reports_error_and_finishes():
         queue = SimpleNamespace(stop=lambda: None)
         worker = SimpleNamespace(name="failed-TP", exitcode=None)
         state = FrontendManager(
-            SimpleNamespace(model_path="fixture"), queue, queue, workers=[worker], initialized=True
+            SimpleNamespace(model_path="fixture", enable_cache_report=False),
+            queue,
+            queue,
+            workers=[worker],
+            initialized=True,
         )
         uid = state.new_user()
         worker.exitcode = 7
