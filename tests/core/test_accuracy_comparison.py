@@ -115,6 +115,8 @@ def test_different_precision_or_state_layout_cannot_claim_paired_quality(tmp_pat
     p.write_text(json.dumps(data))
     with pytest.raises(ValueError, match="precision or parallel"):
         compare(left, right)
+    with pytest.raises(ValueError, match="precision or parallel"):
+        compare(left, right, expected_ep_sizes=(8, 8))
 
 
 def test_declared_contract_match_does_not_verify_kernel_precision_path(tmp_path):
@@ -146,6 +148,19 @@ def test_declared_contract_match_does_not_verify_kernel_precision_path(tmp_path)
     assert result["declared_execution_contract_matches"]
     assert result["kernel_precision_path_verified"] is None
     assert result["execution_contract"] == contract
+
+    p = right / "report.json"
+    data = json.loads(p.read_text())
+    data["execution_contract"]["ep_size"] = 2
+    p.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="precision or parallel"):
+        compare(left, right)
+    with pytest.raises(ValueError, match="Recorded EP sizes"):
+        compare(left, right, expected_ep_sizes=(2, 8))
+    pair = compare(left, right, expected_ep_sizes=(8, 2))
+    assert not pair["declared_execution_contract_matches"]
+    assert pair["execution_contract"] is None
+    assert pair["execution_contract_by_role"]["right"]["ep_size"] == 2
 
 
 def test_incomplete_precision_contract_cannot_claim_verification(tmp_path):

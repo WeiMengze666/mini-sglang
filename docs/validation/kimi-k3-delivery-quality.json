@@ -231,5 +231,129 @@
       ]
     },
     "numerical_scope": "Paired task quality, independent hybrid math tests, native kernel and state checks. No evidence of an algorithm or state-update error in this scope. Different valid greedy continuations also arise between two runs of the official stack. Per-token causality and equality for all prompts are not established."
+  },
+  "expert_parallel": {
+    "reference": "official_observed EP1",
+    "common_inputs_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+    "scope": "Same released runtime and full quality workload, with only EP size and native expert dispatch selected differently. Serving throughput was measured at EP1.",
+    "layouts": {
+      "EP2": {
+        "job": 200,
+        "source": "c3c8b042e70121dc60125549123b14ffe2e1ded7",
+        "report": {
+          "correct": 1283,
+          "invalid_answers": 0,
+          "truncated": 1,
+          "generated_tokens": 142614,
+          "responses_sha256": "68789ad33ebb8ab7ae6093e24d6f85649189aea3c01a5d17640b3fe76c99dae2",
+          "report_sha256": "1ac14c9f1cc74583a9f70865229a2a38642e563a19a626db39ea445cfc0ffae2",
+          "examples": 1319,
+          "accuracy_pct": 97.27065959059894
+        },
+        "comparison_to_official_ep1": {
+          "both_correct": 1278,
+          "both_wrong": 33,
+          "left_only_correct": 5,
+          "right_only_correct": 3,
+          "same_valid_answer": 1309,
+          "identical_token_ids": 650,
+          "score_delta_percentage_points": 0.1516300227445034
+        },
+        "comparison_to_mini_ep1": {
+          "both_correct": 1278,
+          "both_wrong": 31,
+          "left_only_correct": 5,
+          "right_only_correct": 5,
+          "same_valid_answer": 1309,
+          "identical_token_ids": 664,
+          "score_delta_percentage_points": 0.0
+        },
+        "observed": {
+          "TP": 8,
+          "DCP": 8,
+          "EP": 2,
+          "ETP": 4,
+          "routed_layers_per_rank": 92,
+          "global_experts": 896,
+          "local_experts": 448,
+          "intermediate_per_rank": 768,
+          "ready_transport_channels_per_rank": [
+            3
+          ],
+          "actual_backend": "minisgl.moe.ep.FlashInferEPBackend",
+          "expert_executor": "minisgl.moe.flashinfer.FlashInferMXFP4Experts",
+          "activation_precision": "mxfp8",
+          "all_eight_workers_match_primary_math_policy": true,
+          "all_real_sampler_logits_finite": true
+        },
+        "provenance": {
+          "eval_inputs_sha256": "7976c5b27143880b3199edb1631fb0365d2004a3b476e886cc484fec10be808f",
+          "role_and_ownership_result_sha256": "78e712c4272b66d9d2f8d02d725600e5b45fcc1cceba5c5a14a22c973907afce",
+          "independent_rescore_sha256": "978a01f6f19e007d985fa0c6d59470a72f73f254a1455e19a3a4614295a513e9",
+          "public_comparison_sha256": "0b1c5d0aaf5c2f4a8ae1de2581dd20dba87ee03edd430313b2849822699a433a",
+          "queue_exit_code": 0,
+          "owned_workers_remaining": 0
+        }
+      },
+      "EP8": {
+        "job": 201,
+        "source": "c3c8b042e70121dc60125549123b14ffe2e1ded7",
+        "report": {
+          "correct": 1280,
+          "invalid_answers": 1,
+          "truncated": 1,
+          "generated_tokens": 141119,
+          "responses_sha256": "ccf46096355395349b078cbeef96d418a7927c68eaca4b85ae70df255aa423d6",
+          "report_sha256": "333e3bddb85b76e69d9f12df14309def0c8a9bf5e64bc729ae7e8b81474dd74c",
+          "examples": 1319,
+          "accuracy_pct": 97.04321455648218
+        },
+        "comparison_to_official_ep1": {
+          "both_correct": 1276,
+          "both_wrong": 34,
+          "left_only_correct": 4,
+          "right_only_correct": 5,
+          "same_valid_answer": 1309,
+          "identical_token_ids": 644,
+          "score_delta_percentage_points": -0.0758150113722517
+        },
+        "comparison_to_mini_ep1": {
+          "both_correct": 1276,
+          "both_wrong": 32,
+          "left_only_correct": 4,
+          "right_only_correct": 7,
+          "same_valid_answer": 1307,
+          "identical_token_ids": 676,
+          "score_delta_percentage_points": -0.22744503411675512
+        },
+        "observed": {
+          "TP": 8,
+          "DCP": 8,
+          "EP": 8,
+          "ETP": 1,
+          "routed_layers_per_rank": 92,
+          "global_experts": 896,
+          "local_experts": 112,
+          "intermediate_per_rank": 3072,
+          "ready_transport_channels_per_rank": [
+            3
+          ],
+          "actual_backend": "minisgl.moe.ep.FlashInferEPBackend",
+          "expert_executor": "minisgl.moe.flashinfer.FlashInferMXFP4Experts",
+          "activation_precision": "mxfp8",
+          "all_eight_workers_match_primary_math_policy": true,
+          "all_real_sampler_logits_finite": true
+        },
+        "provenance": {
+          "eval_inputs_sha256": "ab4c2e3327d687a042f9e5a354a152f07a4867e1567a70efaabb5b6faaa63e04",
+          "role_and_ownership_result_sha256": "a6fbeb9a35fb14d9ff959972e2494888da88f374a11c4315881ce8aaca99c631",
+          "independent_rescore_sha256": "97626500744f9011fa068817b159378f1ce0d7f47308dd2ede45de9ac163eba9",
+          "public_comparison_sha256": "4920a6651d99acdb167cd5fb62c9f1d64cc4cdae6be6de92bbed9646f0c23471",
+          "queue_exit_code": 0,
+          "owned_workers_remaining": 0
+        }
+      }
+    },
+    "review": "All 92 routed layers had the expected expert range and tensor shard on every rank. EP2 matched Mini EP1 in correct answers by count. EP8 finished one fewer question correctly than the observed official run. Its one invalid response reached the configured length cap while working through the math problem. No answers were manually regraded."
   }
 }

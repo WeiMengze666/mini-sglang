@@ -167,6 +167,13 @@
       "coverage": "tests/core, tests/models, tests/test_kimi_cache.py with CUDA hidden. Enables pinned HF and FLA reference sources and native parser/tokenizer integration.",
       "HF_source_sha256": "9e3564c70ac21854ce5a090cc946c5dc76b70d1050ef50840449181a20fff44a",
       "FLA_source_sha256": "60a32285d4b67068ff633b48bbe8ab31028066d24f00d27e12199a88fc73f016"
+    },
+    "final_delivery_suite": {
+      "pytest_summary": "2442 passed, 780 skipped, 2 xfailed, 23 warnings in 269.39s (0:04:29)",
+      "exit_code": 0,
+      "stdout_sha256": "126d2b9b8c4b1847399454dd062190ba4aeec6f140de75644db6a72e1686b5a2",
+      "coverage": "tests/core, tests/models, tests/test_kimi_cache.py with CUDA hidden. Enables pinned HF and FLA reference sources and native parser/tokenizer integration.",
+      "changes_since_previous_suite": "Explicit cross-EP comparisons validate each expected expert layout and reject precision or other layout mismatches."
     }
   },
   "functional_EP": {
@@ -180,7 +187,8 @@
     ],
     "completed_8_token_requests_per_layout": 102,
     "scope": "Each layout 102 complete eight-token requests, controls on all eight ranks, cancel/discard/release and request table slot reuse, sampled shared recurrence source verified unchanged on the producer stream. Observer exit footers were not emitted upon SIGTERM stopping. Reconstructed bounds from indexed saved files. Full quality remains due after selection.",
-    "review_sha256": "fb4270de92c6a461b8ea52d05408ef24d81edf32c6e04debbed08961dbbec76f"
+    "review_sha256": "fb4270de92c6a461b8ea52d05408ef24d81edf32c6e04debbed08961dbbec76f",
+    "final_runtime_quality_evidence": "docs/validation/kimi-k3-delivery-quality.json"
   },
   "optional_async_metadata": {
     "job": 189,

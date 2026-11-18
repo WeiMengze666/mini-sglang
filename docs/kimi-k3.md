@@ -47,15 +47,19 @@ The released checkpoint completed all 1,319 GSM8K test questions. Every run used
 
 | Run | Correct | Accuracy | Invalid final answers | Reached the output limit |
 | --- | ---: | ---: | ---: | ---: |
-| Mini | 1,283 | 97.27% | 0 | 0 |
+| Mini, EP1 | 1,283 | 97.27% | 0 | 0 |
+| Mini, EP2 | 1,283 | 97.27% | 0 | 1 |
+| Mini, EP8 | 1,280 | 97.04% | 1 | 1 |
 | SGLang, with worker precision records | 1,281 | 97.12% | 1 | 2 |
 | SGLang, first run | 1,281 | 97.12% | 0 | 0 |
 
-Mini and the observed SGLang run gave the same numeric answer on 1,310 questions. Five were correct only on Mini and three only on SGLang. Their entire generated token sequences matched on 654 questions. The two official runs produced identical token sequences on 661. All eight workers on each side reported the same Torch math settings. Mini’s real sampling rows had finite logits throughout. Combined with the layer and state checks below, the results support accepting the measured configuration for text inference. [Paired quality evidence](validation/kimi-k3-delivery-quality.json)
+Mini EP1 and the observed SGLang run gave the same numeric answer on 1,310 questions. Five were correct only on Mini and three only on SGLang. Their entire generated token sequences matched on 654 questions. The two official runs produced identical token sequences on 661. All eight workers on each side reported the same Torch math settings. Mini’s real sampling rows had finite logits throughout. Combined with the layer and state checks below, the results support accepting the measured configuration for text inference. [Paired quality evidence](validation/kimi-k3-delivery-quality.json)
 
 The combined CPU/Gloo run passed 2,442 tests, skipped 780 and retained two expected differences against HF. Coverage includes dense and packed checkpoint loading, full versus chunked prefill, concurrent requests, state restoration, slot reuse and cancellation. Independent Moonshot and FLA checks compare per-layer outputs, attention residuals and recurrent updates. The reference tokenizer and parsers also run against the released checkpoint. [Reference checks and known HF differences](kimi-k3-official-cpu-reference.md)
 
-A separate eight-GPU functional run on ancestor `4436c21` exercised EP2 and EP8. Each layout completed 102 eight-token requests with cancellation and slot reuse. The serving result above uses TP8/DCP8/EP1. Historical results and earlier precision configurations are recorded separately. [Validation history](kimi-k3-history.md)
+In the full quality runs, all eight ranks used the native FlashInfer expert dispatcher for EP2 and EP8. The 92 routed layers each loaded 448 local experts with four-way tensor parallelism at EP2 and 112 full-width local experts at EP8. One EP2 response reached the output cap after giving the correct answer. One EP8 response reached the same cap without a final answer.
+
+A separate eight-GPU HTTP lifecycle run on ancestor `4436c21` exercised EP2 and EP8. Each layout completed 102 eight-token requests with cancellation and slot reuse. The serving result above uses TP8/DCP8/EP1. Historical results and earlier precision configurations are recorded separately. [Validation history](kimi-k3-history.md)
 
 ### Reproduce the paired GSM8K run
 
@@ -85,3 +89,16 @@ python tests/validation/gsm8k_suite.py "${common[@]}" --engine sglang --attentio
 python tests/validation/compare_accuracy.py --left quality-mini --right quality-official \
   --expected-examples 1319 --output quality-comparison.json
 ```
+
+### Reproduce an expert-parallel quality run
+
+Keep the official output from the EP1 command above. For Mini, change the values of `--ep-size` and `--moe-backend` in the common options to `2` and `flashinfer-ep`, and write to `quality-mini-ep2`. With TP8, this gives two expert partitions and four-way tensor parallelism within each expert. Use `8` for one full expert partition per rank and write to `quality-mini-ep8`.
+
+```bash
+python tests/validation/compare_accuracy.py --left quality-mini-ep2 --right quality-official \
+  --expected-ep-sizes 2 1 --output quality-ep2-comparison.json
+python tests/validation/compare_accuracy.py --left quality-mini-ep8 --right quality-official \
+  --expected-ep-sizes 8 1 --output quality-ep8-comparison.json
+```
+
+The size pair follows the order of the two inputs. The scorer checks the requested EP sizes, all other precision and layout fields, the generation protocol and the full 1,319-question split.

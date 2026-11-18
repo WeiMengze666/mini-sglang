@@ -16,7 +16,7 @@ def read_run(folder):
     return summary, indexed
 
 
-def compare(left, right, *, expected_examples=None):
+def compare(left, right, *, expected_examples=None, expected_ep_sizes=None):
     ls, lr = read_run(left)
     rs, rr = read_run(right)
     if ls["cases_sha256"] != rs["cases_sha256"] or lr.keys() != rr.keys():
@@ -41,8 +41,25 @@ def compare(left, right, *, expected_examples=None):
         for contract in contracts
     ):
         raise ValueError("Incomplete task precision or parallel layout contract")
-    if contracts[0] != contracts[1]:
+    if expected_ep_sizes is not None:
+        if len(expected_ep_sizes) != 2 or any(
+            type(n) is not int or n < 1 for n in expected_ep_sizes
+        ):
+            raise ValueError("Expected EP sizes must be two positive integers")
+        if any(contract is None for contract in contracts):
+            raise ValueError("Both runs must declare the EP size")
+        actual_ep_sizes = tuple(contract["ep_size"] for contract in contracts)
+        if actual_ep_sizes != tuple(expected_ep_sizes):
+            raise ValueError("Recorded EP sizes differ from the requested pair")
+        comparable = [
+            {key: value for key, value in contract.items() if key != "ep_size"}
+            for contract in contracts
+        ]
+    else:
+        comparable = contracts
+    if comparable[0] != comparable[1]:
         raise ValueError("Task precision or parallel layout differs or is missing")
+    shared_contract = contracts[0] if contracts[0] == contracts[1] else None
     for field in ("batch_size", "max_new_tokens", "max_context"):
         left_value = ls.get("configuration", {}).get(field)
         right_value = rs.get("configuration", {}).get(field)
@@ -56,13 +73,14 @@ def compare(left, right, *, expected_examples=None):
         "left": str(left),
         "right": str(right),
         "examples": len(lr),
-        "declared_execution_contract_matches": contracts[0] is not None,
+        "declared_execution_contract_matches": shared_contract is not None,
+        "execution_contract_by_role": {"left": contracts[0], "right": contracts[1]},
         "kernel_precision_path_verified": None,
         "contract_scope": (
             "Compares declared dtypes and layout only; kernel input/output rounding, "
             "accumulators and fused-path coverage require separate runtime evidence."
         ),
-        "execution_contract": contracts[0],
+        "execution_contract": shared_contract,
         "cases_sha256": ls["cases_sha256"],
         "left_accuracy": ls["accuracy"],
         "right_accuracy": rs["accuracy"],
@@ -94,10 +112,22 @@ def main():
         default=1319,
         help="Required paired case count; defaults to the complete GSM8K test split",
     )
+    parser.add_argument(
+        "--expected-ep-sizes",
+        nargs=2,
+        type=int,
+        metavar=("LEFT", "RIGHT"),
+        help="Compare two declared expert layouts while requiring all other precision and layout fields to match.",
+    )
     args = parser.parse_args()
     if args.expected_examples < 1:
         parser.error("expected-examples must be positive")
-    result = compare(args.left, args.right, expected_examples=args.expected_examples)
+    result = compare(
+        args.left,
+        args.right,
+        expected_examples=args.expected_examples,
+        expected_ep_sizes=args.expected_ep_sizes,
+    )
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result))
 
