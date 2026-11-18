@@ -30,7 +30,7 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
     Callers select/load their recurrence before entering this function. Once the
     convolution starts, errors propagate: retrying would advance state twice.
     """
-    from .sgl import _kernels, _project_with_gate
+    from .sgl import _conv_qkv_input, _kernels, _project_with_gate
 
     if (
         not metadata.lengths
@@ -83,7 +83,7 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
         raise ValueError("Native KDA prefill projections must be BF16 on the input device")
     _, _, stream = _kernels()
     conv_fn = _conv_kernel()
-    raw = torch.cat((q, k, v), dim=-1)
+    raw = _conv_qkv_input(q, k, v)
     if checkpoint_conv:
         tracking = metadata.checkpoints
         if tracking is None or len(checkpoint_conv) != len(tracking.plans):
