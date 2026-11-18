@@ -127,11 +127,16 @@ class BaseMoeBackend(ABC):
         ):
             from minisgl.distributed.layout import get_parallel_layout
 
-            if get_parallel_layout().ep_size == 1 and parallel.supports_linear_all_gather(
-                mixed, projection.weight, shared
-            ):
-                result = parallel.linear_all_gather(mixed, projection.weight, shared)
-                return result if residual is None else result + residual
+            if get_parallel_layout().ep_size == 1:
+                if residual is not None and parallel.supports_linear_all_gather(
+                    mixed, projection.weight, shared, residual=residual
+                ):
+                    return parallel.linear_all_gather(
+                        mixed, projection.weight, shared, residual=residual
+                    )
+                if parallel.supports_linear_all_gather(mixed, projection.weight, shared):
+                    result = parallel.linear_all_gather(mixed, projection.weight, shared)
+                    return result if residual is None else result + residual
         result = projection.forward(mixed) if projection is not None else mixed
         if shared is not None:
             return add3(result, shared.to(dtype), residual)

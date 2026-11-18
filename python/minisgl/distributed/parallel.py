@@ -49,14 +49,16 @@ class TensorParallel:
             max_rows=max_rows, shard_width=shard_width, dtype=dtype
         )
 
-    def supports_linear_all_gather(self, x, weight, addend) -> bool:
-        return self.size > 1 and self._comm.supports_linear_all_gather(x, weight, addend)
+    def supports_linear_all_gather(self, x, weight, addend, *, residual=None) -> bool:
+        options = {} if residual is None else {"residual": residual}
+        return self.size > 1 and self._comm.supports_linear_all_gather(x, weight, addend, **options)
 
-    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
-        """Column GEMM + gather with full replicated operands; returns owned output."""
+    def linear_all_gather(self, x, weight, addend, *, residual=None) -> torch.Tensor:
+        """Column GEMM + gather and ordered adds; replicated inputs, owned output."""
         if self.size == 1:
             raise NotImplementedError("Singleton linear keeps the ordinary Linear path")
-        return self._comm.linear_all_gather(x, weight, addend)
+        options = {} if residual is None else {"residual": residual}
+        return self._comm.linear_all_gather(x, weight, addend, **options)
 
     def reserve_output(
         self, key: str, shape: tuple[int, ...], dtype: torch.dtype, *, enabled: bool = True

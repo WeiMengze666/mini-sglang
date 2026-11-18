@@ -327,14 +327,19 @@ class MNNVLDistributedImpl(DistributedImpl):
             raise NotImplementedError("This provider has no weighted reduction consumer")
         return method(values, indices, weights, out=out, norm=norm)
 
-    def supports_linear_all_gather(self, x, weight, addend) -> bool:
+    def supports_linear_all_gather(self, x, weight, addend, *, residual=None) -> bool:
+        if residual is not None:
+            # Legacy three-operand providers are never sent an unknown keyword.
+            method = getattr(self.provider, "supports_linear_all_gather_residual", None)
+            return bool(method(x, weight, addend, residual)) if method is not None else False
         method = getattr(self.provider, "supports_linear_all_gather", None)
         return bool(method(x, weight, addend)) if method is not None else False
 
-    def linear_all_gather(self, x, weight, addend) -> torch.Tensor:
-        if not self.supports_linear_all_gather(x, weight, addend):
-            return super().linear_all_gather(x, weight, addend)
-        return self.provider.linear_all_gather(x, weight, addend)
+    def linear_all_gather(self, x, weight, addend, *, residual=None) -> torch.Tensor:
+        options = {} if residual is None else {"residual": residual}
+        if not self.supports_linear_all_gather(x, weight, addend, **options):
+            return super().linear_all_gather(x, weight, addend, **options)
+        return self.provider.linear_all_gather(x, weight, addend, **options)
 
     def capture(self):
         capture = getattr(self.provider, "capture", None)
