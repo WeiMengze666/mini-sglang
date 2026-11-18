@@ -73,27 +73,30 @@ class FlashInferEPBackend(FusedMoe):
         self._mesh = ExpertParallel.prepare(context.layout, context.tp_cpu_group, context.device)
         if self._mesh is None:
             raise NotImplementedError("Native EP mesh is unavailable")
+        carriers = (torch.int32, torch.bfloat16, torch.float32)
         for experts, top_k, hidden in specs:
-            # Typed layouts are immutable. Prepare every existing carrier ABI
-            # before budgeting, including fallback FP32 weights at larger N.
-            for carrier in (torch.int32, torch.bfloat16, torch.float32):
-                dispatcher = FlashInferTokenDispatcher.prepare(
-                    self._mesh.info,
-                    self._mesh.cpu_group,
-                    context.device,
-                    num_experts=experts,
-                    top_k=top_k,
-                    payload_layout=(
-                        (torch.float8_e4m3fn, hidden),
-                        (torch.float8_e4m3fn, hidden // 32),
-                        (carrier, top_k),
-                    ),
-                    output_layout=(torch.bfloat16, hidden),
-                    max_prefill_tokens=context.max_prefill_tokens,
-                    max_decode_tokens=context.max_decode_tokens,
+            layouts = tuple(
+                (
+                    (torch.float8_e4m3fn, hidden),
+                    (torch.float8_e4m3fn, hidden // 32),
+                    (carrier, top_k),
                 )
-                if dispatcher is None:
-                    raise NotImplementedError("Native EP transport is unavailable for this layout")
+                for carrier in carriers
+            )
+            dispatchers = FlashInferTokenDispatcher.prepare_variants(
+                self._mesh.info,
+                self._mesh.cpu_group,
+                context.device,
+                num_experts=experts,
+                top_k=top_k,
+                payload_layouts=layouts,
+                output_layout=(torch.bfloat16, hidden),
+                max_prefill_tokens=context.max_prefill_tokens,
+                max_decode_tokens=context.max_decode_tokens,
+            )
+            if dispatchers is None:
+                raise NotImplementedError("Native EP transport is unavailable for this layout")
+            for carrier, dispatcher in zip(carriers, dispatchers, strict=True):
                 self._dispatchers[experts, top_k, hidden, carrier] = dispatcher
         self._ready = True
 

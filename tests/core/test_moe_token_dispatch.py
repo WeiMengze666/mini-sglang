@@ -335,6 +335,43 @@ def test_prepare_derives_capacity_and_ep1_never_loads_provider(monkeypatch):
     )
 
 
+def test_variants_share_workspace_and_preserve_typed_dispatch(monkeypatch):
+    resource = dispatcher(monkeypatch).resource
+    calls = []
+
+    def prepare(*args, **kwargs):
+        calls.append(kwargs)
+        return resource
+
+    monkeypatch.setattr(F.FlashInferMoEWorkspace, "prepare", prepare)
+    d2, d4, df = FlashInferTokenDispatcher.prepare_variants(
+        resource.info,
+        resource.group,
+        resource.device,
+        num_experts=16,
+        top_k=2,
+        payload_layouts=(
+            ((torch.bfloat16, 3),),
+            ((torch.int32, 3),),
+            ((torch.float32, 3),),
+        ),
+        output_layout=(torch.float32, 3),
+        max_prefill_tokens=7,
+        max_decode_tokens=4,
+    )
+    assert d2.resource is d4.resource is df.resource is resource
+    assert len(calls) == 1 and calls[0]["capacity"] == 4
+    assert calls[0]["dispatch_bytes"] == 20 and calls[0]["combine_bytes"] == 12
+    partials = tensor(torch.arange(12).reshape(4, 3), torch.float32)
+    for d in (d4, d2, df, d4):
+        ids, fields = inputs(d, 2)
+        h = d.dispatch(ids, fields, source_counts=(2, 1))
+        with pytest.raises(RuntimeError, match="previous MoE dispatch"):
+            (d2 if d is not d2 else d4).dispatch(ids, fields, source_counts=(2, 1))
+        torch.testing.assert_close(h.payloads[0][0], fields[0], rtol=0, atol=0)
+        torch.testing.assert_close(d.combine(h, partials), partials[:2], rtol=0, atol=0)
+
+
 def _gloo_worker(rank, rendezvous):
     import minisgl.distributed.fi_moe as f
 

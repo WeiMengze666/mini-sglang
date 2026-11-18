@@ -115,24 +115,27 @@ def test_all_carrier_formats_are_persistent_before_tuning_or_budget(monkeypatch)
     def transport(*args, **kwargs):
         assert events[:2] == ["CPU_agreement", "mesh"]
         prepared.append(kwargs)
-        return SimpleNamespace(close=lambda: events.append("resource_close"))
+        return tuple(
+            SimpleNamespace(close=lambda: events.append("resource_close"))
+            for _ in kwargs["payload_layouts"]
+        )
 
     monkeypatch.setattr(prepare, "_agree", agree)
     monkeypatch.setattr(groups.ExpertParallel, "prepare", group)
-    monkeypatch.setattr(module.FlashInferTokenDispatcher, "prepare", transport)
+    monkeypatch.setattr(module.FlashInferTokenDispatcher, "prepare_variants", transport)
     backend = FlashInferEPBackend()
-    # Two same-shape layers reuse three resources, never one allocation per layer.
     backend.prepare_transport((signature(ctx), signature(ctx)), ctx)
-    assert backend._ready and len(prepared) == 3 and len(backend._dispatchers) == 3
-    assert {p["payload_layout"][-1][0] for p in prepared} == {
+    assert backend._ready and len(prepared) == 1 and len(backend._dispatchers) == 3
+    spec = prepared[0]
+    assert spec["max_prefill_tokens"] == 16384 and spec["max_decode_tokens"] == 48
+    assert spec["output_layout"] == (torch.bfloat16, 256)
+    assert [layout[-1][0] for layout in spec["payload_layouts"]] == [
         torch.int32,
         torch.bfloat16,
         torch.float32,
-    }
-    for value in prepared:
-        assert value["max_prefill_tokens"] == 16384 and value["max_decode_tokens"] == 48
-        assert value["output_layout"] == (torch.bfloat16, 256)
-        assert value["payload_layout"][:2] == ((torch.float8_e4m3fn, 256), (torch.float8_e4m3fn, 8))
+    ]
+    for layout in spec["payload_layouts"]:
+        assert layout[:2] == ((torch.float8_e4m3fn, 256), (torch.float8_e4m3fn, 8))
     mesh.close = lambda: events.append("group_close")
     backend.close()
     assert events[-4:] == ["resource_close"] * 3 + ["group_close"]

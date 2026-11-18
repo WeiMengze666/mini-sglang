@@ -47,9 +47,42 @@ class FlashInferTokenDispatcher:
         max_prefill_tokens,
         max_decode_tokens,
     ):
+        variants = cls.prepare_variants(
+            info,
+            group,
+            device,
+            num_experts=num_experts,
+            top_k=top_k,
+            payload_layouts=(payload_layout,),
+            output_layout=output_layout,
+            max_prefill_tokens=max_prefill_tokens,
+            max_decode_tokens=max_decode_tokens,
+        )
+        return None if variants is None else variants[0]
+
+    @classmethod
+    def prepare_variants(
+        cls,
+        info,
+        group,
+        device,
+        *,
+        num_experts,
+        top_k,
+        payload_layouts,
+        output_layout,
+        max_prefill_tokens,
+        max_decode_tokens,
+    ):
+        """Prepare serial typed dispatchers backed by one native workspace.
+
+        Dispatch derives byte offsets for each invocation. Size the shared
+        allocation for the largest layout; its stream and outstanding handle
+        are shared across variants. Closing any variant closes the workspace.
+        """
         if info.size == 1:
             return None
-        layout = tuple(payload_layout)
+        layouts = tuple(tuple(layout) for layout in payload_layouts)
         output_dtype, output_width = output_layout
         allowed = (
             torch.float32,
@@ -68,11 +101,15 @@ class FlashInferTokenDispatcher:
             or num_experts % info.size
             or type(top_k) is not int
             or top_k not in (1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 22)
-            or not 0 < len(layout) <= 5
             or info.size > 64
+            or not layouts
             or any(
-                dtype not in allowed or type(width) is not int or width <= 0
-                for dtype, width in layout
+                not 0 < len(layout) <= 5
+                or any(
+                    dtype not in allowed or type(width) is not int or width <= 0
+                    for dtype, width in layout
+                )
+                for layout in layouts
             )
             or output_dtype not in (torch.float16, torch.bfloat16, torch.float32)
             or type(output_width) is not int
@@ -89,7 +126,8 @@ class FlashInferTokenDispatcher:
             else 0
         )
         dispatch_bytes = (
-            top_k * 4 + sum(dtype.itemsize * width for dtype, width in layout)
+            top_k * 4
+            + max(sum(dtype.itemsize * width for dtype, width in layout) for layout in layouts)
             if error is None
             else 0
         )
@@ -97,7 +135,7 @@ class FlashInferTokenDispatcher:
         signature = (
             num_experts,
             top_k,
-            tuple((str(dtype), width) for dtype, width in layout),
+            tuple(tuple((str(dtype), width) for dtype, width in layout) for layout in layouts),
             str(output_dtype),
             output_width,
         )
@@ -111,9 +149,9 @@ class FlashInferTokenDispatcher:
             layout=signature,
             error=error,
         )
-        return (
-            None if resource is None else cls(resource, num_experts, top_k, layout, output_layout)
-        )
+        if resource is None:
+            return None
+        return tuple(cls(resource, num_experts, top_k, layout, output_layout) for layout in layouts)
 
     def __init__(self, resource, num_experts, top_k, payload_layout, output_layout):
         self.resource = resource
