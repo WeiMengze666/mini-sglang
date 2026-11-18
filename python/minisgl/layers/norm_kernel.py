@@ -10,11 +10,18 @@ def rms_norm(x, weight, eps, *, gate=None, round_before_weight=False, dtype=None
 
     with use_torch_stream():
         if gate is not None:
-            from sglang.kernels.ops.attention.fla.kda import rms_norm_gated
+            from sglang.kernels.ops.attention.fla.fused_norm_gate import layer_norm_gated_fwd
 
-            # The SDK may consume its input as output. Preserve caller ownership.
-            result = rms_norm_gated(
-                flat.clone(), gate.reshape_as(flat), weight, None, eps=eps, activation="sigmoid"
+            # Ask the native kernel for separate output storage; preserve the input.
+            result, _, _, _ = layer_norm_gated_fwd(
+                x=flat.contiguous(),
+                g=gate.reshape_as(flat).contiguous(),
+                weight=weight,
+                bias=None,
+                activation="sigmoid",
+                eps=eps,
+                out_dtype=flat.dtype,
+                is_rms_norm=True,
             )
         elif round_before_weight:
             from sglang.kernels.ops.layernorm.rmsnorm_hf import rmsnorm_hf
