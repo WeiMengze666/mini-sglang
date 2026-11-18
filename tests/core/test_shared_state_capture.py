@@ -150,6 +150,7 @@ def test_real_capture_cleanup_returns_working_and_tracking_before_real_uid(
     # physical slot; prepare_for_replay must update the captured indices tensor.
     real = Req(torch.tensor([2], dtype=torch.int32), 3, 0, 1, 777, SamplingParams(), None)
     replay = Batch([real], "decode")
+    replay.padded_reqs = replay.reqs
     backend.prepare_metadata(replay)
     with context.forward_batch(replay):
         backend.prepare_for_replay(replay)

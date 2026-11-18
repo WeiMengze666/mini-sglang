@@ -125,7 +125,8 @@ def test_rank_device_precedes_provider_and_probe_with_original_startup_order(mon
     class ReachedPostCommunication(Exception):
         pass
 
-    def stop(self):
+    def stop(**kwargs):
+        events.append(("dcp", kwargs))
         raise ReachedPostCommunication
 
     monkeypatch.setattr(engine, "set_tp_info", tp)
@@ -134,17 +135,23 @@ def test_rank_device_precedes_provider_and_probe_with_original_startup_order(mon
     monkeypatch.setattr(engine, "load_attention_provider", provider)
     monkeypatch.setattr(engine, "is_sm100_supported", probe)
     monkeypatch.setattr(torch, "manual_seed", lambda seed: events.append(("seed", seed)))
-    stream = object()
-    monkeypatch.setattr(torch.cuda, "Stream", lambda: events.append("stream") or stream)
+    stream, copy_stream = object(), object()
+
+    def make_stream(*, device=None):
+        if device is None:
+            events.append("stream")
+            return stream
+        assert device == torch.device(f"cuda:{rank}")
+        events.append(("copy_stream", device))
+        return copy_stream
+
+    monkeypatch.setattr(torch.cuda, "Stream", make_stream)
     monkeypatch.setattr(
         torch.cuda, "set_stream", lambda value: events.append(("set_stream", value))
     )
     monkeypatch.setattr(engine, "set_global_ctx", lambda value: events.append("context"))
     monkeypatch.setattr(engine.Engine, "_init_communication", communication)
-    monkeypatch.setattr(
-        engine, "init_context_parallel", lambda **kwargs: events.append(("dcp", kwargs))
-    )
-    monkeypatch.setattr(engine.Engine, "_sync_get_memory", stop)
+    monkeypatch.setattr(engine, "init_context_parallel", stop)
     if failure is None:
         with pytest.raises(ReachedPostCommunication):
             engine.Engine(config)
@@ -156,10 +163,18 @@ def test_rank_device_precedes_provider_and_probe_with_original_startup_order(mon
             "probe",
             ("seed", 42),
             "stream",
+            ("copy_stream", torch.device(f"cuda:{rank}")),
             ("set_stream", stream),
             "context",
             "tp_comm",
-            ("dcp", {"backend": "nccl", "device": torch.device(f"cuda:{rank}")}),
+            (
+                "dcp",
+                {
+                    "backend": "nccl",
+                    "device": torch.device(f"cuda:{rank}"),
+                    "cpu_group": "tp-group",
+                },
+            ),
         ]
     else:
         with pytest.raises(RuntimeError) as caught:

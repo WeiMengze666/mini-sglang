@@ -115,7 +115,10 @@ def test_graph_runner_registers_provider_after_cuda_capture(monkeypatch, fail):
     monkeypatch.setattr(
         module,
         "get_global_ctx",
-        lambda: SimpleNamespace(forward_batch=lambda batch: nullcontext()),
+        lambda: SimpleNamespace(
+            forward_batch=lambda batch: nullcontext(),
+            kv_cache=SimpleNamespace(model_forward=lambda batch: nullcontext()),
+        ),
     )
     buffer = SimpleNamespace(
         set_batch=lambda batch: None, logits=torch.zeros(1, 2), out_loc=torch.zeros(1)
