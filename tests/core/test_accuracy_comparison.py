@@ -102,7 +102,6 @@ def test_different_precision_or_state_layout_cannot_claim_paired_quality(tmp_pat
         "tp_size": 8,
         "ep_size": 8,
         "page_size": 64,
-        "bf16_precision": "strict",
     }
     for folder in (left, right):
         p = folder / "report.json"
@@ -130,7 +129,6 @@ def test_declared_contract_match_does_not_verify_kernel_precision_path(tmp_path)
         "conv_state_dtype": "bfloat16",
         "moe_activation_precision": "bf16",
         "kv_cache_dtype": "bfloat16",
-        "bf16_precision": "strict",
         "tp_size": 8,
         "dcp_size": 2,
         "ep_size": 8,
@@ -148,6 +146,18 @@ def test_declared_contract_match_does_not_verify_kernel_precision_path(tmp_path)
     assert result["declared_execution_contract_matches"]
     assert result["kernel_precision_path_verified"] is None
     assert result["execution_contract"] == contract
+    # Archived default runs remain comparable to native runs after retiring the switch.
+    path = right / "report.json"
+    historical = json.loads(path.read_text())
+    historical["execution_contract"]["bf16_precision"] = "default"
+    path.write_text(json.dumps(historical))
+    assert compare(left, right)["declared_execution_contract_matches"]
+    historical["execution_contract"]["bf16_precision"] = "strict"
+    path.write_text(json.dumps(historical))
+    with pytest.raises(ValueError, match="precision or parallel"):
+        compare(left, right)
+    del historical["execution_contract"]["bf16_precision"]
+    path.write_text(json.dumps(historical))
 
     p = right / "report.json"
     data = json.loads(p.read_text())

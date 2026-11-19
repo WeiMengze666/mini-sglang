@@ -109,7 +109,8 @@ def test_bound_nonadjacent_configs_are_readonly_and_consumed_by_explicit_checkpo
         bound[2] = bound[0]
     case.backend.prepare_checkpoints(case.batch)
     assert case.batch.attn_metadata.checkpoints.layer_configs[2] is records[0][1]
-    assert case.backend.checkpoint_quantum() is None  # strict context has no auto capability
+    expected = 64 if case.states.state_dtype == torch.bfloat16 else None
+    assert case.backend.checkpoint_quantum() == expected
 
 
 @pytest.mark.parametrize(

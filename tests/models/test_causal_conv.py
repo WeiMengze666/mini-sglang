@@ -5,7 +5,6 @@ import os
 import pytest
 import torch
 from minisgl.attention.kda import causal_conv1d
-from minisgl.core import Context
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="CUDA work must be explicitly queued"
@@ -30,17 +29,6 @@ def check_numeric(actual, x, weight, state):
     bound += unit / (1 - unit) * precise.abs() + storage.tiny * storage.eps
     assert ((actual.double() - precise).abs() <= bound).all()
     return tail
-
-
-def precision(monkeypatch, strict):
-    monkeypatch.setattr(
-        "minisgl.core._GLOBAL_CTX", Context(1, bf16_precision="strict" if strict else "default")
-    )
-
-
-@pytest.fixture(autouse=True)
-def default_precision(monkeypatch):
-    precision(monkeypatch, False)
 
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
@@ -99,11 +87,9 @@ def test_decode_starts_from_zero_history(dtype, batched):
     torch.testing.assert_close(history, tail, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("strict", [False, True])
-def test_fp32_accumulation_order_uses_the_native_operator(monkeypatch, strict):
+def test_fp32_accumulation_order_uses_the_native_operator():
     from sglang.kernels.ops.mamba.causal_conv1d_triton import causal_conv1d_update
 
-    precision(monkeypatch, strict)
     x = torch.ones(1, 32, device="cuda", dtype=torch.bfloat16)
     state = torch.ones(32, 3, device="cuda", dtype=x.dtype)
     weight = torch.tensor([1.0, 2**-24, -1.0, 2**-24], device="cuda").expand(32, -1).contiguous()
@@ -115,14 +101,10 @@ def test_fp32_accumulation_order_uses_the_native_operator(monkeypatch, strict):
     assert state.eq(1).all()
 
 
-@pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 @pytest.mark.parametrize("batched", [False, True])
 @pytest.mark.parametrize("tokens", [1, 2, 17])
-def test_chunk_append_preserves_borrowed_strided_history(
-    monkeypatch, strict, dtype, batched, tokens
-):
-    precision(monkeypatch, strict)
+def test_chunk_append_preserves_borrowed_strided_history(dtype, batched, tokens):
     torch.manual_seed(1129)
     prefix = (3,) if batched else ()
     source = torch.randn(*prefix, tokens * 2, 32, device="cuda", dtype=dtype)
@@ -144,8 +126,7 @@ def test_chunk_append_preserves_borrowed_strided_history(
     torch.testing.assert_close(backing, original, rtol=0, atol=0)
 
 
-def test_strict_decode_graph_uses_current_input(monkeypatch, request):
-    precision(monkeypatch, True)
+def test_decode_graph_uses_current_input(request):
     x = torch.randn(3, 1, 32, device="cuda", dtype=torch.bfloat16)
     state = torch.randn(3, 32, 3, device="cuda", dtype=x.dtype)
     saved = state.clone()

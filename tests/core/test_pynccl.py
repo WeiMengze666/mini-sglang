@@ -91,3 +91,38 @@ def _worker(rank, world, init_file):
 @pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")
 def test_eight_rank_pynccl_and_nccl_context_groups(tmp_path):
     mp.spawn(_worker, args=(8, str(tmp_path / "pynccl-group")), nprocs=8, join=True)
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+@pytest.mark.parametrize("backend", ["auto", "pynccl"])
+def test_pynccl_sizes_workspace_from_tensor_shape(monkeypatch, dtype, backend):
+    import minisgl.engine.engine as engine_module
+
+    group = object()
+    calls = []
+    distributed = SimpleNamespace(
+        init_process_group=lambda **kwargs: calls.append(("init", kwargs)),
+        group=SimpleNamespace(WORLD=group),
+    )
+    monkeypatch.setattr(engine_module, "torch", SimpleNamespace(distributed=distributed))
+    monkeypatch.setattr(
+        engine_module,
+        "enable_pynccl_distributed",
+        lambda info, cpu_group, max_bytes: calls.append(("enable", info, cpu_group, max_bytes)),
+    )
+    engine = engine_module.Engine.__new__(engine_module.Engine)
+    engine.dtype = dtype
+    config = SimpleNamespace(
+        distributed_backend=backend,
+        use_pynccl=True,
+        tp_info=SimpleNamespace(rank=0, size=8),
+        distributed_timeout=60,
+        distributed_addr="env://",
+        max_forward_len=129,
+        model_config=SimpleNamespace(hidden_size=64),
+    )
+    result = engine._init_communication(config)
+    assert result is group
+    assert calls[0][1]["backend"] == "gloo"
+    assert calls[1][:3] == ("enable", config.tp_info, group)
+    assert calls[1][3] == 129 * 64 * dtype.itemsize

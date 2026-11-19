@@ -258,20 +258,14 @@ def test_result_event_precedes_donation_and_ordinary_cache_and_lease_cleanup(mon
         assert matched.cached_len == 128
 
 
-@pytest.mark.parametrize(
-    "unsupported", [None, "strict", "unified", "overlap", "device", "no_cache"]
-)
+@pytest.mark.parametrize("unsupported", [None, "unified", "overlap", "device", "no_cache"])
 def test_bound_native_capability_and_single_metadata_attachment(case, monkeypatch, unsupported):
-    import minisgl.core as core
     from minisgl.attention.kda import checkpoints
     from test_checkpoint_binding import declared
 
     case.backend.prepare_model(declared(case))
-    core.get_global_ctx().bf16_precision = "default"
     case.cache.arena = None
-    if unsupported == "strict":
-        core.get_global_ctx().bf16_precision = "strict"
-    elif unsupported == "unified":
+    if unsupported == "unified":
         case.cache.arena = object()
     elif unsupported == "overlap":
         case.cache.supports_overlap = True
@@ -304,8 +298,8 @@ def test_generic_nonFI_checkpoint_capability128_without_FI_import(case, monkeypa
 
     calls = []
 
-    def capability(layers, config, cache, precision, batch):
-        calls.append((layers, config, cache, precision, batch))
+    def capability(layers, config, cache, batch):
+        calls.append((layers, config, cache, batch))
         return 128
 
     prepared = []
@@ -323,6 +317,6 @@ def test_generic_nonFI_checkpoint_capability128_without_FI_import(case, monkeypa
     case.backend.prepare_model(declared(case))
     assert case.backend.checkpoint_quantum(case.batch) == 128
     assert calls[0][0] is case.backend.checkpoint_layer_configs
-    assert calls[0][2] is case.cache and calls[0][4] is case.batch
+    assert calls[0][2] is case.cache and calls[0][3] is case.batch
     case.backend.prepare_checkpoints(case.batch)
     assert prepared == [case.cache] and case.batch.attn_metadata.checkpoints.quantum == 128

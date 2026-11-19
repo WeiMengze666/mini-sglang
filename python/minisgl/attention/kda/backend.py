@@ -111,7 +111,6 @@ class KDAAttentionBackend(BaseAttnBackend):
             self.checkpoint_layer_configs,
             self.config.cache_config,
             self.kvcache,
-            get_global_ctx().bf16_precision,
             batch,
         )
 

@@ -193,16 +193,12 @@ def test_two_public_traversals_release_all_inputs_before_cleanup(monkeypatch):
     assert not torch.cuda.is_initialized()
 
 
-@pytest.mark.parametrize(
-    "fault", ["fresh", "precision", "owner", "bundled", "rows", "placement", "supervisor"]
-)
+@pytest.mark.parametrize("fault", ["fresh", "owner", "bundled", "rows", "placement", "supervisor"])
 def test_refuses_unqualified_contracts_before_any_profile(monkeypatch, fault):
     op, calls, state = setup(monkeypatch, ParallelLayout())
     ctx = context()
     if fault == "fresh":
         ctx = replace(ctx, fresh_worker=False)
-    elif fault == "precision":
-        ctx = replace(ctx, precision="strict")
     elif fault == "owner":
         state.group = object()
     elif fault == "bundled":

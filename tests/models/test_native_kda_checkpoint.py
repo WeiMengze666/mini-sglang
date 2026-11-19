@@ -138,7 +138,7 @@ def test_real_fi_interior_forks_keep_h_axes_conv_and_restored_continuation(
             release_request=states.release_request,
             release_staged=states.release_staged,
         )
-        context = core.Context(page_size=PREFIX, bf16_precision="default")
+        context = core.Context(page_size=PREFIX)
         context.kv_cache = cache
         monkeypatch.setattr(core, "_GLOBAL_CTX", context)
         backend = KDAAttentionBackend(

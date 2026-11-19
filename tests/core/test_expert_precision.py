@@ -26,12 +26,10 @@ def expert(down_code):
 
 
 @pytest.mark.parametrize("tokens", [1, 3, 17])
-@pytest.mark.parametrize("strict", [False, True])
-def test_route_scalar_product_and_sum_storage(monkeypatch, tokens, strict):
+def test_route_scalar_product_and_sum_storage(tokens):
     import minisgl.moe.mxfp4 as module
     from minisgl.moe.routing import RoutingPolicy
 
-    monkeypatch.setattr(module, "use_strict_bf16", lambda: strict)
     executor = module.MXFP4Experts(
         [(0, expert(2)), (1, expert(1))],
         activation="silu",
@@ -51,17 +49,16 @@ def test_route_scalar_product_and_sum_storage(monkeypatch, tokens, strict):
     # precision from tile/accumulation choices and dequantization algorithms.
     activated = torch.nn.functional.silu(torch.tensor(1.0)).to(torch.bfloat16).float()
     values = (activated * torch.tensor([1.0, 0.5], device="cuda"))[ids.long()]
-    if strict:
-        expected = (values * weights.to(torch.bfloat16).float()).to(torch.bfloat16).float().sum(1)
-    else:
-        expected = (values * weights).sum(1)
+    expected = (values * weights).sum(1)
     expected = expected[:, None].expand(-1, 128)
     actual = executor.forward(x, weights, ids)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     assert actual.dtype == torch.float32
     default = (values * weights).sum(1)
     strict_value = (values * weights.to(torch.bfloat16).float()).to(torch.bfloat16).float().sum(1)
-    assert (default != strict_value).any(), "fixture must detect missing BF16 rounding"
+    assert (default != strict_value).any(), (
+        "fixture must distinguish FP32 routing from early BF16 rounding"
+    )
     assert torch.equal(
         ids,
         torch.tensor([[0, 1], [1, 0]], device="cuda", dtype=torch.int32).repeat(

@@ -4,19 +4,12 @@ import os
 
 import pytest
 import torch
-from minisgl.core import Context
 from minisgl.layers.activation import situ_and_mul
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1",
     reason="CUDA work must be explicitly queued",
 )
-
-
-def precision(monkeypatch, strict):
-    monkeypatch.setattr(
-        "minisgl.core._GLOBAL_CTX", Context(1, bf16_precision="strict" if strict else "default")
-    )
 
 
 @pytest.mark.parametrize(
@@ -31,9 +24,8 @@ def precision(monkeypatch, strict):
 @pytest.mark.parametrize("strided", [False, True])
 @pytest.mark.parametrize("tokens,channels", [(1, 7), (2, 32), (17, 127)])
 def test_situ_dtype_strides_and_chunk_independence(
-    monkeypatch, input_dtype, output_dtype, linear_beta, strided, tokens, channels
+    input_dtype, output_dtype, linear_beta, strided, tokens, channels
 ):
-    precision(monkeypatch, True)
     torch.manual_seed(1151)
     storage = torch.randn(tokens * 2, channels * 4, device="cuda", dtype=input_dtype) * 4
     gate = storage[::2, : channels * 2 : 2]
@@ -61,8 +53,7 @@ def test_situ_dtype_strides_and_chunk_independence(
 
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
-def test_situ_exact_zero_and_softcap_limits(monkeypatch, dtype):
-    precision(monkeypatch, True)
+def test_situ_exact_zero_and_softcap_limits(dtype):
     gate = torch.tensor([[-10000, 0, 10000, 10000]], device="cuda", dtype=dtype)
     up = torch.tensor([[10000, 10000, 10000, -10000]], device="cuda", dtype=dtype)
     expected = torch.tensor([[0, 0, 100, -100]], device="cuda", dtype=dtype)
@@ -70,8 +61,7 @@ def test_situ_exact_zero_and_softcap_limits(monkeypatch, dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
-def test_situ_graph_reads_current_inputs(monkeypatch, dtype, request):
-    precision(monkeypatch, True)
+def test_situ_graph_reads_current_inputs(dtype, request):
     gate = torch.randn(3, 128, device="cuda", dtype=dtype)
     up = torch.randn_like(gate)
     for _ in range(3):
@@ -90,20 +80,17 @@ def test_situ_graph_reads_current_inputs(monkeypatch, dtype, request):
     request.node.user_properties.append(("graph_replays", 1))
 
 
-@pytest.mark.parametrize("strict", [False, True])
-def test_situ_fp32_output_preserves_eager_arithmetic(monkeypatch, strict):
-    precision(monkeypatch, strict)
+def test_situ_fp32_output_preserves_eager_arithmetic():
     gate = torch.randn(7, 128, device="cuda", dtype=torch.float32)
     up = torch.randn_like(gate)
     expected = (4.0 * torch.tanh(gate / 4.0) * gate.sigmoid()) * (25.0 * torch.tanh(up / 25.0))
     torch.testing.assert_close(situ_and_mul(gate, up, 4.0, 25.0), expected, rtol=0, atol=0)
 
 
-def test_situ_default_policy_uses_the_native_operator(monkeypatch):
+def test_situ_uses_the_native_operator():
     from sglang.kernels.ops.activation import situ_and_mul as native
     from tvm_ffi import use_torch_stream
 
-    precision(monkeypatch, False)
     gate = torch.randn(7, 128, device="cuda", dtype=torch.bfloat16)
     up = torch.randn_like(gate)
     with use_torch_stream():

@@ -40,7 +40,6 @@ def test_engine_closes_graphs_and_communication_before_bootstrap(monkeypatch, fa
     engine = SimpleNamespace(
         device="cuda",
         graph_runner=SimpleNamespace(destroy_cuda_graphs=lambda: events.append("graphs")),
-        _precision_scope=SimpleNamespace(close=lambda: events.append("precision")),
     )
     with (
         pytest.raises(RuntimeError, match="bootstrap teardown failed")
@@ -48,4 +47,4 @@ def test_engine_closes_graphs_and_communication_before_bootstrap(monkeypatch, fa
         else nullcontext()
     ):
         module.Engine.shutdown(engine)
-    assert events == ["synchronize", "graphs", "communication", "bootstrap", "precision"]
+    assert events == ["synchronize", "graphs", "communication", "bootstrap"]

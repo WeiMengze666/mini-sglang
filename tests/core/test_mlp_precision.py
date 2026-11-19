@@ -81,12 +81,8 @@ def test_fp32_gate_up_rejects_unsupported_packed_projection():
 
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
-@pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("latent,shared", [(2, 1), (None, 0), (None, 1)])
-def test_mixture_collective_respects_storage_precision(monkeypatch, dtype, strict, latent, shared):
-    import minisgl.layers.latent_moe as module
-
-    monkeypatch.setattr(module, "use_strict_bf16", lambda: strict)
+def test_mixture_collective_respects_storage_precision(dtype, latent, shared):
     layer = make(
         LatentMoE, dtype, config(routed_expert_hidden_size=latent, num_shared_experts=shared)
     )
@@ -102,7 +98,7 @@ def test_mixture_collective_respects_storage_precision(monkeypatch, dtype, stric
     actual = layer.forward(x)
     assert seen == [
         (
-            torch.bfloat16 if strict and dtype == torch.bfloat16 else torch.float32,
+            torch.float32,
             # Expert and shared blocks retain their own contiguous row layout.
             torch.Size([6 * ((latent or 4) + 4)]) if shared else torch.Size([6, latent or 4]),
         )

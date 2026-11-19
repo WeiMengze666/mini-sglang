@@ -35,7 +35,7 @@ def validate_checkpoint_layers(layers_by_id, config):
     return configs
 
 
-def checkpoint_quantum(layers_by_id, config, cache, precision, batch=None):
+def checkpoint_quantum(layers_by_id, config, cache, batch=None):
     """Native KDA eligibility only; querying never reserves or writes state."""
     try:
         validate_checkpoint_layers(layers_by_id, config)
@@ -45,7 +45,6 @@ def checkpoint_quantum(layers_by_id, config, cache, precision, batch=None):
     if (
         states.conv_dtype != torch.bfloat16
         or states.state_dtype != torch.bfloat16
-        or precision != "default"
         or not _checkpoint_device_supported(cache.device)
     ):
         return None

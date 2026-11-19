@@ -77,7 +77,7 @@ common=(--model /data/models/Kimi-K3 --cases cases.json --batch-size 8 \
   --max-running-requests 48 --max-new-tokens 1024 --max-context 4096 \
   --tp-size 8 --dcp-size 8 --ep-size 1 --moe-backend auto --mxfp4-backend flashinfer \
   --activation-precision mxfp8 --kv-cache-dtype fp8_e4m3 --recurrent-state-dtype bfloat16 \
-  --bf16-precision default --cuda-graph --cuda-graph-max-bs 48)
+  --cuda-graph --cuda-graph-max-bs 48)
 torchrun --standalone --nnodes=1 --nproc-per-node=8 tests/validation/gsm8k_suite.py \
   "${common[@]}" --engine mini --attention-backend fi,sgl --distributed-backend mnnvl \
   --distributed-provider minisgl.distributed.sgl --output quality-mini

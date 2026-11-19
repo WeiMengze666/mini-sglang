@@ -144,7 +144,6 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
         activation_precision="mxfp8" if target else "bf16",
         kv_cache_dtype="fp8_e4m3" if target else "bfloat16",
         recurrent_state_dtype="bfloat16" if target else "float32",
-        bf16_precision="default" if target else "strict",
         max_context=4,
         batch_size=batch_size,
         max_running_requests=capacity,
@@ -210,7 +209,7 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
         assert config["disable_cuda_graph"] is (not target)
         assert config["tp_size"] == args.tp_size and config["dcp_size"] == args.dcp_size
         assert config["ep_size"] == args.ep_size
-        assert config["enable_deterministic_inference"] is (not target)
+        assert not config.get("enable_deterministic_inference", False)
     assert seen["group_size"] == batch_size
     assert seen["closed"]
     assert not torch.cuda.is_initialized()
@@ -379,7 +378,6 @@ def test_quality_cli_separates_request_groups_from_engine_capacity(
     assert cases.read_bytes() == original
     assert args.moe_backend == "marlin" and args.activation_precision == "bf16"
     assert args.kv_cache_dtype == "bfloat16" and args.recurrent_state_dtype == "float32"
-    assert args.bf16_precision == "strict"
     assert not torch.cuda.is_initialized()
 
 

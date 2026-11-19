@@ -55,7 +55,6 @@ class FlashInferEPBackend(FusedMoe):
             not specs
             or context.tp_cpu_group is None
             or not context.fresh_worker
-            or context.precision != "default"
             or not callable(context.abort)
             or any(p.activation_precision != "mxfp8" for p in plan)
             or any(

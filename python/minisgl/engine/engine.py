@@ -29,7 +29,6 @@ from minisgl.kvcache import create_kvcache_pool
 from minisgl.layers import set_rope_device
 from minisgl.models import create_model, load_weight
 from minisgl.moe import create_moe_backend, select_moe_backend
-from minisgl.precision import native_precision_scope, resolve_bf16_precision
 from minisgl.utils import div_even, init_logger, is_sm90_supported, is_sm100_supported, torch_dtype
 
 from .config import EngineConfig
@@ -110,7 +109,6 @@ class Engine:
         self.dtype = config.dtype
         self.worker_owner = worker_owner
         self.ctx = Context(config.logical_page_size)
-        self.ctx.bf16_precision = resolve_bf16_precision(config.bf16_precision)
         self.ctx.max_forward_len = config.max_forward_len
         set_global_ctx(self.ctx)
 
@@ -120,11 +118,9 @@ class Engine:
             self.ctx.moe_backend = self.moe_backend = create_moe_backend(config.moe_backend)
             self.moe_backend.validate_precision(config.mxfp4_activation_precision)
             if getattr(self.moe_backend, "requires_preparation", False) and (
-                worker_owner is None
-                or not worker_owner.fresh_worker
-                or self.ctx.bf16_precision != "default"
+                worker_owner is None or not worker_owner.fresh_worker
             ):
-                raise ValueError("This MoE backend requires a fresh owned default-precision worker")
+                raise ValueError("This MoE backend requires a fresh owned worker")
 
         # ======================= Model initialization ========================
         set_rope_device(self.device)
@@ -162,12 +158,7 @@ class Engine:
         else:
             self.model.load_state_dict(self._load_weight_state_dict(config))
 
-        if (
-            config.model_config.is_moe
-            and worker_owner is not None
-            and worker_owner.fresh_worker
-            and self.ctx.bf16_precision == "default"
-        ):
+        if config.model_config.is_moe and worker_owner is not None and worker_owner.fresh_worker:
             try:
                 from minisgl.distributed.context import create_expert_cpu_group
                 from minisgl.moe.prepare import MoePreparation
@@ -181,7 +172,6 @@ class Engine:
                         layout=layout,
                         local_rows=(config.max_running_req,),
                         cpu_group=resource.group if resource is not None else None,
-                        precision=self.ctx.bf16_precision,
                         fresh_worker=worker_owner.fresh_worker,
                         abort=worker_owner.abort,
                         tp_cpu_group=self.tp_cpu_group,
@@ -236,7 +226,6 @@ class Engine:
             (
                 str(self.dtype),
                 str(config.recurrent_state_dtype),
-                self.ctx.bf16_precision,
                 config.logical_page_size,
                 repr(config.model_config.cache_config),
                 config.tp_info.size,
@@ -280,26 +269,19 @@ class Engine:
             cache_handle=None,  # type: ignore
         )
         self.page_table[self.dummy_req.table_idx].fill_(num_tokens)  # point to dummy page
-        self._precision_scope = native_precision_scope(
-            self.ctx.bf16_precision, device=self.device, dtype=self.dtype
+        self.graph_runner = GraphRunner(
+            stream=self.stream,
+            device=self.device,
+            model=self.model,
+            attn_backend=self.attn_backend,
+            cuda_graph_bs=config.cuda_graph_bs,
+            cuda_graph_max_bs=config.cuda_graph_max_bs,
+            free_memory=init_free_memory,
+            max_seq_len=aligned_max_seq_len,
+            vocab_size=config.model_config.vocab_size,
+            dummy_req=self.dummy_req,
+            max_batch_size=max_graph_batch,
         )
-        try:
-            self.graph_runner = GraphRunner(
-                stream=self.stream,
-                device=self.device,
-                model=self.model,
-                attn_backend=self.attn_backend,
-                cuda_graph_bs=config.cuda_graph_bs,
-                cuda_graph_max_bs=config.cuda_graph_max_bs,
-                free_memory=init_free_memory,
-                max_seq_len=aligned_max_seq_len,
-                vocab_size=config.model_config.vocab_size,
-                dummy_req=self.dummy_req,
-                max_batch_size=max_graph_batch,
-            )
-        except BaseException:
-            self._precision_scope.close()
-            raise
 
     def _init_communication(self, config: EngineConfig) -> torch.distributed.ProcessGroup:
         backend = config.distributed_backend
@@ -315,12 +297,8 @@ class Engine:
             )
             tp_cpu_group = torch.distributed.group.WORLD
             assert tp_cpu_group is not None
-            # Registered staging buffers can change NCCL's BF16 reduction order.
-            # Strict precision uses caller buffers, matching direct NCCL collectives.
             max_bytes = (
-                0
-                if self.ctx.bf16_precision == "strict"
-                else config.max_forward_len * config.model_config.hidden_size * self.dtype.itemsize
+                config.max_forward_len * config.model_config.hidden_size * self.dtype.itemsize
             )
             enable_pynccl_distributed(config.tp_info, tp_cpu_group, max_bytes)
             return tp_cpu_group
@@ -567,15 +545,12 @@ class Engine:
         return ForwardOutput(next_tokens_gpu, next_tokens_cpu, copy_done_event)
 
     def shutdown(self) -> None:
-        try:
-            torch.cuda.synchronize(self.device)
-            self.graph_runner.destroy_cuda_graphs()
-            if hasattr(self, "moe_backend"):
-                self.moe_backend.close()
-            destroy_distributed()
-            torch.distributed.destroy_process_group()
-        finally:
-            self._precision_scope.close()
+        torch.cuda.synchronize(self.device)
+        self.graph_runner.destroy_cuda_graphs()
+        if hasattr(self, "moe_backend"):
+            self.moe_backend.close()
+        destroy_distributed()
+        torch.distributed.destroy_process_group()
 
 
 def _prepare_checkpoint_model(backend, records, cpu_group, signature, *, enabled=True):
@@ -656,7 +631,6 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("distributed_backend must be auto, torch, pynccl or mnnvl")
     if config.distributed_backend == "mnnvl" and not config.distributed_provider:
         raise ValueError("distributed_provider is required for the mnnvl backend")
-    override("bf16_precision", resolve_bf16_precision(config.bf16_precision))
     ParallelLayout(
         DistributedInfo(config.tp_info.rank, config.tp_info.size), config.dcp_size, config.ep_size
     )

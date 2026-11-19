@@ -86,7 +86,7 @@ def test_actual_auto_extra_buffer_factory_keeps_native_decode_capability(monkeyp
     object.__setattr__(config, "cache_type", "hybrid")
     engine._adjust_config(config)
     assert config.attention_backend == "fi,sgl"
-    ctx = core.Context(64, bf16_precision="default")
+    ctx = core.Context(64)
     ctx.kv_cache = cache_metadata()
     monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
     backend = create_attention_backend(config.attention_backend, model)

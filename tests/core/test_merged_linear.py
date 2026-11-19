@@ -114,7 +114,7 @@ def test_latent_moe_fused_front_matches_independent_cpu_path(monkeypatch):
     import minisgl.core as core
     from minisgl.layers.latent_moe import LatentMoE
 
-    monkeypatch.setattr(core, "_GLOBAL_CTX", core.Context(page_size=1, bf16_precision="strict"))
+    monkeypatch.setattr(core, "_GLOBAL_CTX", core.Context(page_size=1))
     config = SimpleNamespace(
         hidden_size=4,
         intermediate_size=4,

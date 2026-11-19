@@ -121,19 +121,19 @@ def test_hybrid_cleanup_releases_both_children_after_failure():
     assert events == [("kda", "failed"), ("mla", "finish")]
 
 
-@pytest.mark.parametrize("precision,kernel", [("strict", "sgl"), ("default", "flashinfer")])
-def test_flashinfer_factory_owns_its_kda_kernel(monkeypatch, precision, kernel):
+@pytest.mark.parametrize("name,kernel", [("fi", "flashinfer"), ("sgl", "sgl")])
+def test_attention_factory_owns_its_kda_kernel(monkeypatch, name, kernel):
     import minisgl.attention.fi as fi
     import minisgl.core as core
     from minisgl.attention import create_attention_backend
 
     cache = SimpleNamespace(device=torch.device("cpu"))
-    ctx = core.Context(page_size=1, bf16_precision=precision)
+    ctx = core.Context(page_size=1)
     ctx.kv_cache = cache
     monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
     monkeypatch.setattr(fi, "FlashInferMLABackend", lambda config: Backend("mla", []))
     config = SimpleNamespace(cache_config=object(), is_kda_layer=lambda layer_id: layer_id == 0)
-    backend = create_attention_backend("fi", config)
+    backend = create_attention_backend(name, config)
     assert isinstance(backend, HybridAttnBackend)
     assert backend.kda_backend.kernel.name == kernel
     assert backend.is_kda_layer(0) and not backend.is_kda_layer(1)

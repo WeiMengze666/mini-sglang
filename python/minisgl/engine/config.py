@@ -22,7 +22,6 @@ class EngineConfig:
     ep_size: int = 1
     mxfp4_backend: str = "auto"
     mxfp4_activation_precision: str = "auto"
-    bf16_precision: str = "auto"
     max_running_req: int = 256
     state_memory_ratio: float | None = None
     enable_unified_memory: bool = False

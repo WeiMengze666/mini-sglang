@@ -142,13 +142,6 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
-        "--bf16-precision",
-        choices=["auto", "default", "strict"],
-        default=ServerArgs.bf16_precision,
-        help="BF16 arithmetic policy: strict preserves reference rounding in attention and layers.",
-    )
-
-    parser.add_argument(
         "--max-running-requests",
         type=int,
         dest="max_running_req",

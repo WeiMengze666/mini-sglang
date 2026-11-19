@@ -49,7 +49,7 @@ def test_default_budgets_are_16384_and_overlap_is_enabled():
     ("--max-prefill-length", "128"), ("--cuda-graph-max-bs", "48"),
     ("--graph", "48"), ("--max-cached-states", "12"),
     ("--attn", "sgl"), ("--tokenizer-count", "0"), ("--tensor-parallel-size", "8"),
-    ("--enable-cache-overlap", None),
+    ("--enable-cache-overlap", None), ("--bf16-precision", "strict"),
 ])
 def test_removed_names_and_abbreviations_are_rejected(name, value):
     with pytest.raises(SystemExit):

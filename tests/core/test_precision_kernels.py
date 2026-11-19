@@ -64,11 +64,8 @@ def test_flashinfer_supports_hybrid_attention():
 
 @pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")
 @pytest.mark.parametrize("row_stride", [1, 2])
-def test_strict_rms_norm_rounds_after_weight_multiplication(monkeypatch, row_stride):
-    import minisgl.core as core
+def test_native_rms_norm_rounds_after_weight_multiplication(row_stride):
 
-    ctx = core.Context(page_size=1, bf16_precision="strict")
-    monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
     x = torch.tensor(
         [[0.03125, 0.5, 0.765625, 1.9921875], [0.1875, -0.203125, 1.71875, 2.5]],
         dtype=torch.bfloat16,
@@ -88,11 +85,8 @@ def test_strict_rms_norm_rounds_after_weight_multiplication(monkeypatch, row_str
     torch.testing.assert_close(actual.cpu(), expected, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("precision", ["strict", "default"])
-def test_cpu_rms_norm_uses_selected_rounding_policy(monkeypatch, precision):
-    import minisgl.core as core
+def test_cpu_rms_norm_rounds_after_weight_multiplication():
 
-    monkeypatch.setattr(core, "_GLOBAL_CTX", core.Context(page_size=1, bf16_precision=precision))
     x = torch.tensor(
         [[0.03125, 0.5, 0.765625, 1.9921875], [0.1875, -0.203125, 1.71875, 2.5]],
         dtype=torch.bfloat16,
@@ -104,17 +98,14 @@ def test_cpu_rms_norm_uses_selected_rounding_policy(monkeypatch, precision):
     assert not torch.equal(late, early)
     norm = TorchRMSNorm(4, 1e-5)
     norm.weight = weight
-    expected = late if precision == "strict" else early
-    torch.testing.assert_close(norm.forward(x), expected, rtol=0, atol=0)
+    torch.testing.assert_close(norm.forward(x), late, rtol=0, atol=0)
 
 
 @pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")
 @pytest.mark.parametrize("output_dtype", [torch.bfloat16, torch.float32])
-def test_strict_linear_matches_fp64_and_token_partition(monkeypatch, output_dtype):
-    import minisgl.core as core
+def test_strided_linear_matches_fp64_and_token_partition(output_dtype):
     from minisgl.layers.linear import linear_bf16
 
-    monkeypatch.setattr(core, "_GLOBAL_CTX", core.Context(page_size=1, bf16_precision="strict"))
     torch.manual_seed(76)
     for tokens, hidden, width in [(0, 65, 17), (27, 129, 35)]:
         storage = torch.randn(tokens * 2, hidden * 2, dtype=torch.bfloat16, device="cuda")

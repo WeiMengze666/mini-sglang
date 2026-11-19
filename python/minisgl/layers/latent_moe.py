@@ -11,7 +11,6 @@ from minisgl.layers.linear import Linear, MergedLinear, linear_bf16, linear_fp32
 from minisgl.layers.norm import TorchRMSNorm
 from minisgl.moe import TorchExpertExecutor, get_moe_backend
 from minisgl.moe.routing import GroupedRouting, RoutingPolicy
-from minisgl.precision import use_strict_bf16
 
 __all__ = ["GatedMLP", "GroupedRouter", "LatentMoE", "situ_and_mul"]
 
@@ -273,12 +272,10 @@ class LatentMoE(BaseOP):
             latent_size = x.shape[0] * routed.shape[1]
             mixed_out = packed[:latent_size].view(x.shape[0], routed.shape[1])
             shared_out = packed[latent_size:].view(x.shape[0], shape[-1])
-        strict_bf16 = x.dtype == torch.bfloat16 and use_strict_bf16()
 
         def expert_producer(out):
             options = {} if out is None else {"out": out}
-            mixed = self._backend.forward_experts(self._expert_executor, routed, routing, **options)
-            return mixed.to(x.dtype) if strict_bf16 else mixed
+            return self._backend.forward_experts(self._expert_executor, routed, routing, **options)
 
         def deferred_producer(out):
             return self._backend.forward_experts(
@@ -287,18 +284,19 @@ class LatentMoE(BaseOP):
 
         def shared_producer(out):
             options = {} if out is None else {"out": out}
-            dense = all(
-                op.weight_format == "dense"
-                for op in (self.shared_experts.gate_proj, self.shared_experts.up_proj)
-            )
-            return (
-                self.shared_experts.forward_from_projections(
+            shared = self.shared_experts
+            if front is not None:
+                return shared.forward_from_projections(
                     front["gate"], front["up"], dtype=x.dtype, **options
                 )
-                if front is not None
-                else self.shared_experts.forward_local(
-                    x, projection_dtype=torch.float32 if strict_bf16 and dense else None, **options
-                )
+            # The fused latent frontend feeds FP32 gate/up projections to the activation.
+            retain_fp32 = (
+                down is not None
+                and x.dtype == torch.bfloat16
+                and shared.gate_proj.weight_format == shared.up_proj.weight_format == "dense"
+            )
+            return shared.forward_local(
+                x, projection_dtype=torch.float32 if retain_fp32 else None, **options
             )
 
         shared_inputs = (x,) if front is None else (front["gate"], front["up"])

@@ -94,7 +94,6 @@ def execution_contract(args):
         "kv_cache_dtype": args.kv_cache_dtype,
         "recurrent_state_dtype": args.recurrent_state_dtype,
         "conv_state_dtype": "bfloat16",
-        "bf16_precision": args.bf16_precision,
         "tp_size": args.tp_size,
         "dcp_size": args.dcp_size,
         "ep_size": args.ep_size,
@@ -321,7 +320,6 @@ def run_mini(args, cases, stop_ids, *, worker_owner=None):
                 torch.bfloat16 if args.kv_cache_dtype == "bfloat16" else torch.float8_e4m3fn
             ),
             recurrent_state_dtype=getattr(torch, args.recurrent_state_dtype),
-            bf16_precision=args.bf16_precision,
             dcp_size=args.dcp_size,
             ep_size=args.ep_size,
             max_running_req=args.max_running_requests,
@@ -477,7 +475,6 @@ def run_sglang(args, cases, stop_ids):
         flashinfer_mxfp4_moe_precision=(
             "default" if args.activation_precision == "mxfp8" else "bf16"
         ),
-        enable_deterministic_inference=args.bf16_precision == "strict",
         **attention_options,
         **loader_options,
         chunked_prefill_size=4096,
@@ -584,7 +581,6 @@ def main():
     parser.add_argument(
         "--recurrent-state-dtype", choices=["float32", "bfloat16"], default="float32"
     )
-    parser.add_argument("--bf16-precision", choices=["strict", "default"], default="strict")
     for stage in ("", "prefill-", "decode-"):
         parser.add_argument(f"--sglang-{stage}attention-backend")
     parser.add_argument("--cuda-graph", action="store_true")

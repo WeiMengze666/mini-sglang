@@ -160,7 +160,6 @@ def install_policy(monkeypatch, route="tgv", *, invariant=False):
     )
     policy = gemm.Policy(sdk, tgv, True, lambda: invariant)
     monkeypatch.setattr(gemm, "_load_policy", cache(lambda: policy))
-    monkeypatch.setattr(gemm, "use_strict_bf16", lambda: False)
     monkeypatch.setattr(gemm, "_allocate", lambda x, m, n, dtype: fake((m, n), dtype))
     return policy, calls
 
@@ -258,20 +257,14 @@ def test_unsupported_metadata_declines_before_sdk_import(monkeypatch, invalid):
         out = weight[:2]
     elif invalid == "bias":
         bias = fake((31,))
-    monkeypatch.setattr(gemm, "use_strict_bf16", lambda: False)
     monkeypatch.setattr(gemm, "_load_policy", lambda: pytest.fail("unsupported input imported SDK"))
     assert gemm.try_bf16_gemm(x, weight, bias, out=out, output_dtype=dtype) is None
 
 
-def test_cpu_and_strict_keep_original_torch_without_importing_sdk(monkeypatch):
+def test_cpu_keeps_original_torch_without_importing_sdk(monkeypatch):
     monkeypatch.setattr(gemm, "_load_policy", lambda: pytest.fail("portable path imported SDK"))
     x, weight = torch.ones(2, 16, dtype=torch.bfloat16), torch.ones(32, 16, dtype=torch.bfloat16)
     torch.testing.assert_close(linear.linear_bf16(x, weight), F.linear(x, weight), rtol=0, atol=0)
-    monkeypatch.setattr(gemm, "use_strict_bf16", lambda: True)
-    x, weight = x.as_subclass(CudaMetadata), weight.as_subclass(CudaMetadata)
-    out = fake((2, 32))
-    assert linear._linear(x, weight, None, out=out) is out
-    assert out.eq(16).all()
 
 
 def test_retained_fp32_keeps_original_cast_for_mixed_and_wider_cpu_inputs():
@@ -347,7 +340,6 @@ def test_policy_loader_owns_only_pure_policy_and_declines_missing_dependencies(
             == "tgv"
         )
         if failure == "invariant":
-            monkeypatch.setattr(gemm, "use_strict_bf16", lambda: False)
             assert gemm.try_bf16_gemm(fake((2, 16)), fake((32, 16))) is None
     else:
         assert policy is None
@@ -376,7 +368,6 @@ def test_native_runtime_error_propagates_without_torch_retry(monkeypatch, out):
 
 
 def test_cold_import_is_rejected_inside_graph_capture(monkeypatch):
-    monkeypatch.setattr(gemm, "use_strict_bf16", lambda: False)
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
     monkeypatch.setattr(
         gemm.importlib, "import_module", lambda *args: pytest.fail("capture imported SDK")
@@ -386,9 +377,9 @@ def test_cold_import_is_rejected_inside_graph_capture(monkeypatch):
 
 
 @pytest.mark.parametrize("caller_out", [False, True])
-def test_strict_fp32_preserves_functional_and_out_mm_overloads(monkeypatch, caller_out):
-    monkeypatch.setattr(gemm, "use_strict_bf16", lambda: True)
-    monkeypatch.setattr(gemm, "_load_policy", lambda: pytest.fail("strict imported SDK"))
+def test_torch_fallback_preserves_fp32_functional_and_out_mm_overloads(monkeypatch, caller_out):
+    monkeypatch.setattr(gemm, "_load_policy", cache(lambda: None))
+    monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: False)
     calls = []
     output = fake((2, 32), torch.float32)
 

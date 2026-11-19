@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from functools import cache
 
 import torch
-from minisgl.precision import use_strict_bf16
 
 
 @dataclass(frozen=True)
@@ -100,10 +99,10 @@ def _allocate(x, m, n, dtype):
 def try_bf16_gemm(x, weight, bias=None, *, out=None, output_dtype=None):
     """Return native output, or decline before launching; never retry a kernel.
 
-    Normal graph warmup must cover each physical shape/tactic. Strict arithmetic
-    and unsupported layouts keep the caller's original Torch overload.
+    Normal graph warmup must cover each physical shape/tactic. Unsupported
+    layouts and batch-invariant SDK execution use the original Torch overload.
     """
-    if not x.is_cuda or use_strict_bf16():
+    if not x.is_cuda:
         return None
     if (
         x.ndim < 2

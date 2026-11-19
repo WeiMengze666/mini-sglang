@@ -140,7 +140,7 @@ def test_all_carrier_formats_are_persistent_before_tuning_or_budget(monkeypatch)
 
 
 @pytest.mark.parametrize(
-    "invalid", ["prefill", "decode", "bootstrap", "fresh", "precision", "owner", "frontend"]
+    "invalid", ["prefill", "decode", "bootstrap", "fresh", "owner", "frontend"]
 )
 def test_capability_rejection_precedes_resource_mutation(monkeypatch, invalid):
     import minisgl.distributed.expert as groups
@@ -154,8 +154,6 @@ def test_capability_rejection_precedes_resource_mutation(monkeypatch, invalid):
         ctx = replace(ctx, tp_cpu_group=None)
     elif invalid == "fresh":
         ctx = replace(ctx, fresh_worker=False)
-    elif invalid == "precision":
-        ctx = replace(ctx, precision="strict")
     elif invalid == "owner":
         ctx = replace(ctx, abort=None)
     plan = (signature(ctx),)
@@ -339,7 +337,6 @@ def test_actual_Engine_passes_budgets_before_KV_and_closes_before_groups(constru
     monkeypatch.setattr(
         torch.distributed, "destroy_process_group", lambda: f.events.append("bootstrap_close")
     )
-    value._precision_scope = SimpleNamespace(close=lambda: f.events.append("precision_close"))
     value.shutdown()
     assert (
         f.events.index("graphs_close")
@@ -349,13 +346,13 @@ def test_actual_Engine_passes_budgets_before_KV_and_closes_before_groups(constru
     )
 
 
-@pytest.mark.parametrize("bad", ["owner", "fresh", "precision"])
+@pytest.mark.parametrize("bad", ["owner", "fresh"])
 def test_actual_Engine_native_requirements_fail_before_weights(construction, bad):
     f = construction
     f.backend.requires_preparation = True
-    cfg = f.config(ep=2, precision="strict" if bad == "precision" else "auto")
+    cfg = f.config(ep=2)
     owner = None if bad == "owner" else WorkerOwner(bad != "fresh", lambda error: None)
-    with pytest.raises(ValueError, match="fresh owned default-precision"):
+    with pytest.raises(ValueError, match="fresh owned worker"):
         Engine(cfg, worker_owner=owner)
     assert "load_weights" not in f.events and "budget" not in f.events
 

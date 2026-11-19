@@ -96,7 +96,7 @@ class CheckpointPreparation(Protocol):
 
 
 CheckpointQuantum = Callable[
-    ["Mapping[int, KDAConfig]", "HybridCacheConfig", "HybridCache", str, "Batch | None"],
+    ["Mapping[int, KDAConfig]", "HybridCacheConfig", "HybridCache", "Batch | None"],
     int | None,
 ]
 

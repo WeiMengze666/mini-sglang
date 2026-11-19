@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import torch
 import torch.nn.functional as F
 from minisgl.layers.activation import resolve_gated_activation
-from minisgl.precision import use_strict_bf16
 
 from .fused import FusedMoe
 from .routing import RoutingPolicy, align_routes
@@ -17,7 +16,6 @@ from .routing import RoutingPolicy, align_routes
 
 class MarlinMoeBackend(FusedMoe):
     activation_precisions = ("bf16",)
-
 
     def prepare_experts(self, experts, **options):
         from . import create_expert_executor
@@ -69,7 +67,7 @@ class MarlinMXFP4Experts:
                     or op.weight_scale.device != op.weight_packed.device
                 ):
                     raise ValueError("Marlin requires raw E8M0 scale bytes on the weight device")
-        self._stable = use_strict_bf16() or (routing_policy or RoutingPolicy()).stable
+        self._stable = (routing_policy or RoutingPolicy()).stable
         self._ops = self._load_kernels()
         self._params = self._prepare_weights(items)
         self._intermediate = self._params.w2_weight.shape[1] * 16

@@ -30,7 +30,6 @@ def compare(left, right, *, expected_examples=None, expected_ep_sizes=None):
         "kv_cache_dtype",
         "recurrent_state_dtype",
         "conv_state_dtype",
-        "bf16_precision",
         "tp_size",
         "dcp_size",
         "ep_size",
@@ -41,6 +40,14 @@ def compare(left, right, *, expected_examples=None, expected_ep_sizes=None):
         for contract in contracts
     ):
         raise ValueError("Incomplete task precision or parallel layout contract")
+    # Older native-default reports describe the same arithmetic as current runs.
+    # Retain non-default legacy policies so mixed historical comparisons still fail.
+    contracts = [
+        {k: v for k, v in contract.items() if k != "bf16_precision" or v != "default"}
+        if contract is not None
+        else None
+        for contract in contracts
+    ]
     if expected_ep_sizes is not None:
         if len(expected_ep_sizes) != 2 or any(
             type(n) is not int or n < 1 for n in expected_ep_sizes

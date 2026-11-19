@@ -25,7 +25,6 @@ class MoePreparation:
     layout: ParallelLayout
     local_rows: tuple[int, ...]
     cpu_group: dist.ProcessGroup | None = None  # Borrowed; startup owner creates/closes once.
-    precision: str = "default"
     fresh_worker: bool = False
     abort: Callable[[BaseException], NoReturn] | None = None
     tp_cpu_group: dist.ProcessGroup | None = None  # Borrowed full-TP bootstrap.
@@ -222,10 +221,8 @@ def prepare(backend, model, context):
         try:
             model.apply(collect)
             if plan:
-                if not context.fresh_worker or context.precision != "default":
-                    raise ValueError(
-                        "Preparation requires a fresh exclusive default-precision worker"
-                    )
+                if not context.fresh_worker:
+                    raise ValueError("Preparation requires a fresh exclusive worker")
                 if not context.local_rows or any(
                     type(rows) is not int or rows < 1 for rows in context.local_rows
                 ):

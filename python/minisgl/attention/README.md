@@ -22,10 +22,8 @@ state; MLA manages token-page plans. Neither child implements the other's algori
 For a hybrid cache, `auto` selects `fi,sgl` with the `extra_buffer` strategy
 and `sgl` otherwise. In `fi,sgl`, prefill uses the FlashInfer backend and
 decode uses the SGLang backend. Both delegate MLA to FlashInfer.
-Use `--attention-backend fi` to explicitly select the FlashInfer composition. `--bf16-precision strict`
-selects the native SGLang KDA portfolio inside that backend; `default` uses FlashInfer's
-KDA recurrence. The Torch reference composition is `--attention-backend torch`.
-There is no separate Engine/Context KDA implementation setting.
+Selecting `fi` uses FlashInfer KDA, and selecting `sgl` uses SGLang KDA.
+The Torch reference composition is `--attention-backend torch`.
 
 An optional `--attention-provider module` exposes `register_attention_backends()`.
 It can register a composition with any KDA kernel spec and MLA backend. Fused KDA
@@ -81,11 +79,3 @@ describes that expanded head partition; attention CP is a separate topology.
 The scoped `context` communicator owns KV gathers and partial-readout all-to-all.
 Each scope delegates to a `DistributedImpl`, joins graph capture, and releases
 shared provider resources once.
-
-Strict BF16 execution uses the optional SDK's batch-invariant operator policy,
-the same policy selected by SGLang deterministic inference. Engine owns this
-process-scoped policy before graph capture and restores any policy it enabled
-on capture failure or shutdown. It also preserves an externally owned SDK mode.
-Default execution and CPU references do not install these optional operators.
-This policy includes native matrix multiplication and operator dispatch; setting
-cuBLAS arithmetic flags alone does not select the same kernels.

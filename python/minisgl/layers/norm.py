@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Tuple
 
 import torch
-from minisgl.precision import use_strict_bf16
 
 from .base import BaseOP
 
@@ -60,7 +59,8 @@ class TorchRMSNorm(BaseOP):
             return rms_norm(x, self.weight, self.eps, round_before_weight=False)
         xf = x.float()
         normalized = xf * torch.rsqrt(xf.square().mean(-1, keepdim=True) + self.eps)
-        if use_strict_bf16() and x.dtype == self.weight.dtype == torch.bfloat16:
+        if x.dtype == self.weight.dtype == torch.bfloat16:
+            # Match the native BF16 kernel: round after applying the scale.
             return (normalized * self.weight.float()).to(x.dtype)
         return normalized.to(x.dtype) * self.weight
 

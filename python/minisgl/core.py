@@ -103,9 +103,6 @@ class Batch:
 @dataclass
 class Context:
     page_size: int
-    # BF16 arithmetic policy selected by EngineConfig; standalone layer tests
-    # default to strict kernels through minisgl.precision.use_strict_bf16().
-    bf16_precision: str = "strict"
     # Producer reservations use the engine's forward-row bound, never graph size.
     max_forward_len: int | None = None
     # NOTE: this table always treat page_size = 1

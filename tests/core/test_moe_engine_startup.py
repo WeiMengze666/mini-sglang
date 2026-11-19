@@ -133,7 +133,6 @@ def construction(monkeypatch):
     monkeypatch.setattr(
         engine, "GraphRunner", lambda **kwargs: events.append("graphs") or SimpleNamespace()
     )
-    monkeypatch.setattr(engine, "native_precision_scope", lambda *args, **kwargs: nullcontext())
     monkeypatch.setattr(Engine, "_init_communication", lambda self, config: bootstrap)
     monkeypatch.setattr(Engine, "_sync_get_memory", memory)
     monkeypatch.setattr(Engine, "_check_capacity", lambda *args: events.append("precheck"))
@@ -160,7 +159,7 @@ def construction(monkeypatch):
     monkeypatch.setattr(dist, "new_group", new_group)
     monkeypatch.setattr(dist, "destroy_process_group", destroy)
 
-    def config(*, ep=1, rows=37, precision="auto", hybrid=True, is_moe=True):
+    def config(*, ep=1, rows=37, hybrid=True, is_moe=True):
         value = SimpleNamespace(
             tp_info=DistributedInfo(0, 4),
             dcp_size=1,
@@ -168,7 +167,6 @@ def construction(monkeypatch):
             attention_provider=None,
             dtype=torch.bfloat16,
             logical_page_size=64,
-            bf16_precision=precision,
             model_config=SimpleNamespace(
                 is_moe=is_moe,
                 cache_config=object() if hybrid else None,
@@ -220,7 +218,7 @@ def test_preparation_follows_weights_and_releases_only_owned_ETP_before_budget(
     assert len(f.contexts) == 1
     context = f.contexts[0]
     assert context.device == value.device and context.layout.ep_size == ep
-    assert context.local_rows == (rows,) and context.precision == "default"
+    assert context.local_rows == (rows,)
     assert context.fresh_worker and context.abort == owner.abort
     assert (
         f.events.index("after_load")
@@ -244,7 +242,7 @@ def test_preparation_follows_weights_and_releases_only_owned_ETP_before_budget(
     assert not torch.cuda.is_initialized()
 
 
-@pytest.mark.parametrize("mode", ["no_owner", "strict", "non_moe"])
+@pytest.mark.parametrize("mode", ["no_owner", "non_moe"])
 def test_optional_unsupported_paths_keep_original_initialization(construction, monkeypatch, mode):
     f = construction
     monkeypatch.setattr(
@@ -252,11 +250,10 @@ def test_optional_unsupported_paths_keep_original_initialization(construction, m
         "create_expert_cpu_group",
         lambda *args: pytest.fail("optional path created prep group"),
     )
-    config = f.config(precision="strict" if mode == "strict" else "auto", is_moe=mode != "non_moe")
+    config = f.config(is_moe=mode != "non_moe")
     owner = None if mode == "no_owner" else WorkerOwner(True, _abort_worker)
-    value = Engine(config, worker_owner=owner)
+    Engine(config, worker_owner=owner)
     assert not f.contexts and "prepare" not in f.events and "graphs" in f.events
-    assert value.ctx.bf16_precision == ("strict" if mode == "strict" else "default")
 
 
 def test_nonFI_empty_public_plan_does_not_profile_or_allocate_extra_GPU(construction, monkeypatch):

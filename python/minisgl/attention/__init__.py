@@ -77,17 +77,14 @@ def create_torch_backend(config: ModelConfig, *, cache=None):
 
 @register_attention_backend("fi", stateful_layers=True)
 def create_fi_backend(config: ModelConfig):
-    from minisgl.precision import use_strict_bf16
-
     from .fi import FlashInferBackend, FlashInferMLABackend
     from .kda.backend import KDAAttentionBackend
     from .kda.registry import get_kda_kernel
 
     if config.cache_config is None:
         return FlashInferBackend(config)
-    kernel = get_kda_kernel("sgl" if use_strict_bf16() else "flashinfer")
     return HybridAttnBackend(
-        KDAAttentionBackend(config, kernel),
+        KDAAttentionBackend(config, get_kda_kernel("flashinfer")),
         FlashInferMLABackend(config),
         config.is_kda_layer,
     )
