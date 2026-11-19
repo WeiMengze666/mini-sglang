@@ -23,5 +23,8 @@ def rms_norm(x, weight, eps, *, gate=None, round_before_weight=False, dtype=None
         else:
             from sglang.kernels.ops.layernorm import rmsnorm
 
+            # Native RMSNorm supports row strides but requires contiguous features.
+            if flat.stride(-1) != 1:
+                flat = flat.contiguous()
             result = rmsnorm(flat, weight, eps)
     return result.reshape(shape).to(dtype or x.dtype)
