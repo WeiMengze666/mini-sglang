@@ -8,7 +8,7 @@ import minisgl.core as core
 import pytest
 import torch
 from minisgl.attention.config import KDAConfig
-from minisgl.attention.kda import checkpoints, flashinfer, prefill, sgl
+from minisgl.attention.kda import flashinfer, checkpoints, prefill, projection, triton
 from minisgl.attention.kda.backend import KDAAttentionBackend
 from minisgl.attention.kda.registry import get_kda_kernel
 from minisgl.core import Batch, Req, SamplingParams
@@ -121,7 +121,7 @@ def test_all_layer_or_plan_rejection_is_atomic_and_releases_leases(case, monkeyp
     elif invalid == "decode":
         case.batch.phase = "decode"
     elif invalid == "unsupported_kernel":
-        case.backend.kernel = get_kda_kernel("torch")
+        case.backend.prefill_kernel = get_kda_kernel("torch")
     elif invalid == "capture":
         monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
 
@@ -141,7 +141,7 @@ def test_nonempty_unvalidated_plan_fails_before_any_numerical_call(case, monkeyp
     def unexpected(*args, **kwargs):
         pytest.fail("Unvalidated checkpoint reached numerical dispatch")
 
-    case.backend.kernel = replace(case.backend.kernel, indexed_prefill=unexpected)
+    case.backend.prefill_kernel = replace(case.backend.prefill_kernel, indexed_prefill=unexpected)
     layer = SimpleNamespace(_config=case.configs[0])
     with pytest.raises(ValueError, match="explicit validated"):
         case.backend.forward_layer(layer, 0, None, case.batch, case.cache, None)
@@ -172,9 +172,9 @@ def native_spies(case, monkeypatch):
         prepare_kernel=lambda name, create: create(),
         finish=finish,
     )
-    monkeypatch.setattr(sgl, "_kernels", lambda: (None, None, nullcontext))
+    monkeypatch.setattr(triton, "_kernels", lambda: (None, None, nullcontext))
     monkeypatch.setattr(
-        sgl,
+        projection,
         "project",
         lambda layer, x: (
             q,
@@ -185,6 +185,7 @@ def native_spies(case, monkeypatch):
         ),
     )
     monkeypatch.setattr(prefill, "supports", lambda *args: True)
+    monkeypatch.setattr(flashinfer, "supports_chunk_prefill", lambda device: True)
 
     def conv_fn(inputs, weights, bias, state, **kwargs):
         tracked = case.batch.attn_metadata.checkpoints
@@ -212,19 +213,19 @@ def native_spies(case, monkeypatch):
         records.append(entry)
         # Asymmetric dyadic V,K matrix detects a missing semantic transpose.
         native = ((torch.arange(128 * 128).reshape(1, 128, 128) % 19) / 8).to(torch.bfloat16)
-        native = (native + (len(records) - 1) * 4).to(kwargs["ssm_states"].dtype)
+        native = (native + (len(records) - 1) * 4).to(kwargs["initial_state"].dtype)
         entry["snapshot"] = native.clone()
-        for index in kwargs["cache_indices"].tolist():
-            kwargs["ssm_states"][index].copy_(native + 8)
+        for index in kwargs["ssm_state_indices"].tolist():
+            kwargs["initial_state"][index].copy_(native + 8)
         output = q + k + v
-        if kwargs["return_intermediate_states"]:
-            assert kwargs["num_state_checkpoints"] == 1
-            assert kwargs["state_checkpoint_every_n_tokens"] == 64
-            kwargs["track_state"].copy_(native.float().unsqueeze(0))
-            return output, None
-        return output
+        if kwargs["state_checkpoints"] is not None:
+            assert len(kwargs["state_checkpoints"]) == 1
+            assert kwargs["checkpoint_every_n_tokens"] == 64
+            kwargs["state_checkpoints"].copy_(native.unsqueeze(0))
+        return output, None
 
-    monkeypatch.setattr(flashinfer, "_prefill_kernel", lambda: SimpleNamespace(extend=extend))
+    monkeypatch.setattr("flashinfer.kda.recurrent_kda", extend)
+    monkeypatch.setattr("tvm_ffi.use_torch_stream", nullcontext)
     return layer, raw, records, prepared
 
 
@@ -279,16 +280,11 @@ def test_empty_plan_has_no_tracking_allocations_or_extra_native_keywords(case, m
     )
     assert result.shape == (67, 1, 128)
     assert len(records) == 1 and prepared == [{}]
-    assert set(records[0]["kwargs"]) == {
-        "ssm_states",
-        "cache_indices",
-        "query_start_loc",
-        "A_log",
-        "dt_bias",
-        "lower_bound",
-        "return_intermediate_states",
-    }
-    assert records[0]["kwargs"]["return_intermediate_states"] is False
+    kwargs = records[0]["kwargs"]
+    assert kwargs["state_checkpoints"] is None
+    assert kwargs["checkpoint_cu_starts"] is None
+    assert kwargs["checkpoint_state_indices"] is None
+    assert kwargs["checkpoint_every_n_tokens"] == 0
     case.states.release_request(0, 10)
 
 
@@ -303,7 +299,7 @@ def test_any_tracked_layer_failure_releases_undonated_plans(case, monkeypatch, f
     if failure == "conv":
         monkeypatch.setattr(prefill, "_conv_kernel", lambda: fail)
     elif failure == "recurrence":
-        monkeypatch.setattr(flashinfer, "_prefill_kernel", lambda: SimpleNamespace(extend=fail))
+        monkeypatch.setattr("flashinfer.kda.recurrent_kda", fail)
     elif failure == "finish":
         layer.finish = fail
     else:

@@ -219,7 +219,7 @@ def test_engine_guards_and_existing_model_config(tmp_path, monkeypatch):
     model_config = ModelConfig.from_hf(clone)
     engine = SchedulerConfig(str(tmp_path), DistributedInfo(0, 1), torch.bfloat16)
     _adjust_config(engine)
-    assert engine.attention_backend == "sgl"
+    assert engine.attention_backend == "auto"
     assert engine.cuda_graph_bs == [] and engine.cache_type == "hybrid"
     reference = SchedulerConfig(
         str(tmp_path), DistributedInfo(0, 1), torch.bfloat16, attention_backend="torch"
@@ -229,7 +229,7 @@ def test_engine_guards_and_existing_model_config(tmp_path, monkeypatch):
 
     engine_tp = SchedulerConfig(str(tmp_path), DistributedInfo(0, 2), torch.bfloat16)
     _adjust_config(engine_tp)
-    assert engine_tp.attention_backend == "sgl" and engine_tp.use_pynccl
+    assert engine_tp.attention_backend == "auto" and engine_tp.use_pynccl
     engine_torch = SchedulerConfig(
         str(tmp_path), DistributedInfo(0, 2), torch.bfloat16, use_pynccl=False
     )

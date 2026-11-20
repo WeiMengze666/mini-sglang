@@ -36,12 +36,9 @@ class SequenceAttnMetadata(BaseAttnMetadata):
 
 
 @dataclass
-class HybridAttnMetadata(BaseAttnMetadata):
-    kda: BaseAttnMetadata | None = None
-    mla: BaseAttnMetadata | None = None
-
-    def get_last_indices(self, bs):
-        return self.kda.get_last_indices(bs)
+class HybridAttnMetadata(SequenceAttnMetadata):
+    kda: SequenceAttnMetadata
+    mla: SequenceAttnMetadata
 
 
 class BaseAttnBackend(ABC):
@@ -60,15 +57,6 @@ class BaseAttnBackend(ABC):
     def finish_capture(self, batch) -> None:
         """Release any temporary cache ownership used to warm/capture a graph."""
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
-        """Execute a stateful projection layer, when supported by the backend."""
-        raise NotImplementedError("This backend only supports Q/K/V attention")
-
-    @abstractmethod
-    def forward(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, layer_id: int, batch: Batch
-    ) -> torch.Tensor: ...
-
     @abstractmethod
     def prepare_metadata(self, batch: Batch) -> None: ...
 
@@ -80,6 +68,40 @@ class BaseAttnBackend(ABC):
 
     @abstractmethod
     def prepare_for_replay(self, batch: Batch) -> None: ...
+
+
+class QKVAttnBackend(BaseAttnBackend):
+    @abstractmethod
+    def forward(
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, layer_id: int, batch: Batch
+    ) -> torch.Tensor: ...
+
+
+class LayerAttnBackend(BaseAttnBackend):
+    """Attention with layer-owned projections and algorithm-specific batch state."""
+
+    @abstractmethod
+    def forward_layer(
+        self, layer, layer_id, x, batch, cache, page_table, *, residual=None, metadata=None
+    ): ...
+
+    @abstractmethod
+    def build_metadata(self, batch): ...
+
+    @abstractmethod
+    def capture_metadata(self, batch): ...
+
+    @abstractmethod
+    def replay_metadata(self, batch, metadata): ...
+
+    def prepare_metadata(self, batch):
+        batch.attn_metadata = self.build_metadata(batch)
+
+    def prepare_for_capture(self, batch):
+        batch.attn_metadata = self.capture_metadata(batch)
+
+    def prepare_for_replay(self, batch):
+        self.replay_metadata(batch, batch.attn_metadata)
 
 
 class PrefillDecodeAttnBackend(BaseAttnBackend):
@@ -135,7 +157,7 @@ class PrefillDecodeAttnBackend(BaseAttnBackend):
         self.decode_backend.prepare_for_replay(batch)
 
 
-class HybridAttnBackend(BaseAttnBackend):
+class HybridAttnBackend(LayerAttnBackend):
     """Compose KDA and MLA backends using a model-independent layer predicate."""
 
     def __init__(self, kda_backend, mla_backend, is_kda_layer):
@@ -159,49 +181,29 @@ class HybridAttnBackend(BaseAttnBackend):
     def checkpoint_quantum(self, batch=None):
         return self.kda_backend.checkpoint_quantum(batch)
 
-    def _call(self, kind, batch, method, *args, **kwargs):
-        metadata = batch.attn_metadata
-        assert isinstance(metadata, HybridAttnMetadata)
-        batch.attn_metadata = getattr(metadata, kind)
-        try:
-            return getattr(getattr(self, kind + "_backend"), method)(*args, **kwargs)
-        finally:
-            setattr(metadata, kind, batch.attn_metadata)
-            batch.attn_metadata = metadata
-
-    def _prepare(self, method, batch):
-        for kind in ("kda", "mla"):
-            self._call(kind, batch, method, batch)
-
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
-        kind = "kda" if self.is_kda_layer(layer_id) else "mla"
-        return self._call(
-            kind,
-            batch,
-            "forward_layer",
-            layer,
-            layer_id,
-            x,
-            batch,
-            cache,
-            page_table,
-            residual=residual,
+    def forward_layer(
+        self, layer, layer_id, x, batch, cache, page_table, *, residual=None, metadata=None
+    ):
+        metadata = batch.attn_metadata if metadata is None else metadata
+        if self.is_kda_layer(layer_id):
+            backend, child = self.kda_backend, metadata.kda
+        else:
+            backend, child = self.mla_backend, metadata.mla
+        return backend.forward_layer(
+            layer, layer_id, x, batch, cache, page_table, metadata=child, residual=residual
         )
 
-    def forward(self, q, k, v, layer_id, batch):
-        kind = "kda" if self.is_kda_layer(layer_id) else "mla"
-        return self._call(kind, batch, "forward", q, k, v, layer_id, batch)
-
-    def prepare_metadata(self, batch):
-        batch.attn_metadata = HybridAttnMetadata()
-        self._prepare("prepare_metadata", batch)
+    def build_metadata(self, batch):
+        kda = self.kda_backend.build_metadata(batch)
+        mla = self.mla_backend.build_metadata(batch, cu_seqlens_q=kda.cu_seqlens_q)
+        return HybridAttnMetadata(kda.cu_seqlens_q, kda, mla)
 
     def init_capture_graph(self, max_seq_len, bs_list):
         self.kda_backend.init_capture_graph(max_seq_len, bs_list)
         self.mla_backend.init_capture_graph(max_seq_len, bs_list)
         self._graph_sizes = set(bs_list)
 
-    def prepare_for_capture(self, batch):
+    def capture_metadata(self, batch):
         from minisgl.core import get_global_ctx
 
         if not self._graph_sizes:
@@ -211,9 +213,10 @@ class HybridAttnBackend(BaseAttnBackend):
         batch.padded_reqs = batch.reqs
         device = get_global_ctx().kv_cache.device
         batch.out_loc = torch.arange(batch.size, device=device, dtype=torch.int32)
-        batch.attn_metadata = HybridAttnMetadata()
         try:
-            self._prepare("prepare_for_capture", batch)
+            kda = self.kda_backend.capture_metadata(batch)
+            mla = self.mla_backend.capture_metadata(batch, cu_seqlens_q=kda.cu_seqlens_q)
+            return HybridAttnMetadata(kda.cu_seqlens_q, kda, mla)
         except Exception:
             self.finish_capture(batch)
             raise
@@ -224,7 +227,8 @@ class HybridAttnBackend(BaseAttnBackend):
         finally:
             self.mla_backend.finish_capture(batch)
 
-    def prepare_for_replay(self, batch):
+    def replay_metadata(self, batch, metadata):
         if not self._graph_sizes:
             raise ValueError("No hybrid CUDA graph sizes were initialized")
-        self._prepare("prepare_for_replay", batch)
+        self.kda_backend.replay_metadata(batch, metadata.kda)
+        self.mla_backend.replay_metadata(batch, metadata.mla)

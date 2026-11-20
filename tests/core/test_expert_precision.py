@@ -27,7 +27,7 @@ def expert(down_code):
 
 @pytest.mark.parametrize("tokens", [1, 3, 17])
 def test_route_scalar_product_and_sum_storage(tokens):
-    import minisgl.moe.mxfp4 as module
+    import minisgl.moe.experts.triton as module
     from minisgl.moe.routing import RoutingPolicy
 
     executor = module.MXFP4Experts(

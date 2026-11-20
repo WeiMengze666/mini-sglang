@@ -53,7 +53,7 @@ class _NormView:
 
 @cache
 def _native_kernels():
-    from sglang.srt.layers.attn_residual import _aggregate, aggregate_stream
+    from minisgl.kernel.residual import _aggregate, aggregate_stream
     from tvm_ffi import use_torch_stream
 
     return _aggregate, aggregate_stream, use_torch_stream

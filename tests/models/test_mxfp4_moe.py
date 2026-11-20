@@ -54,7 +54,7 @@ def _projection(inputs, outputs, dtype):
 def test_grouped_expert_executor(
     dtype, activation, stable_routing, tokens, selection, experts, width
 ):
-    from minisgl.moe.mxfp4 import MXFP4Experts
+    from minisgl.moe.experts.triton import MXFP4Experts
 
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(103)
@@ -102,7 +102,7 @@ def test_grouped_expert_executor(
 
 @pytest.mark.parametrize("tokens", [2, 8])
 def test_large_experts_preserve_duplicate_rows(tokens):
-    from minisgl.moe.mxfp4 import MXFP4Experts
+    from minisgl.moe.experts.triton import MXFP4Experts
 
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.manual_seed(113)

@@ -196,8 +196,8 @@ def test_plan_handoff_or_original_layout_fallback_without_second_decode(monkeypa
     )
     monkeypatch.setitem(
         sys.modules,
-        "sglang.kernels.ops.attention.utils",
-        SimpleNamespace(concat_mla_absorb_q_general=lambda *args: pytest.fail("concat")),
+        "minisgl.kernel.latent.concat",
+        SimpleNamespace(concat_mla_absorb_q=lambda *args: pytest.fail("concat")),
     )
     monkeypatch.setitem(sys.modules, "tvm_ffi", SimpleNamespace(use_torch_stream=nullcontext))
     monkeypatch.setattr(native, "try_fixup_zero_kv_rows", fixup)

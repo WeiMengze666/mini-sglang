@@ -5,7 +5,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 import torch
-from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
 
 class DeviceInput(torch.Tensor):
@@ -72,7 +72,7 @@ def inputs(rows=3):
 
 @pytest.mark.parametrize("rows", [1, 48, 64])
 def test_fused_same_call_ids_carrier_and_scale_bytes(executor, monkeypatch, rows):
-    from minisgl.moe import sgl
+    from minisgl.moe import routing as routing_ops
 
     obj, calls = executor
     x, ids, weights, packed, q, scales = inputs(rows)
@@ -82,7 +82,7 @@ def test_fused_same_call_ids_carrier_and_scale_bytes(executor, monkeypatch, rows
         native_calls.append(actual_x.shape[0])
         return weights, ids, packed, q, scales
 
-    monkeypatch.setattr(sgl, "fused_route_quant", native)
+    monkeypatch.setattr(routing_ops, "fused_route_quant", native)
     routing = SimpleNamespace(topk=2, select=lambda backend: pytest.fail("second router"))
     actual_ids, payloads = obj.prepare_dispatch_inputs(object(), x, routing)
     assert actual_ids is ids and payloads[0] is q and payloads[2] is packed
@@ -100,13 +100,15 @@ def test_fused_same_call_ids_carrier_and_scale_bytes(executor, monkeypatch, rows
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
 def test_uncovered_preserves_unpacked_weight_abi_and_one_quantization(executor, monkeypatch, dtype):
-    from minisgl.moe import sgl
+    from minisgl.moe import routing as routing_ops
 
     obj, calls = executor
     x, ids, weights, packed, q, scales = inputs(65)
     weights = device(weights.to(dtype))
     events = []
-    monkeypatch.setattr(sgl, "fused_route_quant", lambda x, r: events.append(("fused", len(x))))
+    monkeypatch.setattr(
+        routing_ops, "fused_route_quant", lambda x, r: events.append(("fused", len(x)))
+    )
 
     def select(backend):
         events.append("route")
@@ -117,7 +119,7 @@ def test_uncovered_preserves_unpacked_weight_abi_and_one_quantization(executor, 
         events.append("quant")
         return q, scales
 
-    module = ModuleType("sglang.kernels.ops.quantization.per_token_group_quant")
+    module = ModuleType("minisgl.kernel.experts.group_quant")
     module.per_token_group_quant = quant
     monkeypatch.setitem(sys.modules, module.__name__, module)
     actual_ids, payloads = obj.prepare_dispatch_inputs(object(), x, SimpleNamespace(select=select))
@@ -231,11 +233,13 @@ def test_unsupported_preparation_declines_before_routing(executor, monkeypatch):
 
 
 def test_ep1_preparation_retains_original_four_tuple(executor, monkeypatch):
-    from minisgl.moe import sgl
+    from minisgl.moe import routing as routing_ops
 
     obj, calls = executor
     x, ids, weights, packed, q, scales = inputs(48)
-    monkeypatch.setattr(sgl, "fused_route_quant", lambda *a: (weights, ids, packed, q, scales))
+    monkeypatch.setattr(
+        routing_ops, "fused_route_quant", lambda *a: (weights, ids, packed, q, scales)
+    )
     routing = SimpleNamespace(topk=2, select=lambda *a: pytest.fail("second router"))
     prepared = obj.prepare_inputs(object(), x, routing)
     assert len(prepared) == 4 and prepared[0] is q and prepared[2] is packed

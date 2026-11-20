@@ -7,7 +7,7 @@ import torch
 
 @cache
 def _add3_ops():
-    from sglang.kernels.ops.elementwise import add3
+    from minisgl.kernel import add3
     from tvm_ffi import use_torch_stream
 
     return add3, use_torch_stream

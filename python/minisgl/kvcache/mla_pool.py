@@ -41,7 +41,7 @@ class MLACacheWrite:
         )
 
     def fused_query(self, query, suffix):
-        if self.implementation != "sgl":
+        if self.implementation != "native":
             return None
         cache = self.cache.mla
         return cache._store_and_concat_query(
@@ -261,7 +261,7 @@ class MLACache:
             self.rope_dim,
         ):
             raise ValueError("MLA token/cache shapes differ; do not write padded tokens")
-        if implementation == "sgl" and latent.is_cuda:
+        if implementation == "native" and latent.is_cuda:
             from minisgl.kernel import store_mla
 
             if self.arena is not None:

@@ -102,7 +102,7 @@ def situ_and_mul(
         % (_activation_vector_bytes(gate.device) // max(gate.element_size(), dtype.itemsize))
         == 0
     ):
-        from sglang.kernels.ops.activation import situ_and_mul as fused_situ
+        from minisgl.kernel.situ import situ_and_mul as fused_situ
         from tvm_ffi import use_torch_stream
 
         width = gate.shape[-1]

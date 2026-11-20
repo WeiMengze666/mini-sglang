@@ -13,9 +13,9 @@ from minisgl.attention.kda.registry import (
 
 
 def test_builtin_kda_backends_are_registered():
-    assert {"torch", "flashinfer", "sgl"}.issubset(set(KDA_KERNELS.supported_names()))
-    assert callable(get_kda_kernel("sgl").decode)
-    assert callable(get_kda_kernel("sgl").project)
+    assert {"torch", "flashinfer", "triton"}.issubset(set(KDA_KERNELS.supported_names()))
+    assert callable(get_kda_kernel("triton").decode)
+    assert callable(get_kda_kernel("triton").project)
 
 
 def test_decode_result_keeps_norm_stage_explicit():
@@ -42,7 +42,7 @@ def test_cuda_kernel_adapters_fall_back_for_portable_inputs():
     q, k, v, forget = [torch.randn(3, 2, 8) for _ in range(4)]
     args = (q, k, v, forget, torch.randn(3, 2), torch.randn(2), torch.randn(16), None, -5.0)
     expected = get_kda_kernel("torch").recurrence(*args)
-    for name in ("flashinfer", "sgl"):
+    for name in ("flashinfer", "triton"):
         actual = get_kda_kernel(name).recurrence(*args)
         for a, b in zip(actual, expected):
             torch.testing.assert_close(a, b, rtol=0, atol=0)
@@ -145,19 +145,19 @@ def test_projection_backend_and_weight_reload_own_their_metadata():
 
 def test_native_projection_and_decode_are_lazy_for_cpu(monkeypatch):
     from minisgl.attention.config import KDAConfig
-    from minisgl.attention.kda import sgl
+    from minisgl.attention.kda import fused_decode, projection
     from minisgl.layers.kda import KDALayer
 
     def unexpected():
         raise AssertionError("CPU execution must not import CUDA-only kernel dependencies")
 
-    monkeypatch.setattr(sgl, "_projection_kernels", unexpected)
-    monkeypatch.setattr(sgl, "_decode_kernels", unexpected)
+    monkeypatch.setattr(projection, "_projection_kernels", unexpected)
+    monkeypatch.setattr(fused_decode, "_decode_kernels", unexpected)
     layer = KDALayer(KDAConfig(7, 2, 4, 4, full_rank_gate=True))
     for weight in layer.state_dict().values():
         weight.fill_(0.1)
     x = torch.ones(3, 7)
-    for got, want in zip(get_kda_kernel("sgl").project(layer, x), layer.project(x)):
+    for got, want in zip(get_kda_kernel("triton").project(layer, x), layer.project(x)):
         torch.testing.assert_close(got, want, rtol=0, atol=0)
-    assert get_kda_kernel("sgl").decode(layer, x, None) is None
+    assert get_kda_kernel("triton").decode(layer, x, None) is None
     assert layer._kernel_plans == {}

@@ -62,7 +62,7 @@ def make_cache(monkeypatch, cp, unified, device, *, native=False, long=False):
                 data[:, :512],
                 data[:, 512:],
                 table[row, : lengths[row]],
-                implementation="sgl" if native else "torch",
+                implementation="native" if native else "torch",
             )
             if native:
                 actual = cache.gather_mla(layer, table[row, cp - 1 : lengths[row] : cp])
@@ -163,9 +163,7 @@ def test_paged_decode_graph_replans_after_compaction(monkeypatch, cp, unified, l
     captured.nonempty = captured.lengths.to("cuda") > 0
 
     def run(meta):
-        return native.decode(
-            q, cache.paged_layer(3), weight, meta, nope_dim=192, value_dim=128
-        )
+        return native.decode(q, cache.paged_layer(3), weight, meta, nope_dim=192, value_dim=128)
 
     stream = torch.cuda.Stream()
     stream.wait_stream(torch.cuda.current_stream())

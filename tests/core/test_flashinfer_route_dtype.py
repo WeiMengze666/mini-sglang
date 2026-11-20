@@ -5,7 +5,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 import torch
-from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
 
 class DeviceInput(torch.Tensor):
@@ -88,8 +88,8 @@ def test_unsupported_route_dtype_is_rejected_before_sdk(executor, dtype):
 
 
 def test_prepared_routes_reach_sdk_without_duplicate_routing_or_quantization(executor, monkeypatch):
-    from minisgl.moe import sgl
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe import routing as routing_ops
+    from minisgl.moe.experts.fused import FusedMoe
     from minisgl.moe.routing import GroupedRouting
 
     obj, calls = executor
@@ -104,7 +104,7 @@ def test_prepared_routes_reach_sdk_without_duplicate_routing_or_quantization(exe
         assert actual_x is x and actual_routing is routing
         return None, None, packed, quantized, scales
 
-    monkeypatch.setattr(sgl, "fused_route_quant", prepare)
+    monkeypatch.setattr(routing_ops, "fused_route_quant", prepare)
     backend = FusedMoe()
     monkeypatch.setattr(backend, "route", lambda *a, **kw: pytest.fail("duplicate routing"))
     result = backend.forward_experts(obj, x, routing)
@@ -118,8 +118,8 @@ def test_prepared_routes_reach_sdk_without_duplicate_routing_or_quantization(exe
 
 
 def test_uncovered_preparation_keeps_unpacked_fp32_routes(executor, monkeypatch):
-    from minisgl.moe import sgl
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe import routing as routing_ops
+    from minisgl.moe.experts.fused import FusedMoe
     from minisgl.moe.routing import GroupedRouting
 
     obj, calls = executor
@@ -130,10 +130,10 @@ def test_uncovered_preparation_keeps_unpacked_fp32_routes(executor, monkeypatch)
     ids = torch.zeros(3, 2, dtype=torch.int32)
     backend = FusedMoe()
     monkeypatch.setattr(backend, "route", lambda *a, **kw: (weights, ids))
-    monkeypatch.setattr(sgl, "fused_route_quant", lambda *a: None)
+    monkeypatch.setattr(routing_ops, "fused_route_quant", lambda *a: None)
     quantized = torch.empty(3, 256, dtype=torch.float8_e4m3fn)
     scales = torch.zeros(3, 2, dtype=torch.int32)
-    quant = ModuleType("sglang.kernels.ops.quantization.per_token_group_quant")
+    quant = ModuleType("minisgl.kernel.experts.group_quant")
     quant.per_token_group_quant = lambda *a, **kw: (quantized, scales)
     monkeypatch.setitem(sys.modules, quant.__name__, quant)
     backend.forward_experts(obj, x, routing)
@@ -149,8 +149,7 @@ def test_native_preparation_respects_semantics_and_sdk_coverage(executor, monkey
     from contextlib import contextmanager
     from dataclasses import replace
 
-    from minisgl.moe.routing import GroupedRouting
-    from minisgl.moe.sgl import fused_route_quant
+    from minisgl.moe.routing import GroupedRouting, fused_route_quant
 
     x = torch.zeros(3, 256, dtype=torch.float32).as_subclass(DeviceInput)
     routing = GroupedRouting(
@@ -181,13 +180,18 @@ def test_native_preparation_respects_semantics_and_sdk_coverage(executor, monkey
         assert a == (routing.logits, routing.bias, x, 2, True, 2.5, True)
         return result
 
-    module = ModuleType("sglang.kernels.ops.moe")
-    module.moe_route_quant_fused = SimpleNamespace(
-        covered=lambda *a: condition != "uncovered",
-        available=lambda: condition != "unavailable",
-        route_quant_fused=kernel,
+    from minisgl.kernel import experts
+
+    monkeypatch.setattr(
+        experts,
+        "route_quant",
+        SimpleNamespace(
+            covered=lambda *a: condition != "uncovered",
+            available=lambda: condition != "unavailable",
+            route_quant_fused=kernel,
+        ),
+        raising=False,
     )
-    monkeypatch.setitem(sys.modules, module.__name__, module)
     ffi = ModuleType("tvm_ffi")
 
     @contextmanager
@@ -207,7 +211,7 @@ def test_native_preparation_respects_semantics_and_sdk_coverage(executor, monkey
 
 @pytest.mark.parametrize("fused", [False, True])
 def test_caller_output_reaches_sdk_and_returns_exact_destination(executor, monkeypatch, fused):
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe.experts.fused import FusedMoe
 
     obj, calls = executor
     obj._w2 = torch.empty(1).as_subclass(DeviceInput)

@@ -53,7 +53,7 @@ def native_chunk(args, pool, indices, a, dt):
 @pytest.mark.parametrize("state_dtype", [torch.bfloat16, torch.float32])
 @pytest.mark.parametrize("tokens", [7, 64, 143])
 def test_chunk_continuation_keeps_native_state_dtype(state_dtype, tokens):
-    from minisgl.attention.kda.sgl import recurrent_kda
+    from minisgl.attention.kda.triton import recurrent_kda
 
     torch.manual_seed(410 + tokens)
     heads = 12
@@ -79,7 +79,7 @@ def test_chunk_continuation_keeps_native_state_dtype(state_dtype, tokens):
 @pytest.mark.parametrize("batch", [1, 8, 48])
 @pytest.mark.parametrize("state_dtype", [torch.bfloat16, torch.float32])
 def test_decode_graph_matches_indexed_native_pool(batch, state_dtype, request):
-    from minisgl.attention.kda.sgl import recurrent_kda
+    from minisgl.attention.kda.triton import recurrent_kda
     from sglang.kernels.ops.attention.fla.fused_sigmoid_gating_recurrent import (
         fused_sigmoid_gating_delta_rule_update,
     )

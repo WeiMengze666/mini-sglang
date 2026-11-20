@@ -59,7 +59,7 @@ def test_cpu_rms_and_residual_helpers_match_reference():
 
 
 def test_flashinfer_supports_hybrid_attention():
-    assert SUPPORTED_ATTENTION_BACKENDS["fi"].stateful_layers
+    assert SUPPORTED_ATTENTION_BACKENDS["flashinfer"].stateful_layers
 
 
 @pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")

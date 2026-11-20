@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 from minisgl.layers.linear import Linear
-from minisgl.moe.marlin import MarlinMXFP4Experts
+from minisgl.moe.experts.marlin import MarlinMXFP4Experts
 from minisgl.moe.routing import RoutingPolicy
 
 pytestmark = pytest.mark.skipif(
@@ -34,7 +34,6 @@ def projection(inputs, outputs):
 def test_mature_marlin_experts_and_padding(
     hidden, intermediate, tokens, activation, selection, request
 ):
-    pytest.importorskip("sglang")
     torch.manual_seed(199)
     items, dense = [], []
     for index in (4, 5):

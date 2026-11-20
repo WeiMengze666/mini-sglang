@@ -91,7 +91,7 @@ def test_marlin_precision_contract_is_explicit():
 
 @pytest.mark.parametrize("hidden", [64, 96, 128, 3584])
 def test_marlin_hidden_padding_preserves_checkpoint_codes_and_zero_features(hidden):
-    from minisgl.moe.marlin import MarlinMXFP4Experts
+    from minisgl.moe.experts.marlin import MarlinMXFP4Experts
 
     experts, intermediate = 2, 96
     w13 = torch.arange(experts * 2 * intermediate * (hidden // 2)).remainder(251).byte()

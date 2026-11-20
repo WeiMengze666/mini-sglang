@@ -1,13 +1,12 @@
 """CPU projection/gate/capture resource contracts; no CUDA or native math run."""
 
-import sys
 from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 import pytest
 import torch
 import torch.nn.functional as F
-from minisgl.attention.kda import prefill, sgl
+from minisgl.attention.kda import prefill, projection, triton
 from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
 from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
 from minisgl.kvcache.recurrent_pool import RecurrentStatePool
@@ -19,6 +18,7 @@ def no_cuda(monkeypatch):
     def forbid(*args, **kwargs):
         pytest.fail("CPU KDA projection test initialized CUDA")
 
+    monkeypatch.setattr("tvm_ffi.use_torch_stream", nullcontext)
     monkeypatch.setattr(torch.cuda, "init", forbid)
     monkeypatch.setattr(torch.cuda, "_lazy_init", forbid)
 
@@ -30,8 +30,10 @@ def test_prefill_merge_preserves_gate_through_conv_without_reprojection(monkeypa
     expected = {name: F.linear(x, op.weight) for name, op in layer._qkvg_projections().items()}
     for op in layer._qkvg_projections().values():
         monkeypatch.setattr(op, "forward", lambda value: pytest.fail("independent wide projection"))
-    monkeypatch.setattr(sgl, "project", lambda *a: pytest.fail("old five-tensor prefill path"))
-    monkeypatch.setattr(sgl, "_kernels", lambda: (None, None, nullcontext))
+    monkeypatch.setattr(
+        projection, "project", lambda *a: pytest.fail("old five-tensor prefill path")
+    )
+    monkeypatch.setattr(triton, "_kernels", lambda: (None, None, nullcontext))
     raw_inputs = []
 
     def conv(raw, *args, **kwargs):
@@ -144,12 +146,12 @@ def capture_projection(monkeypatch):
         return torch.ones(len(x), weight.shape[0], dtype=torch.bfloat16).as_subclass(Result)
 
     monkeypatch.setattr(
-        sgl,
+        projection,
         "_projection_plan",
         lambda layer: SimpleNamespace(weight=torch.ones(8, 8, dtype=torch.bfloat16), widths=(4, 2)),
     )
-    monkeypatch.setattr(sgl, "_projection_kernels", lambda: (gemm, nullcontext))
-    monkeypatch.setattr(sgl, "_projection_overlap_limit", lambda device: 128)
+    monkeypatch.setattr(projection, "_projection_kernels", lambda: (gemm, nullcontext))
+    monkeypatch.setattr(projection, "_projection_overlap_limit", lambda device: 128)
     monkeypatch.setattr(torch.cuda, "current_stream", lambda device=None: main)
     monkeypatch.setattr(torch.cuda, "stream", use)
     return events, Input, layer_for, side
@@ -169,10 +171,10 @@ def test_actual_capture_and_official_size_choose_fork_before_wide(
     capture_projection, monkeypatch, capturing, rows, limit, overlap
 ):
     events, Input, layer_for, side = capture_projection
-    monkeypatch.setattr(sgl, "_projection_overlap_limit", lambda device: limit)
+    monkeypatch.setattr(projection, "_projection_overlap_limit", lambda device: limit)
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: capturing)
     x = Input(rows)
-    projected, gate = sgl._project_with_gate(layer_for(x), x, projection_stream=side)
+    projected, gate = projection._project_with_gate(layer_for(x), x, projection_stream=side)
     if overlap:
         assert events == [
             ("wait", "side", "main"),
@@ -197,7 +199,7 @@ def test_wrong_selected_stream_device_raises_before_any_projection(capture_proje
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
     x = Input(4)
     with pytest.raises(ValueError, match="stream differs"):
-        sgl._project_with_gate(layer_for(x), x, projection_stream=side)
+        projection._project_with_gate(layer_for(x), x, projection_stream=side)
     assert events == []
 
 
@@ -234,8 +236,8 @@ def test_backend_owns_one_stream_and_capture_metadata_only_borrows(
     if sizes:
         monkeypatch.setattr(
             backend,
-            "prepare_metadata",
-            lambda batch: setattr(batch, "attn_metadata", KDAMetadata(torch.tensor([0, 1]))),
+            "build_metadata",
+            lambda batch: KDAMetadata(torch.tensor([0, 1])),
         )
         batch = SimpleNamespace(size=1, reqs=[])
         backend.prepare_for_capture(batch)
@@ -275,13 +277,9 @@ def test_prefill_result_gate_reaches_finish_exactly_once_and_legacy_tensor_remai
 
 @pytest.mark.parametrize("blackwell,expected", [(False, 64), (True, 128)])
 def test_projection_policy_uses_official_pure_hardware_predicate(monkeypatch, blackwell, expected):
-    monkeypatch.setitem(
-        sys.modules,
-        "sglang.srt.utils.common",
-        SimpleNamespace(is_blackwell_supported=lambda: blackwell),
-    )
-    sgl._projection_overlap_limit.cache_clear()
+    monkeypatch.setattr("minisgl.utils.is_sm100_supported", lambda: blackwell)
+    projection._projection_overlap_limit.cache_clear()
     try:
-        assert sgl._projection_overlap_limit(torch.device("cuda:0")) == expected
+        assert projection._projection_overlap_limit(torch.device("cuda:0")) == expected
     finally:
-        sgl._projection_overlap_limit.cache_clear()
+        projection._projection_overlap_limit.cache_clear()

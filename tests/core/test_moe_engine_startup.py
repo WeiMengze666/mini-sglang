@@ -17,7 +17,7 @@ from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.layout import ParallelLayout
 from minisgl.engine.engine import Engine, WorkerOwner
 from minisgl.layers.base import BaseOP
-from minisgl.moe.fused import FusedMoe
+from minisgl.moe.experts.fused import FusedMoe
 from minisgl.server.launch import _abort_worker, _run_scheduler, _stop_workers, _wait_for_workers
 
 
@@ -123,7 +123,7 @@ def construction(monkeypatch):
     monkeypatch.setattr(
         engine,
         "create_attention_backend",
-        lambda *args: SimpleNamespace(
+        lambda *args, **options: SimpleNamespace(
             prepare_model=lambda records: None,
             checkpoint_quantum=lambda: None,
             prepare_communication=lambda **kwargs: None,
@@ -510,7 +510,7 @@ def test_context_communication_failure_uses_fatal_pregraph_guard(construction, m
     monkeypatch.setattr(
         f.engine,
         "create_attention_backend",
-        lambda *args: SimpleNamespace(
+        lambda *args, **options: SimpleNamespace(
             prepare_model=lambda records: None,
             checkpoint_quantum=lambda: None,
             prepare_communication=fail,

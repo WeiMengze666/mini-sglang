@@ -7,7 +7,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 import torch
 from minisgl.attention.config import KDAConfig
-from minisgl.attention.kda import KDAState, flashinfer, registry, sgl
+from minisgl.attention.kda import KDAState, flashinfer, registry, triton
 from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
 from minisgl.layers.kda import KDALayer
 
@@ -49,7 +49,7 @@ def test_batch_phase_reaches_native_recurrence_with_bf16_state(monkeypatch, leng
     monkeypatch.setattr(registry, "_supports_cuda_recurrence", lambda q: True)
     # Disable optional complete-decode hooks: this specifically exercises the
     # portable recurrence dispatch used when full fusion is not covered.
-    spec = registry.KDAKernelSpec("native-phase", registry.get_kda_kernel("sgl").recurrence)
+    spec = registry.KDAKernelSpec("native-phase", registry.get_kda_kernel("triton").recurrence)
     backend = KDAAttentionBackend(SimpleNamespace(), spec, cache=cache)
 
     def chunk(**kwargs):
@@ -70,7 +70,7 @@ def test_batch_phase_reaches_native_recurrence_with_bf16_state(monkeypatch, leng
         kwargs["out"].fill_(3)
         events.append(("decode", 1))
 
-    monkeypatch.setattr(sgl, "_kernels", lambda: (chunk, decode, nullcontext))
+    monkeypatch.setattr(triton, "_kernels", lambda: (chunk, decode, nullcontext))
     batch = SimpleNamespace(
         is_decode=is_decode,
         reqs=[SimpleNamespace(extend_len=length, table_idx=i) for i, length in enumerate(lengths)],
@@ -96,21 +96,21 @@ def test_batch_phase_reaches_native_recurrence_with_bf16_state(monkeypatch, leng
     assert not torch.cuda.is_initialized()
 
 
-@pytest.mark.parametrize("name", ["torch", "sgl", "flashinfer"])
+@pytest.mark.parametrize("name", ["torch", "triton", "flashinfer"])
 @pytest.mark.parametrize("tokens", [0, 2])
 def test_decode_requires_one_token_before_native_loading(name, tokens):
     q = torch.zeros(tokens, 1, 2)
     args = (q, q, q, q, torch.zeros(tokens, 1), torch.zeros(1), torch.zeros(2), None, -5.0)
     with pytest.raises(ValueError, match="one token per request"):
         registry.get_kda_kernel(name).recurrence(*args, is_decode=True)
-    for adapter in (sgl.recurrent_kda, flashinfer.recurrent_kda):
+    for adapter in (triton.recurrent_kda, flashinfer.recurrent_kda):
         with pytest.raises(ValueError, match="one token per request"):
             adapter(*args, is_decode=True)
     assert not torch.cuda.is_initialized()
 
 
 @pytest.mark.parametrize("is_decode", [False, True])
-@pytest.mark.parametrize("name", ["sgl", "flashinfer"])
+@pytest.mark.parametrize("name", ["triton", "flashinfer"])
 def test_registry_and_flashinfer_fallback_forward_phase(monkeypatch, name, is_decode):
     events = []
     monkeypatch.setattr(registry, "_supports_cuda_recurrence", lambda q: True)
@@ -119,7 +119,7 @@ def test_registry_and_flashinfer_fallback_forward_phase(monkeypatch, name, is_de
         events.append(is_decode)
         return args[2], args[0].new_zeros(1, 2, 2)
 
-    monkeypatch.setattr(sgl, "recurrent_kda", native)
+    monkeypatch.setattr(triton, "recurrent_kda", native)
     if name == "flashinfer":
         monkeypatch.setattr(flashinfer, "recurrent_kda", native)
     q = torch.zeros(1, 1, 2)
@@ -137,7 +137,7 @@ def test_flashinfer_single_token_fallback_keeps_explicit_phase(monkeypatch, is_d
         events.append(is_decode)
         return args[2], args[0].new_zeros(1, 2, 2)
 
-    monkeypatch.setattr(sgl, "recurrent_kda", native)
+    monkeypatch.setattr(triton, "recurrent_kda", native)
     q = torch.zeros(1, 1, 2)
     flashinfer.recurrent_kda(
         q,

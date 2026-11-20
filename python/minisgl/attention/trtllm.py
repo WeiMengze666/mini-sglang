@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, List
 import torch
 from minisgl.core import Batch, get_global_ctx
 
-from .base import BaseAttnBackend, BaseAttnMetadata
+from .base import BaseAttnMetadata, QKVAttnBackend
 from .utils import BaseCaptureData
 
 if TYPE_CHECKING:
@@ -32,7 +32,7 @@ class TRTLLMMetadata(BaseAttnMetadata):
         return self.cu_seqlens_q[1 : 1 + bs] - 1
 
 
-class TensorRTLLMBackend(BaseAttnBackend):
+class TensorRTLLMBackend(QKVAttnBackend):
     def __init__(self, config: ModelConfig):
         ctx = get_global_ctx()
         self.config = config

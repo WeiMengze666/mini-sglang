@@ -226,7 +226,7 @@ class LatentMoE(BaseOP):
         self._output = output
         self._reserved_key = key if output is not None else None
         if output is not None:
-            self._backend.prepare_output_stream(output)
+            self._backend.epilogue.prepare_output_stream(output)
 
     def prepare_runtime(self, context, *, dry_run=False):
         return self._backend.prepare_local(
@@ -300,7 +300,7 @@ class LatentMoE(BaseOP):
             )
 
         shared_inputs = (x,) if front is None else (front["gate"], front["up"])
-        mixed, shared = self._backend.forward_outputs(
+        mixed, shared = self._backend.epilogue.forward_outputs(
             self._tp,
             expert_producer,
             shared_producer if self.shared_experts is not None else None,
@@ -318,7 +318,7 @@ class LatentMoE(BaseOP):
             ),
             topk=routing.topk,
         )
-        output = self._backend.project_outputs(
+        output = self._backend.epilogue.project_outputs(
             self._tp,
             mixed,
             shared,

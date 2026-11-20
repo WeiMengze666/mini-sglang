@@ -44,7 +44,7 @@ def test_server_parses_flashinfer_precision_policy():
 
 
 def test_flashinfer_executor_validates_policy_without_cuda():
-    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
     with pytest.raises(ValueError, match="at least one local expert"):
         FlashInferMXFP4Experts(

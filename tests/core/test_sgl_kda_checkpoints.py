@@ -7,7 +7,7 @@ import minisgl.core as core
 import pytest
 import torch
 from minisgl.attention.config import KDAConfig
-from minisgl.attention.kda import checkpoints, prefill, sgl
+from minisgl.attention.kda import checkpoints, prefill, projection, triton
 from minisgl.attention.kda.backend import KDAAttentionBackend
 from minisgl.attention.kda.registry import get_kda_kernel
 from minisgl.core import Batch, Req, SamplingParams
@@ -20,6 +20,7 @@ def case(monkeypatch):
     def no_cuda(*args, **kwargs):
         raise AssertionError("CPU protocol test attempted CUDA initialization")
 
+    monkeypatch.setattr("tvm_ffi.use_torch_stream", nullcontext)
     monkeypatch.setattr(torch.cuda, "init", no_cuda)
     monkeypatch.setattr(torch.cuda, "_lazy_init", no_cuda)
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: False)
@@ -55,7 +56,7 @@ def case(monkeypatch):
     batch = Batch(reqs, "prefill")
     batch.checkpoint_plan = plans
     backend = KDAAttentionBackend(
-        SimpleNamespace(cache_config=layout), get_kda_kernel("sgl"), cache=cache
+        SimpleNamespace(cache_config=layout), get_kda_kernel("triton"), cache=cache
     )
     backend.prepare_metadata(batch)
     config = KDAConfig(4, 1, 128, 4, gate_lower_bound=-2)
@@ -91,7 +92,7 @@ def spies(case, monkeypatch):
     )
     monkeypatch.setattr(prefill, "supports", lambda *args: True)
     monkeypatch.setattr(
-        sgl,
+        projection,
         "project",
         lambda *args: (
             q,
@@ -147,7 +148,7 @@ def spies(case, monkeypatch):
         events.append("resolve")
         return chunk, None, nullcontext
 
-    monkeypatch.setattr(sgl, "_kernels", kernels)
+    monkeypatch.setattr(triton, "_kernels", kernels)
     monkeypatch.setattr(prefill, "_conv_kernel", lambda: conv)
     return layer, events, calls, snapshots
 
@@ -186,10 +187,10 @@ def test_warm_frontier_is_relative_local_chunk_not_global_chunk_offset():
             quantum=64,
         ),
     )
-    plan = sgl._prefill_plan(metadata, torch.device("cpu"))
+    plan = triton._prefill_plan(metadata, torch.device("cpu"))
     assert plan["chunk_offsets"].tolist() == [0, 2, 5]
     assert plan["track_chunk_idx"].tolist() == [-1, 1]  # not global3, not after-chunk0
-    assert sgl._prefill_plan(metadata, torch.device("cpu")) is plan
+    assert triton._prefill_plan(metadata, torch.device("cpu")) is plan
 
 
 @pytest.mark.parametrize(
@@ -205,7 +206,7 @@ def test_prewrite_rejection_and_selected_failure_never_retry(case, monkeypatch, 
     if failure == "support":
         monkeypatch.setattr(prefill, "supports", lambda *args: False)
     elif failure == "kernel":
-        monkeypatch.setattr(sgl, "_kernels", fail)
+        monkeypatch.setattr(triton, "_kernels", fail)
     elif failure == "metadata":
         case.batch.attn_metadata.lengths = (66, 65, 130)
     elif failure == "lease":
@@ -227,7 +228,7 @@ def test_prewrite_rejection_and_selected_failure_never_retry(case, monkeypatch, 
     elif failure == "conv":
         monkeypatch.setattr(prefill, "_conv_kernel", lambda: fail)
     else:
-        monkeypatch.setattr(sgl, "_kernels", lambda: (fail, None, nullcontext))
+        monkeypatch.setattr(triton, "_kernels", lambda: (fail, None, nullcontext))
     with pytest.raises(ValueError):
         case.backend.forward_layer(
             layer, 0, torch.zeros(262, 4, dtype=torch.bfloat16), case.batch, case.cache, None
@@ -241,7 +242,7 @@ def test_prewrite_rejection_and_selected_failure_never_retry(case, monkeypatch, 
 
 
 def test_explicit_sgl_has_shared_checkpoint_hooks_without_auto_selector_change():
-    sgl_spec, fi_spec = get_kda_kernel("sgl"), get_kda_kernel("flashinfer")
+    sgl_spec, fi_spec = get_kda_kernel("triton"), get_kda_kernel("flashinfer")
     assert sgl_spec.indexed_prefill is not None
     assert sgl_spec.prepare_checkpoints is fi_spec.prepare_checkpoints
     assert sgl_spec.checkpoint_quantum is fi_spec.checkpoint_quantum
@@ -256,7 +257,7 @@ def test_prepared_checkpoint_cannot_borrow_or_write_inside_capture(case, monkeyp
     def forbidden(*args, **kwargs):
         pytest.fail("Capture rejection reached a kernel or checkpoint borrow")
 
-    monkeypatch.setattr(sgl, "_kernels", forbidden)
+    monkeypatch.setattr(triton, "_kernels", forbidden)
     monkeypatch.setattr(case.states, "borrow_checkpoint", forbidden)
     with pytest.raises(ValueError, match="eager prefill"):
         case.backend.forward_layer(

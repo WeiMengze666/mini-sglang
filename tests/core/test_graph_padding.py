@@ -28,11 +28,11 @@ def cache_metadata(*, device="cuda", conv=torch.bfloat16, state=torch.bfloat16, 
 @pytest.mark.parametrize(
     "provider,device,conv,state,dim,expected",
     [
-        ("sgl", "cuda", torch.bfloat16, torch.bfloat16, 128, True),
-        ("sgl", "cpu", torch.bfloat16, torch.bfloat16, 128, False),
-        ("sgl", "cuda", torch.float32, torch.bfloat16, 128, False),
-        ("sgl", "cuda", torch.bfloat16, torch.float32, 128, False),
-        ("sgl", "cuda", torch.bfloat16, torch.bfloat16, 64, False),
+        ("triton", "cuda", torch.bfloat16, torch.bfloat16, 128, True),
+        ("triton", "cpu", torch.bfloat16, torch.bfloat16, 128, False),
+        ("triton", "cuda", torch.float32, torch.bfloat16, 128, False),
+        ("triton", "cuda", torch.bfloat16, torch.float32, 128, False),
+        ("triton", "cuda", torch.bfloat16, torch.bfloat16, 64, False),
         ("torch", "cuda", torch.bfloat16, torch.bfloat16, 128, False),
         ("flashinfer", "cuda", torch.bfloat16, torch.bfloat16, 128, False),
     ],
@@ -46,7 +46,7 @@ def test_padding_requires_declared_native_state_contract(
         cache=cache_metadata(device=device, conv=conv, state=state),
     )
     assert backend.supports_graph_padding is expected
-    backend.kernel = replace(get_kda_kernel("sgl"), indexed_decode=None)
+    backend.decode_kernel = replace(get_kda_kernel("triton"), indexed_decode=None)
     assert not backend.supports_graph_padding
 
 
@@ -55,7 +55,7 @@ def test_actual_auto_extra_buffer_factory_keeps_native_decode_capability(monkeyp
     import minisgl.distributed.info as info
     import minisgl.engine.engine as engine
     from minisgl.attention import create_attention_backend
-    from minisgl.attention.base import PrefillDecodeAttnBackend
+    from minisgl.attention.base import HybridAttnBackend
     from minisgl.distributed import DistributedInfo
     from minisgl.engine.config import EngineConfig
 
@@ -84,18 +84,20 @@ def test_actual_auto_extra_buffer_factory_keeps_native_decode_capability(monkeyp
     object.__setattr__(config, "model_config", model)
     object.__setattr__(config, "state_cache_strategy", "extra_buffer")
     object.__setattr__(config, "cache_type", "hybrid")
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device: (10, 3))
     engine._adjust_config(config)
-    assert config.attention_backend == "fi,sgl"
+    assert config.attention_backend == "auto"
     ctx = core.Context(64)
     ctx.kv_cache = cache_metadata()
     monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
-    backend = create_attention_backend(config.attention_backend, model)
-    assert isinstance(backend, PrefillDecodeAttnBackend)
-    assert backend.prefill_backend.kda_backend.kernel.name == "flashinfer"
-    assert not backend.prefill_backend.supports_graph_padding
-    assert backend.decode_backend.kda_backend.kernel.name == "sgl"
+    backend = create_attention_backend(
+        config.attention_backend, model
+    )
+    assert isinstance(backend, HybridAttnBackend)
+    assert backend.kda_backend.prefill_kernel.name == "flashinfer"
+    assert backend.kda_backend.decode_kernel.name == "triton"
     assert backend.supports_graph_padding
-    backend.decode_backend.mla_backend.kvcache.arena = object()
+    backend.mla_backend.kvcache.arena = object()
     assert not backend.supports_graph_padding
 
 

@@ -8,7 +8,7 @@ from minisgl.core import get_global_ctx
 from minisgl.distributed.context import ContextParallel
 from minisgl.kvcache.mla_pool import MLACacheWrite
 
-from ..base import BaseAttnBackend, SequenceAttnMetadata
+from ..base import LayerAttnBackend, SequenceAttnMetadata
 from . import CausalLayout, MLAPagedMetadata, mla_attention
 from .prefill import MLAPrefillMetadata
 
@@ -19,7 +19,7 @@ class MLAMetadata(SequenceAttnMetadata):
     prefill: MLAPrefillMetadata | None = None
 
 
-class MLAAttentionBackend(BaseAttnBackend):
+class MLAAttentionBackend(LayerAttnBackend):
     """Prefill gathers cyclic KV; decode exchanges partial latent readouts.
 
     Both phases retain the same compressed persistent cache and TP weight layout.
@@ -49,8 +49,12 @@ class MLAAttentionBackend(BaseAttnBackend):
         spec = describe(self.config.attention_configs, dtype=dtype) if callable(describe) else None
         cp.prepare_exchange(spec, enabled=spec is not None)
 
-    def prepare_metadata(self, batch):
-        metadata = MLAMetadata.from_batch(batch, self.kvcache.device)
+    def build_metadata(self, batch, *, cu_seqlens_q=None):
+        metadata = (
+            MLAMetadata.from_batch(batch, self.kvcache.device)
+            if cu_seqlens_q is None
+            else MLAMetadata(cu_seqlens_q)
+        )
         if hasattr(self.attention, "decode") and batch.is_decode:
             if any(req.extend_len != 1 for req in batch.reqs):
                 raise ValueError("MLA decode requires one new token per request")
@@ -66,9 +70,12 @@ class MLAAttentionBackend(BaseAttnBackend):
             metadata.prefill = self.attention.prepare_prefill(
                 batch, get_global_ctx().page_table, ContextParallel(), metadata.cu_seqlens_q
             )
-        batch.attn_metadata = metadata
+        return metadata
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
+    def forward_layer(
+        self, layer, layer_id, x, batch, cache, page_table, *, residual=None, metadata=None
+    ):
+        metadata = batch.attn_metadata if metadata is None else metadata
         is_decode = getattr(batch, "is_decode", False)
         positions = batch.positions[: len(x)]
         queries, new_latent, new_key = layer.project(x, positions, is_decode=is_decode)
@@ -80,7 +87,7 @@ class MLAAttentionBackend(BaseAttnBackend):
             batch.out_loc[: len(x)],
             self.cache_implementation,
         )
-        paged = batch.attn_metadata.decode
+        paged = metadata.decode
         deferred = paged is not None and getattr(self.attention, "supports_kv_write", False)
         if not deferred:
             write.store()
@@ -102,10 +109,10 @@ class MLAAttentionBackend(BaseAttnBackend):
             # None guarantees that the selected decoder has not written any KV.
             write.store()
         cp = ContextParallel()
-        if not is_decode and batch.attn_metadata.prefill is not None:
+        if not is_decode and metadata.prefill is not None:
             attend_batch = functools.partial(
                 self.attention.prefill_batch,
-                metadata=batch.attn_metadata.prefill,
+                metadata=metadata.prefill,
                 cache=cache,
                 layer_id=layer_id,
                 cp=cp,
@@ -172,9 +179,6 @@ class MLAAttentionBackend(BaseAttnBackend):
         )
         return layer.finish(x, partial, residual=residual)
 
-    def forward(self, q, k, v, layer_id, batch):
-        raise NotImplementedError("MLA uses latent KV projections")
-
     def init_capture_graph(self, max_seq_len, bs_list):
         if not bs_list:
             return
@@ -193,15 +197,14 @@ class MLAAttentionBackend(BaseAttnBackend):
         )
         self._graph_sizes = set(bs_list)
 
-    def prepare_for_capture(self, batch):
+    def capture_metadata(self, batch, *, cu_seqlens_q=None):
         if batch.size not in self._graph_sizes:
             raise ValueError("No MLA CUDA graph was initialized for this batch size")
         if self.kvcache.arena is not None:
             page_size = self.kvcache.mla.page_size
             self._capture_pages = list(range((batch.size + page_size - 1) // page_size))
             self.kvcache.arena.allocate_pages(self._capture_pages)
-        self.prepare_metadata(batch)
-        metadata = batch.attn_metadata
+        metadata = self.build_metadata(batch, cu_seqlens_q=cu_seqlens_q)
         # Warm a nonempty local tile on every DCP rank. Replay supplies real lengths.
         metadata.decode = self.kvcache.mla.decode_metadata(
             [req.table_idx for req in batch.reqs],
@@ -212,16 +215,18 @@ class MLAAttentionBackend(BaseAttnBackend):
         metadata.decode.nonempty = metadata.decode.lengths.to(self.kvcache.device) > 0
         self._capture_metadata[batch.size] = metadata
 
+        return metadata
+
     def finish_capture(self, batch):
         if self._capture_pages:
             self.kvcache.arena.free_pages_by_id(self._capture_pages)
         self._capture_pages = []
 
-    def prepare_for_replay(self, batch):
+    def replay_metadata(self, batch, metadata):
         size = batch.padded_size
         if size not in self._graph_sizes:
             raise ValueError("No MLA CUDA graph was initialized for this batch size")
-        metadata = batch.attn_metadata.decode
+        metadata = metadata.decode
         captured = self._capture_metadata[size].decode
         if metadata.nonempty is None:
             captured.nonempty.fill_(True)

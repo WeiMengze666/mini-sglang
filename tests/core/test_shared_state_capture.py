@@ -108,13 +108,13 @@ def test_real_capture_cleanup_returns_working_and_tracking_before_real_uid(
         def init_capture_graph(self, *args, **kwargs):
             pass
 
-        def prepare_for_capture(self, batch):
-            batch.attn_metadata = SimpleNamespace()
+        def capture_metadata(self, batch, *, cu_seqlens_q):
+            return SimpleNamespace(cu_seqlens_q=cu_seqlens_q)
 
-        def prepare_metadata(self, batch):
-            batch.attn_metadata = SimpleNamespace()
+        def build_metadata(self, batch, *, cu_seqlens_q):
+            return SimpleNamespace(cu_seqlens_q=cu_seqlens_q)
 
-        def prepare_for_replay(self, batch):
+        def replay_metadata(self, batch, metadata):
             pass
 
         def finish_capture(self, batch):

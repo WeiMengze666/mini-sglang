@@ -12,8 +12,8 @@ from minisgl.distributed.impl import (
 )
 from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.mnnvl import MNNVLDistributedImpl
+from minisgl.distributed.multimem.provider import MultimemProvider
 from minisgl.distributed.parallel import TensorParallel
-from minisgl.distributed.sgl import SGLangMNNVLProvider
 from minisgl.layers.linear import Linear
 from minisgl.moe import create_moe_backend
 from test_collective_outputs import cuda_tensor
@@ -52,7 +52,7 @@ def native(full_weight):
         yield
         calls.append("exit")
 
-    provider = SGLangMNNVLProvider(comm, device=torch.device("cuda:0"), execution_context=scope)
+    provider = MultimemProvider(comm, device=torch.device("cuda:0"), execution_context=scope)
 
     class Kernel:
         fail = False
@@ -238,14 +238,14 @@ def test_prepared_projection_uses_native_and_keeps_owned_output(monkeypatch):
             return a @ w.t() + c
 
     monkeypatch.setattr(op, "forward", lambda x: pytest.fail("replicated GEMM ran"))
-    result = create_moe_backend("fused").project_outputs(
+    result = create_moe_backend("fused").epilogue.project_outputs(
         Parallel(), x, b, op, output_dtype=torch.bfloat16, prepared=True
     )
     assert [c[0] for c in calls] == ["supports", "native"]
     assert calls[1][2] is op.weight and result.eq(3).all()
     assert not torch._C._overlaps(result, b)
     prefix = torch.full_like(result, 7)
-    result_with_prefix = create_moe_backend("fused").project_outputs(
+    result_with_prefix = create_moe_backend("fused").epilogue.project_outputs(
         Parallel(), x, b, op, output_dtype=torch.bfloat16, prepared=True, residual=prefix
     )
     assert result_with_prefix.eq(10).all() and prefix.eq(7).all() and b.eq(1).all()
@@ -303,7 +303,7 @@ def test_noneligible_projection_keeps_original_forward_and_shared_cast(monkeypat
         shared = shared.bfloat16()
     if case not in ("cpu", "fp32", "decline"):
         shared = shared.bfloat16()
-    result = create_moe_backend("fused").project_outputs(
+    result = create_moe_backend("fused").epilogue.project_outputs(
         Parallel(), x, shared, op, output_dtype=x.dtype, prepared=case != "unprepared"
     )
     expected = forward(x) + shared.to(x.dtype)
@@ -314,4 +314,4 @@ def test_noneligible_projection_keeps_original_forward_and_shared_cast(monkeypat
 def test_projection_without_up_or_shared_preserves_existing_identity():
     backend = create_moe_backend("fused")
     x = torch.ones((2, 3), dtype=torch.bfloat16)
-    assert backend.project_outputs(SimpleNamespace(), x, None) is x
+    assert backend.epilogue.project_outputs(SimpleNamespace(), x, None) is x

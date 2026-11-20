@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def experts():
-    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
     from test_mxfp4_flashinfer import _expert
 
     torch.manual_seed(271)
@@ -175,7 +175,7 @@ def test_native_fused_preparation_and_experts(
     experts, native_runner, monkeypatch, tokens, dtype, strided
 ):
     import flashinfer
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe.experts.fused import FusedMoe
 
     torch.manual_seed(740 + tokens)
     x, routing = fused_inputs(tokens, dtype, strided)
@@ -199,7 +199,7 @@ def test_native_fused_preparation_and_experts(
 
 @pytest.mark.parametrize("tokens", [1, 7, 48])
 def test_fused_graph_replay_reads_current_scores_and_activations(experts, native_runner, tokens):
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe.experts.fused import FusedMoe
 
     torch.manual_seed(840 + tokens)
     x, routing = fused_inputs(tokens, torch.float32, True)
@@ -230,8 +230,8 @@ def test_fused_graph_replay_reads_current_scores_and_activations(experts, native
 
 @pytest.mark.parametrize("tokens", [1, 48])
 def test_fused_preparation_matches_native_unfused_operators(tokens):
-    from minisgl.moe.fused import FusedMoe
-    from minisgl.moe.sgl import fused_route_quant
+    from minisgl.moe.experts.fused import FusedMoe
+    from minisgl.moe.routing import fused_route_quant
     from sglang.kernels.ops.quantization.per_token_group_quant import per_token_group_quant
     from tvm_ffi import use_torch_stream
 

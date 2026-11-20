@@ -137,7 +137,7 @@ def test_quality_runner_passes_explicit_precision_to_the_real_engine_interface(
         attention_backend="auto",
         distributed_backend="mnnvl" if target and engine_kind == "mini" else "auto",
         distributed_provider=(
-            "minisgl.distributed.sgl" if target and engine_kind == "mini" else None
+            "minisgl.distributed.multimem.provider" if target and engine_kind == "mini" else None
         ),
         mxfp4_backend="flashinfer" if target else "torch",
         moe_backend="auto" if target else "marlin",

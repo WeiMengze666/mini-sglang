@@ -87,8 +87,18 @@ def test_native_combine_graph_tracks_strided_inputs(dtype):
         output[0, 0] = 0
         lse[0, 0] = -torch.inf
         weights = lse.double().softmax(0)
-        expected = (output.double() * weights[..., None]).sum(0).to(dtype)
+        reference = (output.double() * weights[..., None]).sum(0)
+        eager = merge_attention(output, lse)
         graph.replay()
-        torch.testing.assert_close(actual.double(), expected.double(), rtol=2e-5, atol=2e-6)
+        torch.testing.assert_close(actual, eager, rtol=0, atol=0)
+        if dtype == torch.bfloat16:
+            # The kernel accumulates each shard's contribution in FP32. Near
+            # cancellation, small accumulation errors can span several BF16 ULPs.
+            # Check the FP32 calculation independently and the BF16 store exactly.
+            fp32 = merge_attention(output.float(), lse)
+            torch.testing.assert_close(fp32.double(), reference, rtol=2e-5, atol=2e-6)
+            torch.testing.assert_close(actual, fp32.bfloat16(), rtol=0, atol=0)
+        else:
+            torch.testing.assert_close(actual.double(), reference, rtol=2e-5, atol=2e-6)
     torch.cuda.synchronize()
     graph.reset()

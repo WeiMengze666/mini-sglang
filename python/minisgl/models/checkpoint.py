@@ -1,6 +1,7 @@
 """Data-only safetensors index validation and bounded shard iteration."""
 
 import json
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
@@ -69,6 +70,15 @@ def checkpoint_index(folder: Path, normalize) -> dict[str, Path]:
     return result
 
 
+def _prefetch_checkpoint_file(path, cancel):
+    block_size = int(os.getenv("SGLANG_PREFETCH_BLOCK_SIZE_MB", "16")) << 20
+    if block_size <= 0:
+        raise ValueError("Checkpoint prefetch block size must be positive")
+    with open(path, "rb") as shard:
+        while not cancel.is_set() and shard.read(block_size):
+            pass
+
+
 @contextmanager
 def _prefetch_shards(files, num_threads: int, tp_info: "DistributedInfo"):
     """Stage shared files without creating full-shard tensor copies.
@@ -84,10 +94,6 @@ def _prefetch_shards(files, num_threads: int, tp_info: "DistributedInfo"):
     if not files:
         yield
         return
-    # The SDK primitive performs bounded sequential reads and checks cancellation
-    # between blocks. Import only for the opt-in path; no model/group is created.
-    from sglang.srt.model_loader.weight_utils import _prefetch_checkpoint_file
-
     cancel = threading.Event()
     executor = ThreadPoolExecutor(
         max_workers=min(num_threads, len(files)), thread_name_prefix="checkpoint-prefetch"

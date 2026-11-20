@@ -69,25 +69,27 @@ def streams(monkeypatch):
 def test_backend_stream_prepares_once_and_declines_cpu_without_initialization(streams, monkeypatch):
     events, _, _, _ = streams
     backend = create_moe_backend("fused")
-    backend.prepare_output_stream(torch.empty(1))
+    backend.epilogue.prepare_output_stream(torch.empty(1))
     assert events == [] and not hasattr(backend, "_shared_stream")
     output = SimpleNamespace(is_cuda=True, device=torch.device("cuda:0"))
-    backend.prepare_output_stream(output)
-    backend.prepare_output_stream(output)
+    backend.epilogue.prepare_output_stream(output)
+    backend.epilogue.prepare_output_stream(output)
     assert events == ["create"]
     with pytest.raises(ValueError, match="another device"):
-        backend.prepare_output_stream(SimpleNamespace(is_cuda=True, device=torch.device("cuda:1")))
+        backend.epilogue.prepare_output_stream(
+            SimpleNamespace(is_cuda=True, device=torch.device("cuda:1"))
+        )
     other = create_moe_backend("fused")
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
     with pytest.raises(RuntimeError, match="before graph capture"):
-        other.prepare_output_stream(output)
+        other.epilogue.prepare_output_stream(output)
     assert events == ["create"]
 
 
 def test_front_fork_shared_pull_join_then_latent_norm_order(streams):
     events, _, side, active = streams
     backend = create_moe_backend("fused")
-    backend._shared_stream = side
+    backend.epilogue._shared_stream = side
     storage = torch.empty(12, dtype=torch.bfloat16)
     latent, shared = storage[:8].view(2, 4), storage[8:].view(2, 2)
     normalizer = TorchRMSNorm(4)
@@ -125,7 +127,7 @@ def test_front_fork_shared_pull_join_then_latent_norm_order(streams):
             return result.as_subclass(ReturnedTensor)
         return norm(result) if norm is not None else result
 
-    mixed, result = backend.forward_outputs(
+    mixed, result = backend.epilogue.forward_outputs(
         SimpleNamespace(all_reduce_residual=reduce),
         experts,
         shared_producer,
@@ -176,7 +178,7 @@ def test_serial_fallback_preserves_fp32_partials_then_cast_norm_without_cuda():
         events.append("reduce:" + str(value.dtype))
         return value * 3
 
-    actual, tail = backend.forward_outputs(
+    actual, tail = backend.epilogue.forward_outputs(
         SimpleNamespace(all_reduce=reduce),
         experts,
         shared,
@@ -192,7 +194,7 @@ def test_serial_fallback_preserves_fp32_partials_then_cast_norm_without_cuda():
 def test_producer_error_is_not_retried_or_routed_to_serial(streams, failed):
     events, _, side, _ = streams
     backend = create_moe_backend("fused")
-    backend._shared_stream = side
+    backend.epilogue._shared_stream = side
     storage = torch.empty(12, dtype=torch.bfloat16)
     counts = {"expert": 0, "shared": 0, "reduce": 0}
 
@@ -207,7 +209,7 @@ def test_producer_error_is_not_retried_or_routed_to_serial(streams, failed):
         return value
 
     with pytest.raises(RuntimeError, match="native CUDA failure"):
-        backend.forward_outputs(
+        backend.epilogue.forward_outputs(
             SimpleNamespace(all_reduce_residual=reduce),
             lambda out: producer("expert", out),
             lambda out: producer("shared", out),

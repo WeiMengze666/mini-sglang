@@ -82,6 +82,8 @@ def init_logger(
             # Format the message
             colored_level = f"{level_color}{record.levelname:<8}{self.RESET}"
             message = record.getMessage()
+            if record.exc_info:
+                message += "\n" + self.formatException(record.exc_info)
 
             # Pretty format: [timestamp] LEVEL message
             return f"{self.BOLD}{timestamp}{self.RESET} {colored_level} {message}"

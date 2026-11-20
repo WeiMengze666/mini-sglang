@@ -3,15 +3,15 @@
 import gc
 from dataclasses import replace
 
-import torch
 from minisgl.distributed.layout import get_parallel_layout
 
-from .flashinfer import FlashInferMXFP4Experts
-from .fused import FusedMoe
-from .token_dispatch import FlashInferTokenDispatcher
+from .base import BaseMoeBackend
+from .dispatch import DispatchLayout, FlashInferTokenDispatcher
+from .experts.fused import FusedMoe
+from .routing import grouped_topk
 
 
-class FlashInferEPBackend(FusedMoe):
+class FlashInferEPBackend(BaseMoeBackend):
     """Opt-in EP/ETP; routing and local expert math retain their existing ABI.
 
     One serial execution stream owns every prepared channel. Compatible layers
@@ -19,7 +19,10 @@ class FlashInferEPBackend(FusedMoe):
     This backend remains experimental until native component qualification.
     """
 
+    route = staticmethod(grouped_topk)
+
     def __init__(self):
+        self.local = FusedMoe()
         self._mesh = None
         self._dispatchers = {}
         self._ready = False
@@ -30,16 +33,17 @@ class FlashInferEPBackend(FusedMoe):
         return get_parallel_layout().ep_size > 1
 
     def prepare(self, model, context):
-        super().prepare(model, context)
+        from .prepare import prepare
+
+        prepare(self, model, context)
         if context.layout.ep_size > 1 and not self._ready:
             raise NotImplementedError("Native EP requires compatible prepared expert layers")
 
     def prepare_local(self, executor, routing_builder, context, *, dry_run=False):
-        if context.layout.ep_size > 1 and (
-            not isinstance(executor, FlashInferMXFP4Experts) or executor._precision != "mxfp8"
-        ):
-            raise NotImplementedError("Native EP requires the MXFP8 FlashInfer expert frontend")
-        return super().prepare_local(executor, routing_builder, context, dry_run=dry_run)
+        plan = self.local.prepare_local(executor, routing_builder, context, dry_run=dry_run)
+        if dry_run and context.layout.ep_size > 1 and not getattr(plan, "dispatch_layouts", ()):
+            raise NotImplementedError("Native EP requires an executor with a token exchange layout")
+        return plan
 
     def prepare_transport(self, plan, context):
         if context.layout.ep_size == 1:
@@ -50,13 +54,13 @@ class FlashInferEPBackend(FusedMoe):
 
         from .prepare import _agree
 
-        specs = tuple(sorted({(p.global_experts, p.top_k, p.hidden) for p in plan}))
+        specs = tuple(dict.fromkeys(spec for item in plan for spec in item.dispatch_layouts))
         if (
             not specs
             or context.tp_cpu_group is None
             or not context.fresh_worker
             or not callable(context.abort)
-            or any(p.activation_precision != "mxfp8" for p in plan)
+            or any(not item.dispatch_layouts for item in plan)
             or any(
                 type(n) is not int or n < 1
                 for n in (context.max_prefill_tokens, context.max_decode_tokens)
@@ -72,43 +76,38 @@ class FlashInferEPBackend(FusedMoe):
         self._mesh = ExpertParallel.prepare(context.layout, context.tp_cpu_group, context.device)
         if self._mesh is None:
             raise NotImplementedError("Native EP mesh is unavailable")
-        for experts, top_k, hidden in specs:
-            # Typed layouts are immutable. Prepare every existing carrier ABI
-            # before budgeting, including fallback FP32 weights at larger N.
-            for carrier in (torch.int32, torch.bfloat16, torch.float32):
-                dispatcher = FlashInferTokenDispatcher.prepare(
-                    self._mesh.info,
-                    self._mesh.cpu_group,
-                    context.device,
-                    num_experts=experts,
-                    top_k=top_k,
-                    payload_layout=(
-                        (torch.float8_e4m3fn, hidden),
-                        (torch.float8_e4m3fn, hidden // 32),
-                        (carrier, top_k),
-                    ),
-                    output_layout=(torch.bfloat16, hidden),
-                    max_prefill_tokens=context.max_prefill_tokens,
-                    max_decode_tokens=context.max_decode_tokens,
-                )
-                if dispatcher is None:
-                    raise NotImplementedError("Native EP transport is unavailable for this layout")
-                self._dispatchers[experts, top_k, hidden, carrier] = dispatcher
+        for spec in specs:
+            dispatcher = FlashInferTokenDispatcher.prepare(
+                self._mesh.info,
+                self._mesh.cpu_group,
+                context.device,
+                num_experts=spec.global_experts,
+                top_k=spec.top_k,
+                payload_layout=spec.payloads,
+                output_layout=spec.output,
+                max_prefill_tokens=context.max_prefill_tokens,
+                max_decode_tokens=context.max_decode_tokens,
+            )
+            if dispatcher is None:
+                raise NotImplementedError("Native EP transport is unavailable for this layout")
+            self._dispatchers[spec] = dispatcher
         self._ready = True
 
     def forward_experts(self, executor, x, routing, *, out=None, deferred=False):
         if get_parallel_layout().ep_size == 1:
-            return super().forward_experts(executor, x, routing, out=out, deferred=deferred)
+            return self.local.forward_experts(executor, x, routing, out=out, deferred=deferred)
         if not self._ready:
             raise RuntimeError("Native EP must be prepared before inference")
         if out is not None or deferred:
             raise NotImplementedError("Native EP keeps serial finalized expert outputs")
         if not len(x):
-            return x.new_empty((0, x.shape[1]), dtype=torch.bfloat16)
+            return x.new_empty((0, x.shape[1]), dtype=executor.dispatch_output_dtype)
         try:
             # Preserve the full-batch frontend choice, especially its N<=64 boundary.
             ids, payloads = executor.prepare_dispatch_inputs(self, x, routing)
-            key = (executor._global_experts, ids.shape[1], x.shape[1], payloads[-1].dtype)
+            key = DispatchLayout.from_payloads(
+                executor.global_experts, ids, payloads, (executor.dispatch_output_dtype, x.shape[1])
+            )
             dispatcher = self._dispatchers.get(key)
             if dispatcher is None:
                 raise NotImplementedError("Expert frontend was not in the prepared EP portfolio")
@@ -130,7 +129,7 @@ class FlashInferEPBackend(FusedMoe):
         self, parallel, *outputs, packed=None, output_key=None, norm=None, output_dtype=None
     ):
         if get_parallel_layout().ep_size == 1:
-            return super().reduce_outputs(
+            return self.local.reduce_outputs(
                 parallel,
                 *outputs,
                 packed=packed,
@@ -156,7 +155,7 @@ class FlashInferEPBackend(FusedMoe):
     def forward(self, *args, **kwargs):
         if get_parallel_layout().ep_size > 1:
             raise NotImplementedError("Native EP requires the prepared expert-executor interface")
-        return super().forward(*args, **kwargs)
+        return self.local.forward(*args, **kwargs)
 
     def _abort_failure(self, error):
         # Native work may have advanced peer epochs. Never retry or enter a

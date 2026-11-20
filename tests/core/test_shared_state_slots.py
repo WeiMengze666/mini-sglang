@@ -279,7 +279,7 @@ def test_checkpoint_strategy_capability_does_not_depend_on_current_free_slots(mo
     backend.kvcache = SimpleNamespace(recurrent=p, arena=None, supports_overlap=False)
     backend.checkpoint_layer_configs = {0: object()}
     backend.config = SimpleNamespace(cache_config=object())
-    backend.kernel = SimpleNamespace(
+    backend.prefill_kernel = SimpleNamespace(
         prepare_checkpoints=object(),
         checkpoint_quantum=lambda *args: 64,
     )

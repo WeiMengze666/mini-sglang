@@ -100,8 +100,8 @@ def test_real_fi_interior_forks_keep_h_axes_conv_and_restored_continuation(
     import minisgl.distributed.info as info
     import minisgl.distributed.layout as topology
     from minisgl.attention.config import KDAConfig
-    from minisgl.attention.kda import sgl
     from minisgl.attention.kda.backend import KDAAttentionBackend
+    from minisgl.attention.kda.projection import project
     from minisgl.attention.kda.registry import get_kda_kernel
     from minisgl.core import Req, SamplingParams
     from minisgl.distributed.info import DistributedInfo
@@ -221,7 +221,7 @@ def test_real_fi_interior_forks_keep_h_axes_conv_and_restored_continuation(
         }
         raw = {}
         for layer_id, layer in layers.items():
-            q, k, v, _, _ = sgl.project(layer, packed[layer_id])
+            q, k, v, _, _ = project(layer, packed[layer_id])
             raw[layer_id] = torch.cat((q, k, v), -1)
         batch, _ = _execute(backend, layers, states, reqs, packed, checkpoint=(manager, (1, 0)))
         tracked = batch.attn_metadata.checkpoints

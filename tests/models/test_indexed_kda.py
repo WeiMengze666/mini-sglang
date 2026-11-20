@@ -7,8 +7,9 @@ import torch
 from minisgl.attention.config import KDAConfig
 from minisgl.attention.kda import KDAState
 from minisgl.attention.kda.backend import KDAMetadata
+from minisgl.attention.kda.projection import project
 from minisgl.attention.kda.registry import get_kda_kernel
-from minisgl.attention.kda.sgl import indexed_decode, project
+from minisgl.attention.kda.triton import indexed_decode
 from minisgl.distributed import DistributedInfo
 from minisgl.kvcache.recurrent_pool import RecurrentStatePool
 from minisgl.kvcache.unified import UnifiedMemory
@@ -76,7 +77,7 @@ def test_indexed_decode_keeps_native_precision_and_slot_ownership(
     )
     initial = pool.get_kda_batch(0, indices)
     x = torch.randn(batch, 512, device="cuda", dtype=torch.bfloat16) * 0.1
-    kernel = get_kda_kernel("sgl")
+    kernel = get_kda_kernel("triton")
     stream = torch.cuda.Stream()
     stream.wait_stream(torch.cuda.current_stream())
     graph = None

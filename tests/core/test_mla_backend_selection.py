@@ -205,7 +205,7 @@ def test_prefill_uses_unquantized_current_rows_and_dequantized_cached_prefix():
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float8_e4m3fn])
 def test_flashinfer_prefill_precision_follows_cache_format(dtype):
-    from minisgl.attention.fi import FlashInferMLABackend
+    from minisgl.attention.mla.flashinfer import FlashInferMLABackend
 
     cache = SimpleNamespace(dtype=dtype)
     backend = FlashInferMLABackend(None, cache=cache)

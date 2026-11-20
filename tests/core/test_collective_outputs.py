@@ -9,7 +9,7 @@ import pytest
 import torch
 from minisgl.distributed.impl import DistributedImpl, FallbackDistributedImpl
 from minisgl.distributed.mnnvl import MNNVLAllReduceProvider, MNNVLDistributedImpl
-from minisgl.distributed.sgl import SGLangMNNVLProvider
+from minisgl.distributed.multimem.provider import MultimemProvider
 
 
 class CudaTensor(torch.Tensor):
@@ -78,7 +78,7 @@ def host(monkeypatch):
         custom_all_reduce=lambda x: x * 2,
         close=lambda: events.append("comm-close"),
     )
-    provider = SGLangMNNVLProvider(
+    provider = MultimemProvider(
         comm,
         group=group,
         output_group=group,
@@ -155,7 +155,7 @@ def test_teardown_failure_retains_mapping(host, monkeypatch, failure):
 
 @pytest.fixture
 def native_ops(host, monkeypatch):
-    from minisgl.distributed import sgl
+    from minisgl.distributed.multimem import provider as multimem
 
     provider, events, _ = host
 
@@ -182,15 +182,15 @@ def native_ops(host, monkeypatch):
         RES_TUNING=object(),
         _resolve_tuning=lambda table, **kwargs: SimpleNamespace(num_blocks=4, unroll=8),
     )
-    original = sgl.importlib.import_module
+    original = multimem.importlib.import_module
     monkeypatch.setattr(
-        sgl.importlib,
+        multimem.importlib,
         "import_module",
         lambda name: (
             ops
-            if name.endswith(".all_reduce_residual")
+            if name.endswith(".reduce_residual")
             else SimpleNamespace(_PUSH_MAX_BYTES=512 * 1024)
-            if name.endswith(".k3_ar_fusion")
+            if name.endswith(".all_gather")
             else original(name)
         ),
     )
@@ -294,7 +294,7 @@ def test_same_world_size_keeps_instance_communicators(host):
     provider, _, group = host
     other_comm = SimpleNamespace(**vars(provider.comm))
     other_comm.obj = object()
-    other = SGLangMNNVLProvider(
+    other = MultimemProvider(
         other_comm, group=group, output_group=group, device=torch.device("cuda:0")
     )
     observed = []

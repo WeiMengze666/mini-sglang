@@ -18,8 +18,8 @@ pytestmark = pytest.mark.skipif(
 def test_safe_decode_matches_public_operator_and_reports_packed_delta(
     batch, state_dtype, null_row, graph_mode, request, monkeypatch
 ):
-    from minisgl.attention.kda import sgl
-    from minisgl.attention.kda.sgl import _safe_decode
+    from minisgl.attention.kda import triton
+    from minisgl.attention.kda.triton import _safe_decode
     from sglang.kernels.ops.attention.fla.fused_recurrent import fused_recurrent_kda_packed_decode
     from sglang.kernels.ops.attention.fla.fused_sigmoid_gating_recurrent import (
         fused_sigmoid_gating_delta_rule_update,
@@ -98,7 +98,7 @@ def test_safe_decode_matches_public_operator_and_reports_packed_delta(
         )
         return fused_sigmoid_gating_delta_rule_update(**kw)
 
-    monkeypatch.setattr(sgl, "_safe_decode_kernel", lambda: observed_public)
+    monkeypatch.setattr(triton, "_safe_decode_kernel", lambda: observed_public)
 
     def adapter():
         with use_torch_stream():
@@ -216,13 +216,13 @@ def test_safe_decode_matches_public_operator_and_reports_packed_delta(
 def test_indexed_fp32_state_stays_on_existing_fallback(monkeypatch):
     from types import SimpleNamespace
 
-    from minisgl.attention.kda import sgl
+    from minisgl.attention.kda import triton
 
     x = torch.zeros(1, 7, device="cuda", dtype=torch.bfloat16)
     pool = SimpleNamespace(state_dtype=torch.float32, conv_dtype=torch.bfloat16)
     monkeypatch.setattr(
-        sgl,
+        triton,
         "_safe_decode_kernel",
         lambda: pytest.fail("FP32 indexed must preserve existing fallback"),
     )
-    assert sgl.indexed_decode(None, x, pool, 0, None, None) is None
+    assert triton.indexed_decode(None, x, pool, 0, None, None) is None

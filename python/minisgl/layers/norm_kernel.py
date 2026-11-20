@@ -10,18 +10,18 @@ def rms_norm(x, weight, eps, *, gate=None, round_before_weight=False, dtype=None
 
     with use_torch_stream():
         if gate is not None:
-            from sglang.kernels.ops.attention.fla.kda import rms_norm_gated
+            from minisgl.kernel.kda.kda import rms_norm_gated
 
             # The SDK may consume its input as output. Preserve caller ownership.
             result = rms_norm_gated(
                 flat.clone(), gate.reshape_as(flat), weight, None, eps=eps, activation="sigmoid"
             )
         elif round_before_weight:
-            from sglang.kernels.ops.layernorm.rmsnorm_hf import rmsnorm_hf
+            from minisgl.kernel.norm_hf import rmsnorm_hf
 
             result = rmsnorm_hf(flat.contiguous(), weight, eps)
         else:
-            from sglang.kernels.ops.layernorm import rmsnorm
+            from flashinfer.norm import rmsnorm
 
             # Native RMSNorm supports row strides but requires contiguous features.
             if flat.stride(-1) != 1:

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from minisgl.attention.kda import sgl
+from minisgl.attention.kda import projection, triton
 from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
 from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
 
@@ -45,8 +45,8 @@ def test_safe_operator_receives_raw_inputs_views_and_envelope_state(
         state[0].fill_(3)
         return kw["v"].clone()
 
-    monkeypatch.setattr(sgl, "_safe_decode_kernel", lambda: native)
-    output = sgl._safe_decode(mixed, forget, beta, a, dt, state, indices, qsl, -5.0)
+    monkeypatch.setattr(triton, "_safe_decode_kernel", lambda: native)
+    output = triton._safe_decode(mixed, forget, beta, a, dt, state, indices, qsl, -5.0)
     assert len(seen) == 1 and output.shape == (1, batch, heads, values)
     assert state.dtype == state_dtype and state.stride(0) == 128
     assert state[0].eq(3).all() and state[1:].eq(0).all()
@@ -131,31 +131,31 @@ def test_indexed_safe_dispatch_keeps_metadata_and_pool_identity(monkeypatch, bou
         calls.append("packed")
         kw["out"].fill_(1)
 
-    monkeypatch.setattr(sgl, "project", lambda op, value: projected)
-    monkeypatch.setattr(sgl, "_safe_decode", safe)
-    monkeypatch.setattr(sgl, "_safe_decode_kernel", lambda: calls.append("ready"))
-    monkeypatch.setattr(sgl, "_kernels", lambda: (None, packed, nullcontext))
+    monkeypatch.setattr(projection, "project", lambda op, value: projected)
+    monkeypatch.setattr(triton, "_safe_decode", safe)
+    monkeypatch.setattr(triton, "_safe_decode_kernel", lambda: calls.append("ready"))
+    monkeypatch.setattr(triton, "_kernels", lambda: (None, packed, nullcontext))
     from minisgl.attention.kda import causal_conv
 
     monkeypatch.setattr(causal_conv, "_kernels", lambda: (None, convolution))
-    result = sgl.indexed_decode(layer, x, pool, 7, indices, metadata)
+    result = triton.indexed_decode(layer, x, pool, 7, indices, metadata)
     assert calls == (["ready", "safe"] if bound is not None else ["packed"])
     assert result.output.shape == (2, 2, 128) and result.state is None and not result.normed
 
 
 def test_registry_forwards_indexed_metadata_lazily(monkeypatch):
     calls = []
-    monkeypatch.setattr(sgl, "indexed_decode", lambda *args: calls.append(args) or "result")
+    monkeypatch.setattr(triton, "indexed_decode", lambda *args: calls.append(args) or "result")
     args = tuple(object() for _ in range(6))
-    assert get_kda_kernel("sgl").indexed_decode(*args) == "result"
+    assert get_kda_kernel("triton").indexed_decode(*args) == "result"
     assert calls == [args]
 
 
 def test_cpu_indexed_fallback_does_not_load_native_operator(monkeypatch):
     monkeypatch.setattr(
-        sgl, "_safe_decode_kernel", lambda: pytest.fail("CPU loaded native operator")
+        triton, "_safe_decode_kernel", lambda: pytest.fail("CPU loaded native operator")
     )
-    assert sgl.indexed_decode(None, torch.zeros(1, 3), None, 0, None, None) is None
+    assert triton.indexed_decode(None, torch.zeros(1, 3), None, 0, None, None) is None
 
 
 def test_indexed_safe_import_failure_precedes_any_pool_write(monkeypatch):
@@ -167,7 +167,7 @@ def test_indexed_safe_import_failure_precedes_any_pool_write(monkeypatch):
     def unavailable():
         raise ImportError("public operator unavailable")
 
-    monkeypatch.setattr(sgl, "_safe_decode_kernel", unavailable)
+    monkeypatch.setattr(triton, "_safe_decode_kernel", unavailable)
     pool = SimpleNamespace(
         state_dtype=torch.bfloat16,
         conv_dtype=torch.bfloat16,
@@ -175,7 +175,7 @@ def test_indexed_safe_import_failure_precedes_any_pool_write(monkeypatch):
     )
     layer = SimpleNamespace(_dim=128, _config=SimpleNamespace(gate_lower_bound=-5.0))
     with pytest.raises(ImportError, match="public operator unavailable"):
-        sgl.indexed_decode(
+        triton.indexed_decode(
             layer,
             torch.zeros(1, 7, dtype=torch.bfloat16).as_subclass(GuardTensor),
             pool,
@@ -192,11 +192,11 @@ def test_indexed_fp32_state_keeps_existing_fallback_without_loading_operator(mon
             return True
 
     monkeypatch.setattr(
-        sgl, "_safe_decode_kernel", lambda: pytest.fail("FP32 indexed path loaded operator")
+        triton, "_safe_decode_kernel", lambda: pytest.fail("FP32 indexed path loaded operator")
     )
     pool = SimpleNamespace(state_dtype=torch.float32, conv_dtype=torch.bfloat16)
     assert (
-        sgl.indexed_decode(
+        triton.indexed_decode(
             None,
             torch.zeros(1, 7, dtype=torch.bfloat16).as_subclass(GuardTensor),
             pool,

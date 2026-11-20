@@ -1,7 +1,6 @@
 """CPU-only checkpoint staging: official byte reader, no model or GPU kernel."""
 
 import builtins
-import importlib
 import json
 import threading
 from pathlib import Path
@@ -26,11 +25,6 @@ def no_cuda(monkeypatch):
     assert not any(t.name.startswith("checkpoint-prefetch") for t in threading.enumerate())
 
 
-@pytest.fixture
-def sdk():
-    return importlib.import_module("sglang.srt.model_loader.weight_utils")
-
-
 def tiny_checkpoint(tmp_path, count=2):
     index = {}
     for i in range(count):
@@ -40,7 +34,7 @@ def tiny_checkpoint(tmp_path, count=2):
     return index
 
 
-def test_actual_official_reader_preserves_tensors_and_bounds_reads(tmp_path, sdk, monkeypatch):
+def test_actual_official_reader_preserves_tensors_and_bounds_reads(tmp_path, monkeypatch):
     index = tiny_checkpoint(tmp_path)
     reads = []
 
@@ -60,7 +54,7 @@ def test_actual_official_reader_preserves_tensors_and_bounds_reads(tmp_path, sdk
             reads.append((size, len(data)))
             return data
 
-    monkeypatch.setattr(sdk, "open", Reader, raising=False)
+    monkeypatch.setattr(checkpoint, "open", Reader, raising=False)
 
     def collect(**kwargs):
         return {
@@ -88,13 +82,13 @@ def test_disabled_path_does_not_import_prefetch_sdk(tmp_path, monkeypatch):
     assert len(list(checkpoint.shard_readers(index))) == 2
 
 
-def test_sorted_unique_rank_assignment_and_more_ranks_than_shards(tmp_path, sdk, monkeypatch):
+def test_sorted_unique_rank_assignment_and_more_ranks_than_shards(tmp_path, monkeypatch):
     files = list(tiny_checkpoint(tmp_path, count=6).values())
     assigned = {}
     for rank in range(8):
         seen = []
         monkeypatch.setattr(
-            sdk, "_prefetch_checkpoint_file", lambda file, cancel: seen.append(file)
+            checkpoint, "_prefetch_checkpoint_file", lambda file, cancel: seen.append(file)
         )
         with checkpoint._prefetch_shards(files[::-1] + files[:2], 2, DistributedInfo(rank, 8)):
             pass
@@ -103,11 +97,13 @@ def test_sorted_unique_rank_assignment_and_more_ranks_than_shards(tmp_path, sdk,
     assert sorted(p for paths in assigned.values() for p in paths) == sorted(map(str, files))
 
 
-def test_expert_filtered_index_keeps_global_prefetch_assignment(tmp_path, sdk, monkeypatch):
+def test_expert_filtered_index_keeps_global_prefetch_assignment(tmp_path, monkeypatch):
     index = tiny_checkpoint(tmp_path, count=6)
     paths = list(index.values())
     seen = []
-    monkeypatch.setattr(sdk, "_prefetch_checkpoint_file", lambda file, cancel: seen.append(file))
+    monkeypatch.setattr(
+        checkpoint, "_prefetch_checkpoint_file", lambda file, cancel: seen.append(file)
+    )
     rows = list(
         checkpoint.shard_readers(
             {"tensor0": paths[0]},
@@ -121,7 +117,7 @@ def test_expert_filtered_index_keeps_global_prefetch_assignment(tmp_path, sdk, m
     assert sorted(seen) == [str(p) for p in paths[1::2]]
 
 
-def test_concurrent_readers_are_bounded_and_joined(tmp_path, sdk, monkeypatch):
+def test_concurrent_readers_are_bounded_and_joined(tmp_path, monkeypatch):
     paths = list(tiny_checkpoint(tmp_path, count=7).values())
     lock, gate, entered = threading.Lock(), threading.Event(), threading.Event()
     counts = {"active": 0, "maximum": 0, "completed": 0}
@@ -139,7 +135,7 @@ def test_concurrent_readers_are_bounded_and_joined(tmp_path, sdk, monkeypatch):
                 counts["active"] -= 1
                 counts["completed"] += 1
 
-    monkeypatch.setattr(sdk, "_prefetch_checkpoint_file", read)
+    monkeypatch.setattr(checkpoint, "_prefetch_checkpoint_file", read)
     try:
         with checkpoint._prefetch_shards(paths, 2, DistributedInfo(0, 1)):
             assert entered.wait(3)
@@ -150,7 +146,7 @@ def test_concurrent_readers_are_bounded_and_joined(tmp_path, sdk, monkeypatch):
     assert counts == {"active": 0, "maximum": 2, "completed": 7}
 
 
-def test_generator_close_cancels_and_joins_workers(tmp_path, sdk, monkeypatch):
+def test_generator_close_cancels_and_joins_workers(tmp_path, monkeypatch):
     index = tiny_checkpoint(tmp_path, count=5)
     entered, stopped = threading.Event(), threading.Event()
 
@@ -159,7 +155,7 @@ def test_generator_close_cancels_and_joins_workers(tmp_path, sdk, monkeypatch):
         assert cancel.wait(3), "CPU fixture cancellation timed out"
         stopped.set()
 
-    monkeypatch.setattr(sdk, "_prefetch_checkpoint_file", read)
+    monkeypatch.setattr(checkpoint, "_prefetch_checkpoint_file", read)
     stream = checkpoint.shard_readers(
         index, prefetch=True, prefetch_num_threads=2, tp_info=DistributedInfo(0, 1)
     )
@@ -169,7 +165,7 @@ def test_generator_close_cancels_and_joins_workers(tmp_path, sdk, monkeypatch):
     assert stopped.is_set()
 
 
-def test_consumer_failure_preserves_primary_and_joins_workers(tmp_path, sdk, monkeypatch):
+def test_consumer_failure_preserves_primary_and_joins_workers(tmp_path, monkeypatch):
     index = tiny_checkpoint(tmp_path)
     entered, stopped = threading.Event(), threading.Event()
     primary = RuntimeError("reader fixture failure")
@@ -183,21 +179,21 @@ def test_consumer_failure_preserves_primary_and_joins_workers(tmp_path, sdk, mon
         assert entered.wait(3)
         raise primary
 
-    monkeypatch.setattr(sdk, "_prefetch_checkpoint_file", read)
+    monkeypatch.setattr(checkpoint, "_prefetch_checkpoint_file", read)
     monkeypatch.setattr(checkpoint.safetensors, "safe_open", fail_open)
     with pytest.raises(RuntimeError) as result:
         list(checkpoint.shard_readers(index, prefetch=True, tp_info=DistributedInfo(0, 1)))
     assert result.value is primary and stopped.is_set()
 
 
-def test_prefetch_failure_surfaces_after_join(tmp_path, sdk, monkeypatch):
+def test_prefetch_failure_surfaces_after_join(tmp_path, monkeypatch):
     paths = list(tiny_checkpoint(tmp_path).values())
     primary = OSError("prefetch fixture failure")
 
     def fail(path, cancel):
         raise primary
 
-    monkeypatch.setattr(sdk, "_prefetch_checkpoint_file", fail)
+    monkeypatch.setattr(checkpoint, "_prefetch_checkpoint_file", fail)
     with pytest.raises(OSError) as result:
         with checkpoint._prefetch_shards(paths, 2, DistributedInfo(0, 1)):
             pass
@@ -256,7 +252,7 @@ def test_both_engine_weight_paths_forward_prefetch_options(monkeypatch):
     )
 
 
-def test_enabled_cross_shard_packed_scales_and_column_slices(tmp_path, sdk):
+def test_enabled_cross_shard_packed_scales_and_column_slices(tmp_path):
     import safetensors
     from minisgl.distributed.shard import ShardSpec
     from minisgl.layers.weight import read_mxfp4_pair
@@ -294,7 +290,7 @@ def test_enabled_cross_shard_packed_scales_and_column_slices(tmp_path, sdk):
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_prefetch_preserves_sorted_shard_and_tensor_iteration(tmp_path, sdk, enabled):
+def test_prefetch_preserves_sorted_shard_and_tensor_iteration(tmp_path, enabled):
     first, last = tmp_path / "a.safetensors", tmp_path / "z.safetensors"
     save_file({"a.second": torch.ones(2), "a.first": torch.zeros(2)}, first)
     save_file({"z.second": torch.ones(2), "z.first": torch.zeros(2)}, last)

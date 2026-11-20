@@ -286,7 +286,7 @@ def test_pressure_never_evicts_locked_tree_checkpoint(manager):
 def test_plan_is_immutable_and_current_backends_have_no_default_plan(manager):
     req = admit(manager)
     batch = Batch([req], "prefill")
-    assert manager.plan_checkpoints(batch, SimpleNamespace(name="sgl")) == ()
+    assert manager.plan_checkpoints(batch, SimpleNamespace(name="triton")) == ()
     assert manager.plan_checkpoints(Batch([req], "decode"), SUPPORTED) == ()
     (plan,) = manager.plan_checkpoints(batch, SUPPORTED)
     data = ForwardData(None, None, (11,), batch.checkpoint_plan)

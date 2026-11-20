@@ -99,7 +99,7 @@ def test_ep_or_non_situ_declines_deferred_before_fi(fi_executor, monkeypatch):
 def test_prelaunch_cap_shared_join_and_exactly_one_consumer(streams, supported):
     events, _, side, active = streams
     backend = create_moe_backend("fused")
-    backend._shared_stream = side
+    backend.epilogue._shared_stream = side
     packed = torch.empty(12, dtype=torch.bfloat16)
     latent, shared_out = packed[:8].view(2, 4), packed[8:].view(2, 2)
     norm = TorchRMSNorm(4)
@@ -155,7 +155,7 @@ def test_prelaunch_cap_shared_join_and_exactly_one_consumer(streams, supported):
         weighted_all_reduce=weighted,
         all_reduce_residual=reduce,
     )
-    result, tail = backend.forward_outputs(
+    result, tail = backend.epilogue.forward_outputs(
         parallel,
         experts,
         shared,
@@ -192,7 +192,7 @@ def test_prelaunch_cap_shared_join_and_exactly_one_consumer(streams, supported):
 
     expected = (project(result) + tail) + prefix
     projection_calls.clear()
-    final = backend.project_outputs(
+    final = backend.epilogue.project_outputs(
         parallel,
         result,
         tail,
@@ -210,7 +210,7 @@ def test_fp32_fallback_never_launches_deferred_or_changes_cast_norm_order():
     norm = TorchRMSNorm(4)
     norm.weight = torch.ones(4, dtype=torch.bfloat16)
     parallel = SimpleNamespace(all_reduce=lambda value: value * 3)
-    result, tail = backend.forward_outputs(
+    result, tail = backend.epilogue.forward_outputs(
         parallel,
         lambda out: partial,
         norm=norm,

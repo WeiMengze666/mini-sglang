@@ -11,7 +11,7 @@ from minisgl.attention.config import KDAConfig, MLAConfig
 from minisgl.core import get_global_ctx
 from minisgl.kvcache.recurrent_pool import CheckpointWrite
 
-from ..base import BaseAttnBackend, SequenceAttnMetadata
+from ..base import LayerAttnBackend, SequenceAttnMetadata
 from .registry import KDAKernelSpec, KDAResult, get_kda_kernel
 
 
@@ -40,21 +40,24 @@ class KDAMetadata(SequenceAttnMetadata):
     native_decode_required: bool = False
 
 
-class KDAAttentionBackend(BaseAttnBackend):
+class KDAAttentionBackend(LayerAttnBackend):
     @property
     def supports_graph_padding(self):
         return (
-            self.kernel.indexed_decode_padding
-            and self.kernel.indexed_decode is not None
+            self.decode_kernel.indexed_decode_padding
+            and self.decode_kernel.indexed_decode is not None
             and self.kvcache.device.type == "cuda"
             and self.kvcache.recurrent.conv_dtype == torch.bfloat16
             and self.kvcache.recurrent.state_dtype == torch.bfloat16
             and self.config.cache_config.head_dim == 128
         )
 
-    def __init__(self, config, kernel: KDAKernelSpec | None = None, *, cache=None):
+    def __init__(
+        self, config, prefill_kernel: KDAKernelSpec | None = None, *, decode_kernel=None, cache=None
+    ):
         self.config = config
-        self.kernel = get_kda_kernel("torch") if kernel is None else kernel
+        self.prefill_kernel = prefill_kernel or get_kda_kernel("torch")
+        self.decode_kernel = decode_kernel or self.prefill_kernel
         self.kvcache = get_global_ctx().kv_cache if cache is None else cache
         self._capture_metadata = {}
         self._capture_reqs = []
@@ -94,10 +97,10 @@ class KDAAttentionBackend(BaseAttnBackend):
 
     def checkpoint_quantum(self, batch=None):
         states = self.kvcache.recurrent
-        query = self.kernel.checkpoint_quantum
+        query = self.prefill_kernel.checkpoint_quantum
         if (
             not self.checkpoint_layer_configs
-            or self.kernel.prepare_checkpoints is None
+            or self.prefill_kernel.prepare_checkpoints is None
             or query is None
             or not states.checkpoint_enabled
             or getattr(self.kvcache, "arena", None) is not None
@@ -114,13 +117,16 @@ class KDAAttentionBackend(BaseAttnBackend):
             batch,
         )
 
-    def prepare_metadata(self, batch):
-        batch.attn_metadata = KDAMetadata.from_batch(batch, self.kvcache.device)
-        if self.kernel.indexed_prefill is not None and not getattr(batch, "is_decode", False):
-            batch.attn_metadata.lengths = tuple(req.extend_len for req in batch.reqs)
-            batch.attn_metadata.has_initial_states = tuple(req.cached_len > 0 for req in batch.reqs)
+    def build_metadata(self, batch):
+        metadata = KDAMetadata.from_batch(batch, self.kvcache.device)
+        if self.prefill_kernel.indexed_prefill is not None and not getattr(
+            batch, "is_decode", False
+        ):
+            metadata.lengths = tuple(req.extend_len for req in batch.reqs)
+            metadata.has_initial_states = tuple(req.cached_len > 0 for req in batch.reqs)
         if getattr(batch, "checkpoint_plan", ()) and self.checkpoint_layer_configs is not None:
-            self.prepare_checkpoints(batch)
+            self.prepare_checkpoints(batch, metadata=metadata)
+        return metadata
 
     def _abort_checkpoints(self, batch, error):
         states = self.kvcache.recurrent
@@ -133,12 +139,14 @@ class KDAAttentionBackend(BaseAttnBackend):
                 except BaseException as exc:
                     error.add_note(f"Checkpoint abort failed: {exc}")
 
-    def prepare_checkpoints(self, batch, layers_by_id: Mapping[int, KDAConfig] | None = None):
+    def prepare_checkpoints(
+        self, batch, layers_by_id: Mapping[int, KDAConfig] | None = None, *, metadata=None
+    ):
         """Validate the model and immutable write leases before native metadata setup."""
         if not getattr(batch, "checkpoint_plan", ()):
             return
         try:
-            metadata = batch.attn_metadata
+            metadata = batch.attn_metadata if metadata is None else metadata
             if self.checkpoint_layer_configs is not None:
                 if not self.checkpoint_layer_configs:
                     raise ValueError("Declared model cannot track every recurrent layer")
@@ -152,7 +160,7 @@ class KDAAttentionBackend(BaseAttnBackend):
             states = self.kvcache.recurrent
             if not isinstance(metadata, KDAMetadata) or metadata.checkpoints is not None:
                 raise ValueError("Checkpoint preparation requires fresh KDA metadata")
-            prepare = self.kernel.prepare_checkpoints
+            prepare = self.prefill_kernel.prepare_checkpoints
             if prepare is None:
                 raise ValueError("Selected KDA prefill cannot track checkpoint states")
             for plan in getattr(batch, "checkpoint_plan", ()):
@@ -174,8 +182,10 @@ class KDAAttentionBackend(BaseAttnBackend):
             raise
         metadata.checkpoints = prepared
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
-        metadata = batch.attn_metadata
+    def forward_layer(
+        self, layer, layer_id, x, batch, cache, page_table, *, residual=None, metadata=None
+    ):
+        metadata = batch.attn_metadata if metadata is None else metadata
         if getattr(batch, "checkpoint_plan", ()):
             try:
                 tracked = getattr(metadata, "checkpoints", None)
@@ -189,21 +199,22 @@ class KDAAttentionBackend(BaseAttnBackend):
                 self._abort_checkpoints(batch, error)
                 raise
         is_decode = getattr(batch, "is_decode", False)
+        kernel = self.decode_kernel if is_decode else self.prefill_kernel
         single_step = all(req.extend_len == 1 for req in batch.reqs)
         native_required = is_decode and (
             metadata.native_decode_required or len(x) > len(batch.reqs)
         )
-        if native_required and (not single_step or self.kernel.indexed_decode is None):
+        if native_required and (not single_step or kernel.indexed_decode is None):
             raise RuntimeError("Padded KDA decode requires its selected indexed kernel")
         # Packed prefill dispatch precedes the one-token-per-row shortcut.
         # All-T1 batches with more than one total token are still prefill.
-        if not is_decode and self.kernel.indexed_prefill is not None:
+        if not is_decode and kernel.indexed_prefill is not None:
             if metadata.state_indices is None:
                 metadata.state_indices = cache.recurrent.batch_indices(
                     [req.table_idx for req in batch.reqs]
                 )
             try:
-                output = self.kernel.indexed_prefill(
+                output = kernel.indexed_prefill(
                     layer, x, cache.recurrent, layer_id, metadata.state_indices, metadata
                 )
                 if output is None and getattr(batch, "checkpoint_plan", ()):
@@ -228,8 +239,8 @@ class KDAAttentionBackend(BaseAttnBackend):
                 metadata.state_indices = indices
             if native_required and len(indices) != len(x):
                 raise RuntimeError("Padded KDA decode requires physical state-index rows")
-            if is_decode and self.kernel.indexed_decode is not None:
-                result = self.kernel.indexed_decode(
+            if is_decode and kernel.indexed_decode is not None:
+                result = kernel.indexed_decode(
                     layer, x, cache.recurrent, layer_id, indices, metadata
                 )
                 if result is not None:
@@ -239,20 +250,18 @@ class KDAAttentionBackend(BaseAttnBackend):
                 if native_required:
                     raise RuntimeError("Selected padded KDA indexed decode declined")
             initial = cache.recurrent.get_kda_batch(layer_id, indices)
-            if self.kernel.decode is not None and is_decode:
-                fused = layer.decode(x, initial, kernel=self.kernel, residual=residual)
+            if kernel.decode is not None and is_decode:
+                fused = layer.decode(x, initial, kernel=kernel, residual=residual)
                 if fused is not None:
                     result, final = fused
                     cache.recurrent.set_kda_batch(layer_id, indices, final)
                     return result
-        projected = (
-            layer.project(x) if self.kernel.project is None else self.kernel.project(layer, x)
-        )
+        projected = layer.project(x) if kernel.project is None else kernel.project(layer, x)
         if single_step:
             output, final = layer.update(
                 *(part.unsqueeze(1) for part in projected),
                 initial,
-                kernel=self.kernel,
+                kernel=kernel,
                 is_decode=is_decode,
             )
             cache.recurrent.set_kda_batch(layer_id, indices, final)
@@ -264,16 +273,13 @@ class KDAAttentionBackend(BaseAttnBackend):
             output, state = layer.update(
                 *(part[rows] for part in projected),
                 state,
-                kernel=self.kernel,
+                kernel=kernel,
                 is_decode=is_decode,
             )
             cache.set_kda_state(layer_id, req.table_idx, state)
             outputs.append(output)
             offset += req.extend_len
         return layer.finish(x, torch.cat(outputs), residual=residual)
-
-    def forward(self, q, k, v, layer_id, batch):
-        raise NotImplementedError("KDA uses projected gates and recurrent state")
 
     def init_capture_graph(self, max_seq_len, bs_list):
         if bs_list and (
@@ -285,31 +291,32 @@ class KDAAttentionBackend(BaseAttnBackend):
         if (
             bs_list
             and self._projection_stream is None
-            and self.kernel.project is not None
+            and self.decode_kernel.project is not None
             and self.kvcache.device.type == "cuda"
         ):
             # One backend-owned resource, ready before graph warmup/capture.
             # Provider eligibility still decides whether to use the hint.
             self._projection_stream = torch.cuda.Stream(device=self.kvcache.device)
 
-    def prepare_for_capture(self, batch):
+    def capture_metadata(self, batch):
         if batch.size not in self._graph_sizes:
             raise ValueError("No KDA CUDA graph was initialized for this batch size")
         if not self.kvcache.recurrent.is_idle:
             raise RuntimeError("Capture requires an idle recurrent pool before admission")
         self._capture_reqs = batch.reqs
-        self.prepare_metadata(batch)
-        batch.attn_metadata.projection_stream = self._projection_stream
+        metadata = self.build_metadata(batch)
+        metadata.projection_stream = self._projection_stream
         # Capture has all physical rows; replay may later contain fewer real rows.
-        batch.attn_metadata.native_decode_required = self.supports_graph_padding
-        self._capture_metadata[batch.size] = batch.attn_metadata
+        metadata.native_decode_required = self.supports_graph_padding
+        self._capture_metadata[batch.size] = metadata
+        return metadata
 
     def finish_capture(self, batch):
         for req in self._capture_reqs:
             self.kvcache.release_request(req.table_idx, req.uid)
         self._capture_reqs = []
 
-    def prepare_for_replay(self, batch):
+    def replay_metadata(self, batch, metadata):
         size = batch.padded_size
         if size not in self._graph_sizes:
             raise ValueError("No KDA CUDA graph was initialized for this batch size")
@@ -319,4 +326,4 @@ class KDAAttentionBackend(BaseAttnBackend):
             self.kvcache.recurrent.batch_indices([req.table_idx for req in batch.reqs])
         )
         captured.cu_seqlens_q.fill_(batch.size)
-        captured.cu_seqlens_q[: batch.size + 1].copy_(batch.attn_metadata.cu_seqlens_q)
+        captured.cu_seqlens_q[: batch.size + 1].copy_(metadata.cu_seqlens_q)

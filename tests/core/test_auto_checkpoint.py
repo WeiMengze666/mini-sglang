@@ -308,7 +308,7 @@ def test_generic_nonFI_checkpoint_capability128_without_FI_import(case, monkeypa
         prepared.append(cache)
         return SimpleNamespace(plans=tuple(batch.checkpoint_plan), quantum=128)
 
-    case.backend.kernel = replace(
+    case.backend.prefill_kernel = replace(
         get_kda_kernel("torch"),
         prepare_checkpoints=prepare,
         checkpoint_quantum=capability,

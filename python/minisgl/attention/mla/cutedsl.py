@@ -58,7 +58,7 @@ class CuTeMLADecodePlan:
 
     def run(self, query, pages, *, nope_dim, scale):
         from flashinfer.decode import trtllm_batch_decode_with_kv_cache_mla
-        from sglang.kernels.ops.attention.utils import concat_mla_absorb_q_general
+        from minisgl.kernel.latent.concat import concat_mla_absorb_q as concat_mla_absorb_q_general
         from tvm_ffi import use_torch_stream
 
         metadata = self.metadata

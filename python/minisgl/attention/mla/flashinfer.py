@@ -3,6 +3,7 @@
 import torch
 import torch.nn.functional as F
 
+from .backend import MLAAttentionBackend
 from .reference import (
     CausalLayout,
     MLALatentOutput,
@@ -217,7 +218,7 @@ class FlashInferMLAAdapter:
         return MLALatentOutput(output, lse)
 
     def prepare_prefill(self, batch, page_table, cp, cu_lengths):
-        from sglang.srt.environ import envs
+        import os
 
         from .prefill import MLAPrefillMetadata
 
@@ -225,7 +226,7 @@ class FlashInferMLAAdapter:
             batch,
             page_table,
             cp,
-            envs.SGLANG_MAX_KV_CHUNK_CAPACITY.get(),
+            int(os.environ.get("MINISGL_MAX_KV_CHUNK_CAPACITY", 128 * 1024)),
             cu_lengths=cu_lengths,
         )
 
@@ -325,8 +326,8 @@ class FlashInferMLAAdapter:
             )
             if not has_prefix:
                 return MLAOutput(result)
-            from sglang.kernels.ops.attention.fixup_zero_kv import fixup_zero_kv_rows
-            from sglang.srt.layers.attention.merge_state import merge_state
+            from minisgl.kernel.latent.fixup import fixup_zero_kv_rows
+            from minisgl.kernel.latent.merge import merge_state
 
             output, lse = result
             for chunk in metadata.prefix_chunks:
@@ -422,3 +423,15 @@ class FlashInferMLAAdapter:
             return_lse=return_lse,
             causal_layout=causal_layout,
         )
+
+
+class FlashInferMLABackend(MLAAttentionBackend):
+    """MLA execution using FlashInfer's paged attention kernel and plans."""
+
+    cache_implementation = "native"
+
+    def __init__(self, config, *, cache=None):
+        from minisgl.core import get_global_ctx
+
+        cache = get_global_ctx().kv_cache if cache is None else cache
+        super().__init__(config, attention=FlashInferMLAAdapter(kv_dtype=cache.dtype), cache=cache)

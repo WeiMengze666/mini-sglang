@@ -1,0 +1,74 @@
+Vendored sources in minisgl
+
+Upstream: https://github.com/sgl-project/sglang
+Revision: baa9befa381511cd4d56f83980951e5a45fffc6d
+
+Files below contain selected upstream operators, device kernels, and wire-format parsers.
+Mini supplies its JIT loader, stream binding, process groups, cache layout, and batch metadata.
+Existing copyright and attribution headers apply. See the accompanying license texts.
+
+Paths in the right column are relative to python/sglang in the upstream checkout.
+
+distributed/multimem/all_gather.py <- srt/distributed/device_communicators/triton_symm_mem_ag.py
+distributed/multimem/communicator.py <- srt/distributed/device_communicators/custom_all_reduce_v2.py
+distributed/multimem/cudart.py <- srt/distributed/device_communicators/cuda_wrapper.py
+distributed/multimem/node.py <- srt/distributed/parallel_state.py
+distributed/multimem/peer.py <- srt/distributed/device_communicators/custom_all_reduce_utils.py
+distributed/multimem/tuning.py <- srt/distributed/device_communicators/configs/custom_all_reduce_v2.py
+distributed/multimem/vmm.py <- srt/utils/cuda_vmm_utils.py
+kernel/add3.py <- kernels/ops/elementwise/add3.py
+kernel/collectives/all_reduce.py <- kernels/ops/communication/all_reduce.py
+kernel/collectives/dcp.py <- kernels/ops/attention/dcp_kernels.py
+kernel/collectives/ffi.py <- kernels/jit/utils/common.py
+kernel/collectives/gemm_ag.py <- kernels/ops/communication/gemm_ag.py
+kernel/collectives/reduce_residual.py <- kernels/ops/communication/all_reduce_residual.py
+kernel/csrc/jit/attention/merge_states.cuh <- kernels/aot/csrc/attention/merge_attn_states.cu
+kernel/experts/align.py <- kernels/ops/moe/moe_align.py
+kernel/experts/group_quant.py <- kernels/ops/quantization/per_token_group_quant.py, kernels/ops/quantization/fp8_kernel.py
+kernel/experts/grouped_topk.py <- kernels/ops/moe/moe_fused_gate.py
+kernel/experts/marlin.py <- kernels/ops/moe/moe_wna16_marlin.py
+kernel/experts/marlin_activation.py <- srt/layers/moe/fused_moe_triton/fused_marlin_moe.py
+kernel/experts/marlin_layout.py <- srt/layers/quantization/marlin_utils_fp4.py, srt/layers/quantization/marlin_utils.py
+kernel/experts/marlin_repack.py <- kernels/ops/quantization/gptq_marlin_repack.py
+kernel/experts/route_quant.py <- kernels/ops/moe/moe_route_quant_fused.py
+kernel/experts/route_radix.py <- kernels/ops/moe/moe_route_radix.py
+kernel/experts/topk_softmax.py <- kernels/ops/moe/moe_topk_softmax.py
+kernel/experts/topk_sum.py <- kernels/ops/moe/moe_topk_sum.py
+kernel/gemm/splitk_tactics.py <- srt/layers/quantization/unquant.py
+kernel/gemm/tgv.py <- kernels/ops/gemm/cutedsl_bf16_gemm.py
+kernel/gemm/tiny.py <- kernels/ops/gemm/tiny_gemm.py
+kernel/kda/causal_conv.py <- kernels/ops/mamba/causal_conv1d_triton.py
+kernel/kda/chunk_delta_h.py <- kernels/ops/attention/fla/chunk_delta_h.py
+kernel/kda/chunk_intra.py <- kernels/ops/attention/fla/chunk_intra.py
+kernel/kda/chunk_intra_token_parallel.py <- kernels/ops/attention/fla/chunk_intra_token_parallel.py
+kernel/kda/cumsum.py <- kernels/ops/attention/fla/cumsum.py
+kernel/kda/fused_decode.py <- kernels/ops/attention/kda_fused_decode.py
+kernel/kda/fused_norm_gate.py <- kernels/ops/attention/fla/fused_norm_gate.py
+kernel/kda/fused_recurrent.py <- kernels/ops/attention/fla/fused_recurrent.py
+kernel/kda/fused_sigmoid_gating_recurrent.py <- kernels/ops/attention/fla/fused_sigmoid_gating_recurrent.py
+kernel/kda/index.py <- kernels/ops/attention/fla/index.py
+kernel/kda/kda.py <- kernels/ops/attention/fla/kda.py
+kernel/kda/l2norm.py <- kernels/ops/attention/fla/l2norm.py
+kernel/kda/op.py <- kernels/ops/attention/fla/op.py
+kernel/kda/packed_decode.py <- kernels/ops/attention/kda_packed_decode.py
+kernel/kda/utils.py <- kernels/ops/attention/fla/utils.py
+kernel/latent/buffer.py <- kernels/ops/kvcache/mla_buffer.py
+kernel/latent/concat.py <- kernels/ops/attention/concat_mla.py
+kernel/latent/fixup.py <- kernels/ops/attention/fixup_zero_kv.py
+kernel/latent/merge.py <- kernels/ops/attention/merge_state.py
+kernel/latent/output_gate.py <- kernels/ops/attention/mla_output_gate.py
+kernel/latent/store_query.py <- kernels/ops/attention/set_mla_kv_concat_q.py
+kernel/norm_hf.py <- kernels/ops/layernorm/rmsnorm_hf.py
+kernel/residual.py <- srt/layers/attn_residual.py
+kernel/residual_tma.py <- kernels/ops/attention/attn_res.py
+kernel/situ.py <- kernels/ops/activation/_jit_situ_and_mul.py
+kernel/vocab_embedding.py <- kernels/ops/embeddings/vocab_parallel_embedding.py
+server/formats/reasoning.py <- srt/parser/reasoning_parser.py
+server/formats/xtml.py <- srt/function_call/kimik3_format.py
+server/formats/xtml_tools.py <- srt/function_call/kimik3_detector.py
+
+kernel/csrc/include/sgl_kernel/ <- kernels/jit/include/sgl_kernel/
+kernel/csrc/jit/{attention,distributed,elementwise,gemm,kimi_k3,moe}/ contains the
+corresponding selected files from kernels/jit/csrc/. merge_states.cuh is mapped above.
+Marlin uses the scalar type definition and vLLM-derived kernels in that tree.
+The causal convolution and FLA files retain their original project notices.

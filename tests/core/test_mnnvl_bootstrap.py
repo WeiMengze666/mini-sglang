@@ -8,8 +8,9 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 import torch
-from minisgl.distributed import DistributedInfo, sgl
+from minisgl.distributed import DistributedInfo
 from minisgl.distributed.mnnvl import prepare_mnnvl_provider
+from minisgl.distributed.multimem import provider as multimem
 
 
 @pytest.fixture
@@ -27,19 +28,19 @@ def native_host(monkeypatch, tmp_path):
         torch.cuda, "get_device_properties", lambda i: SimpleNamespace(uuid=f"gpu-{i}")
     )
     monkeypatch.setattr(torch.distributed, "is_initialized", lambda: False)
-    monkeypatch.setattr(sgl.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(multimem.tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setenv("LOCAL_WORLD_SIZE", "2")
     monkeypatch.delenv("SGLANG_SKIP_P2P_CHECK", raising=False)
     sdk = SimpleNamespace()
 
     def probe(src, dst):
-        calls.append((src, dst, os.environ["SGLANG_CACHE_DIR"]))
+        calls.append((src, dst, os.environ["MINISGL_PEER_CACHE"]))
 
     sdk.gpu_p2p_access_check = probe
     original = importlib.import_module
 
     def vendor(name, *a, **kw):
-        if name.endswith("custom_all_reduce_utils"):
+        if name.endswith(".multimem.peer"):
             return sdk
         return original(name, *a, **kw)
 
@@ -54,9 +55,9 @@ def test_native_prepare_scopes_cache_and_restores_environment(
 ):
     sdk, calls = native_host
     if preset:
-        monkeypatch.setenv("SGLANG_CACHE_DIR", "caller-cache")
+        monkeypatch.setenv("MINISGL_PEER_CACHE", "caller-cache")
     else:
-        monkeypatch.delenv("SGLANG_CACHE_DIR", raising=False)
+        monkeypatch.delenv("MINISGL_PEER_CACHE", raising=False)
     if fail:
 
         def probe(*a):
@@ -64,13 +65,13 @@ def test_native_prepare_scopes_cache_and_restores_environment(
 
         sdk.gpu_p2p_access_check = probe
         with pytest.raises(RuntimeError, match="peer probe failed"):
-            sgl.prepare(tp_info=DistributedInfo(0, 2), device=torch.device("cuda:0"))
+            multimem.prepare(tp_info=DistributedInfo(0, 2), device=torch.device("cuda:0"))
     else:
-        sgl.prepare(tp_info=DistributedInfo(0, 2), device=torch.device("cuda:0"))
-        sgl.prepare(tp_info=DistributedInfo(1, 2), device=torch.device("cuda:1"))
+        multimem.prepare(tp_info=DistributedInfo(0, 2), device=torch.device("cuda:0"))
+        multimem.prepare(tp_info=DistributedInfo(1, 2), device=torch.device("cuda:1"))
         assert len(calls) == 2 and calls[0] == calls[1]
         assert calls[0][:2] == (0, 1) and calls[0][2] != "caller-cache"
-    assert os.getenv("SGLANG_CACHE_DIR") == ("caller-cache" if preset else None)
+    assert os.getenv("MINISGL_PEER_CACHE") == ("caller-cache" if preset else None)
 
 
 @pytest.mark.parametrize("condition", ["initialized", "hidden_peers", "skip_probe", "no_cuda"])
@@ -85,7 +86,7 @@ def test_native_prepare_rejects_invalid_lifecycle_before_sdk(native_host, monkey
     else:
         monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     with pytest.raises((ValueError, RuntimeError)):
-        sgl.prepare(tp_info=DistributedInfo(0, 2), device=torch.device("cuda:0"))
+        multimem.prepare(tp_info=DistributedInfo(0, 2), device=torch.device("cuda:0"))
     assert calls == []
 
 
@@ -180,14 +181,14 @@ def test_native_factory_delegates_collectives_capture_and_close(
             events.append("close")
 
     monkeypatch.setattr(
-        sgl.TorchDistributedImpl,
+        multimem.TorchDistributedImpl,
         "warmup",
         lambda self, device: events.append("fallback-warmup"),
     )
     original = importlib.import_module
 
     def vendor(name, *a, **kw):
-        if name.endswith("custom_all_reduce_v2"):
+        if name.endswith(".multimem.communicator"):
             return SimpleNamespace(CustomAllReduceV2=Native)
         return original(name, *a, **kw)
 
@@ -218,7 +219,7 @@ def test_native_factory_delegates_collectives_capture_and_close(
         output.copy_(torch.cat([tensor, tensor]))
 
     monkeypatch.setattr(torch.distributed, "all_gather_into_tensor", gather)
-    provider = sgl.create_provider(
+    provider = multimem.create_provider(
         tp_info=DistributedInfo(0, 2),
         cpu_group=cpu,
         device_group=gpu,
@@ -265,7 +266,7 @@ def test_native_factory_rejects_different_group_membership(native_host, monkeypa
         lambda group: [1, 0] if mismatch == "order" and group is gpu else [0, 1],
     )
     with pytest.raises(ValueError, match="coordinates|same ordered ranks"):
-        sgl.create_provider(
+        multimem.create_provider(
             tp_info=DistributedInfo(0, 2),
             cpu_group=cpu,
             device_group=gpu,

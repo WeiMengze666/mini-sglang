@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--create-fixture", action="store_true")
     parser.add_argument("--moe", action="store_true")
+    parser.add_argument("--attention-backend", default="flashinfer", choices=("flashattention", "flashinfer"))
     args = parser.parse_args()
     if args.create_fixture:
         return create_fixture(args.fixture)
@@ -57,7 +58,7 @@ def main():
             DistributedInfo(rank, world),
             torch.bfloat16,
             ep_size=world if args.moe else 1,
-            attention_backend="fi",
+            attention_backend=args.attention_backend,
             moe_backend="fused",
             use_dummy_weight=True,
             cuda_graph_bs=[1, 2, 4],

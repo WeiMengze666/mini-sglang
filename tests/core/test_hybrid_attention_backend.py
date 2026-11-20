@@ -5,25 +5,29 @@ from types import SimpleNamespace
 import pytest
 import torch
 from minisgl.attention.base import (
-    BaseAttnBackend,
     HybridAttnBackend,
     HybridAttnMetadata,
+    LayerAttnBackend,
     PrefillDecodeAttnBackend,
 )
 
 
-class Backend(BaseAttnBackend):
+class Backend(LayerAttnBackend):
     def __init__(self, name, events, *, fail=False):
         self.name, self.events, self.fail = name, events, fail
 
-    def prepare_metadata(self, batch):
-        batch.attn_metadata = SimpleNamespace(
-            name=self.name, get_last_indices=lambda bs: torch.arange(bs)
-        )
+    def build_metadata(self, batch, *, cu_seqlens_q=None):
         self.events.append((self.name, "prepare"))
+        return SimpleNamespace(
+            cu_seqlens_q=torch.arange(3) if cu_seqlens_q is None else cu_seqlens_q,
+            name=self.name,
+            get_last_indices=lambda bs: torch.arange(bs),
+        )
 
-    def forward_layer(self, layer, layer_id, x, batch, cache, page_table, *, residual=None):
-        assert batch.attn_metadata.name == self.name
+    def forward_layer(
+        self, layer, layer_id, x, batch, cache, page_table, *, residual=None, metadata=None
+    ):
+        assert metadata.name == self.name
         self.events.append((self.name, layer_id))
         if self.fail:
             raise RuntimeError("kernel failed")
@@ -35,11 +39,11 @@ class Backend(BaseAttnBackend):
     def init_capture_graph(self, max_seq_len, bs_list):
         self.events.append((self.name, "init"))
 
-    def prepare_for_capture(self, batch):
-        self.prepare_metadata(batch)
+    def capture_metadata(self, batch):
+        return self.build_metadata(batch)
 
-    def prepare_for_replay(self, batch):
-        assert batch.attn_metadata.name == self.name
+    def replay_metadata(self, batch, metadata):
+        assert metadata.name == self.name
         self.events.append((self.name, "replay"))
 
     def finish_capture(self, batch):
@@ -52,7 +56,7 @@ def make_backend(events, **kwargs):
     )
 
 
-def test_layer_predicate_dispatches_both_apis_and_preserves_child_metadata():
+def test_layer_predicate_dispatches_and_preserves_child_metadata():
     events = []
     backend = make_backend(events)
     batch = SimpleNamespace()
@@ -63,11 +67,8 @@ def test_layer_predicate_dispatches_both_apis_and_preserves_child_metadata():
             backend.forward_layer(None, layer_id, torch.zeros(1), batch, None, None),
             torch.tensor([float(layer_id)]),
         )
-        backend.forward(torch.zeros(1), None, None, layer_id, batch)
         assert batch.attn_metadata is metadata
-    assert events[2:] == [
-        (kind, i) for i in range(4) for kind in ["kda" if i % 2 == 0 else "mla"] * 2
-    ]
+    assert events[2:] == [(kind, i) for i in range(4) for kind in ["kda" if i % 2 == 0 else "mla"]]
     assert isinstance(metadata, HybridAttnMetadata)
     assert metadata.get_last_indices(2).tolist() == [0, 1]
 
@@ -121,21 +122,23 @@ def test_hybrid_cleanup_releases_both_children_after_failure():
     assert events == [("kda", "failed"), ("mla", "finish")]
 
 
-@pytest.mark.parametrize("name,kernel", [("fi", "flashinfer"), ("sgl", "sgl")])
+@pytest.mark.parametrize("name,kernel", [("flashinfer", "flashinfer"), ("auto", "triton")])
 def test_attention_factory_owns_its_kda_kernel(monkeypatch, name, kernel):
-    import minisgl.attention.fi as fi
+    import minisgl.attention.mla.flashinfer as flashinfer
     import minisgl.core as core
     from minisgl.attention import create_attention_backend
+    from minisgl.distributed import DistributedInfo
 
+    monkeypatch.setattr("minisgl.distributed.info._TP_INFO", DistributedInfo(0, 1))
     cache = SimpleNamespace(device=torch.device("cpu"))
     ctx = core.Context(page_size=1)
     ctx.kv_cache = cache
     monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
-    monkeypatch.setattr(fi, "FlashInferMLABackend", lambda config: Backend("mla", []))
+    monkeypatch.setattr(flashinfer, "FlashInferMLABackend", lambda config: Backend("mla", []))
     config = SimpleNamespace(cache_config=object(), is_kda_layer=lambda layer_id: layer_id == 0)
     backend = create_attention_backend(name, config)
     assert isinstance(backend, HybridAttnBackend)
-    assert backend.kda_backend.kernel.name == kernel
+    assert backend.kda_backend.prefill_kernel.name == kernel
     assert backend.is_kda_layer(0) and not backend.is_kda_layer(1)
 
 
@@ -154,7 +157,9 @@ def test_attention_provider_registration_is_explicit_and_idempotent(monkeypatch)
     assert calls == ["registered"]
 
 
-@pytest.mark.parametrize("name", ["recurrent", "recurrent-fi", "recurrent-fi-triton"])
+@pytest.mark.parametrize(
+    "name", ["fa", "fi", "sgl", "recurrent", "recurrent-fi", "recurrent-fi-triton"]
+)
 def test_removed_backend_names_are_rejected(name):
     from argparse import ArgumentTypeError
 

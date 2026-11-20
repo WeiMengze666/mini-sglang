@@ -125,7 +125,7 @@ def test_logical_index_views_cannot_borrow_a_different_prefix(monkeypatch, dtype
         lambda *args, **kwargs: (native_calls.append(args[1]), result)[1],
     )
     with mla._write_scope(canonical):
-        item = MLACacheWrite(cache, 0, torch.ones(2, 512), torch.ones(2, 64), locations, "sgl")
+        item = MLACacheWrite(cache, 0, torch.ones(2, 512), torch.ones(2, 64), locations, "native")
         if case in ("write_neg", "canonical_neg"):
             with pytest.raises(IndexError, match="out of range"):
                 item.fused_query(None, None)
@@ -224,7 +224,7 @@ def test_fused_write_uses_scope_but_public_fused_api_still_checks(monkeypatch):
     latent, key = torch.ones(2, 512), torch.ones(2, 64)
     with mla._write_scope(locations):
         for _ in range(3):
-            item = MLACacheWrite(cache, 0, latent, key, locations[:], "sgl")
+            item = MLACacheWrite(cache, 0, latent, key, locations[:], "native")
             assert item.fused_query(None, None) is result
         assert len(calls) == 1
         assert mla.store_and_concat_query(0, latent, key, locations[:], None, None) is result

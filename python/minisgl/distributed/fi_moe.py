@@ -18,7 +18,7 @@ def _native_api():
         "flashinfer.comm.mnnvl",
         "flashinfer.comm.dlpack_utils",
         "flashinfer.comm.comm_backend",
-        "sglang.srt.utils.common",
+        "minisgl.distributed.topology",
         "tvm_ffi",
     ):
         try:

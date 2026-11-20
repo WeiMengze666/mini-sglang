@@ -32,7 +32,7 @@ def _jit_index_module(
 
 @functools.cache
 def _native_vocab_embedding():
-    name = "sglang.kernels.ops.embeddings.vocab_parallel_embedding"
+    name = "minisgl.kernel.vocab_embedding"
     try:
         return importlib.import_module(name).vocab_parallel_embedding
     except ModuleNotFoundError as error:

@@ -5,7 +5,7 @@ import random
 import pytest
 import torch
 from minisgl.moe import RoutingPolicy
-from minisgl.moe.fused import moe_align_block_size
+from minisgl.moe.experts.fused import moe_align_block_size
 from minisgl.moe.routing import align_routes
 
 
@@ -78,7 +78,7 @@ def test_routing_policy_is_opt_in_and_config_driven():
 
 
 def test_packed_executor_forwards_routing_policy(monkeypatch):
-    import minisgl.moe.mxfp4 as packed
+    import minisgl.moe.experts.triton as packed
     from minisgl.moe.routing import RoutingPolicy
 
     calls = []

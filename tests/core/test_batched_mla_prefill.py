@@ -134,11 +134,11 @@ def test_native_ragged_calls_are_batched_with_fp8_boundary_and_bounded_prefixes(
         sys.modules, "tvm_ffi", SimpleNamespace(use_torch_stream=lambda: nullcontext())
     )
     monkeypatch.setitem(
-        sys.modules, "sglang.srt.layers.attention.merge_state", SimpleNamespace(merge_state=merge)
+        sys.modules, "minisgl.kernel.latent.merge", SimpleNamespace(merge_state=merge)
     )
     monkeypatch.setitem(
         sys.modules,
-        "sglang.kernels.ops.attention.fixup_zero_kv",
+        "minisgl.kernel.latent.fixup",
         SimpleNamespace(fixup_zero_kv_rows=lambda *args: fixes.append(True)),
     )
     monkeypatch.setattr("minisgl.layers.linear.linear_bf16", project)

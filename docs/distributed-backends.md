@@ -6,18 +6,17 @@ implement the same all-reduce, all-gather, capture and teardown interface.
 
 ## Native symmetric-memory collectives
 
-Use SGLang's custom all-reduce v2 through the regular MNNVL provider:
+Select the native MNNVL provider on a supported multicast fabric.
 
 ```bash
 python -m minisgl --model-path /data/models/Kimi-K3 --tp-size 8 \
   --distributed-backend mnnvl \
-  --distributed-provider minisgl.distributed.sgl
+  --distributed-provider minisgl.distributed.multimem.provider
 ```
 
 Add the remaining model and serving arguments for the intended workload. This
-provider is independent of the model and attention backend. SGLang supplies the
-symmetric-memory allocation, topology checks, algorithm selection, multicast and
-collective kernels. Unsupported all-reduce inputs and all-gather use Torch/NCCL
+provider is independent of the model and attention backend. Mini packages the upstream symmetric-memory allocator, topology checks,
+algorithm selection and collective kernels. Unsupported all-reduce inputs and all-gather use Torch/NCCL
 on the same ordered ranks. TVM FFI launches follow the current Torch stream,
 including graph capture and subsequent pointer registration.
 

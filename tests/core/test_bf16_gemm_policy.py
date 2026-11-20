@@ -320,7 +320,7 @@ def test_policy_loader_owns_only_pure_policy_and_declines_missing_dependencies(
             get_platform=lambda: SimpleNamespace(is_sm100=failure != "other_arch")
         ),
         "sglang.srt.layers.quantization.unquant": sdk,
-        "sglang.kernels.ops.gemm.cutedsl_bf16_gemm": tgv,
+        "minisgl.kernel.gemm.tgv": tgv,
         "sglang.srt.batch_invariant_ops": SimpleNamespace(
             is_batch_invariant_mode_enabled=lambda: failure == "invariant"
         ),

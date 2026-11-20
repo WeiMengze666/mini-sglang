@@ -19,7 +19,7 @@ def supports(layer, x, pool):
 
 @cache
 def _conv_kernel():
-    from sglang.kernels.ops.mamba.causal_conv1d_triton import causal_conv1d_fn
+    from minisgl.kernel.kda.causal_conv import causal_conv1d_fn
 
     return causal_conv1d_fn
 
@@ -30,7 +30,9 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
     Callers select/load their recurrence before entering this function. Once the
     convolution starts, errors propagate: retrying would advance state twice.
     """
-    from .sgl import _conv_qkv_input, _kernels, _project_with_gate
+    from tvm_ffi import use_torch_stream
+
+    from .projection import _conv_qkv_input, _project_with_gate
 
     if (
         not metadata.lengths
@@ -81,7 +83,6 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
         for value in (q, k, v, forget, beta)
     ):
         raise ValueError("Native KDA prefill projections must be BF16 on the input device")
-    _, _, stream = _kernels()
     conv_fn = _conv_kernel()
     raw = _conv_qkv_input(q, k, v)
     if checkpoint_conv:
@@ -94,7 +95,7 @@ def prepare(layer, x, pool, layer_id, indices, metadata, *, checkpoint_conv=()):
         for destination, window in zip(checkpoint_conv, windows):
             destination.copy_(window.permute(1, 2, 0))
     # Metadata, projections and both kernel imports are ready before state writes.
-    with stream():
+    with use_torch_stream():
         mixed = conv_fn(
             raw.t(),
             weights,

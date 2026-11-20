@@ -7,7 +7,7 @@ import torch
 
 @cache
 def _kernels():
-    from sglang.kernels.ops.mamba.causal_conv1d_triton import (
+    from minisgl.kernel.kda.causal_conv import (
         causal_conv1d_fn,
         causal_conv1d_update,
     )

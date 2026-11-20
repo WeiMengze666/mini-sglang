@@ -4,7 +4,7 @@ from contextlib import nullcontext
 
 import pytest
 import torch
-from minisgl.attention.kda import sgl
+from minisgl.attention.kda import triton
 
 
 @pytest.mark.parametrize("bound", [None, -5.0])
@@ -58,9 +58,9 @@ def test_native_inplace_pool_does_not_mutate_framework_inputs(
         assert kwargs["cu_seqlens"].tolist() == [0, 1]
         return kwargs["v"].new_full((1, 1, heads, values), 9)
 
-    monkeypatch.setattr(sgl, "_safe_decode_kernel", lambda: safe_decode)
-    monkeypatch.setattr(sgl, "_kernels", lambda: (chunk, decode, nullcontext))
-    output, final = sgl.recurrent_kda(
+    monkeypatch.setattr(triton, "_safe_decode_kernel", lambda: safe_decode)
+    monkeypatch.setattr(triton, "_kernels", lambda: (chunk, decode, nullcontext))
+    output, final = triton.recurrent_kda(
         q, k, v, forget, beta, a, dt, state if has_state else None, bound, is_decode=is_decode
     )
     assert len(seen) == 1 and output.shape == v.shape
@@ -71,10 +71,10 @@ def test_native_inplace_pool_does_not_mutate_framework_inputs(
 
 
 def test_empty_sequence_preserves_state_without_loading_sdk(monkeypatch):
-    monkeypatch.setattr(sgl, "_kernels", lambda: pytest.fail("empty input loaded SDK"))
+    monkeypatch.setattr(triton, "_kernels", lambda: pytest.fail("empty input loaded SDK"))
     q = torch.empty(0, 2, 3)
     state = torch.arange(30.0).reshape(2, 3, 5)
-    output, final = sgl.recurrent_kda(
+    output, final = triton.recurrent_kda(
         q,
         q,
         torch.empty(0, 2, 5),

@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from minisgl.attention.kda import sgl
+from minisgl.attention.kda import projection
 
 
 @pytest.mark.parametrize("batch", [1, 48])
@@ -11,8 +11,8 @@ def test_adjacent_qkvg_prefix_is_readonly_row_gapped_view(monkeypatch, batch):
     merged = torch.arange(batch * 4 * width).remainder(31).bfloat16().reshape(batch, 4 * width)
     q, k, v, gate = merged.split(width, dim=-1)
     expected, snapshot = torch.cat((q, k, v), -1), merged.clone()
-    monkeypatch.setattr(sgl.torch, "cat", lambda *args, **kwargs: pytest.fail("QKV copied"))
-    result = sgl._conv_qkv_input(q, k, v)
+    monkeypatch.setattr(projection.torch, "cat", lambda *args, **kwargs: pytest.fail("QKV copied"))
+    result = projection._conv_qkv_input(q, k, v)
     assert result.shape == (batch, 3 * width) and result.stride() == (4 * width, 1)
     assert torch._C._is_alias_of(result, merged)
     assert result.storage_offset() == q.storage_offset()
@@ -53,7 +53,7 @@ def test_noneligible_layout_keeps_original_cat(case):
     else:
         parts = parts[0].double(), parts[1], parts[2]
     expected = torch.cat(parts, -1)
-    result = sgl._conv_qkv_input(*parts)
+    result = projection._conv_qkv_input(*parts)
     assert torch.equal(result, expected)
     assert all(not torch._C._is_alias_of(result, part) for part in parts)
     assert result.requires_grad == expected.requires_grad
@@ -69,8 +69,8 @@ def test_selected_view_failure_propagates_without_cat_retry(monkeypatch):
 
     monkeypatch.setattr(torch.Tensor, "as_strided", fail)
     monkeypatch.setattr(
-        sgl.torch, "cat", lambda *args, **kwargs: pytest.fail("view retried as cat")
+        projection.torch, "cat", lambda *args, **kwargs: pytest.fail("view retried as cat")
     )
     with pytest.raises(RuntimeError, match="selected view failed"):
-        sgl._conv_qkv_input(q, k, v)
+        projection._conv_qkv_input(q, k, v)
     assert calls == [1]

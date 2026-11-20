@@ -7,8 +7,9 @@ import torch
 
 @cache
 def _sigmoid_mul_ops():
-    from sglang.kernels.ops.attention import mla_output_gate
     from tvm_ffi import use_torch_stream
+
+    from .latent import output_gate as mla_output_gate
 
     return mla_output_gate, use_torch_stream
 

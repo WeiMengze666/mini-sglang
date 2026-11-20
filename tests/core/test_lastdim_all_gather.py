@@ -14,8 +14,8 @@ from minisgl.distributed.impl import (
     TorchDistributedImpl,
 )
 from minisgl.distributed.mnnvl import MNNVLDistributedImpl
+from minisgl.distributed.multimem.provider import MultimemProvider
 from minisgl.distributed.parallel import TensorParallel
-from minisgl.distributed.sgl import SGLangMNNVLProvider
 from minisgl.engine.engine import Engine, _prepare_head_all_gather
 from minisgl.layers.linear import Linear
 from test_collective_outputs import cuda_tensor
@@ -48,7 +48,7 @@ def native(monkeypatch):
     monkeypatch.setattr(torch.distributed, "all_gather_object", agreement)
     monkeypatch.setattr(torch.cuda, "synchronize", lambda device: events.append(("drain", device)))
     comm = SimpleNamespace(disabled=False, has_multicast=True, close=lambda: events.append("close"))
-    provider = SGLangMNNVLProvider(
+    provider = MultimemProvider(
         comm,
         group=device_group,
         output_group=cpu_group,
@@ -167,7 +167,7 @@ def test_invalid_metadata_fails_before_sdk(native, options):
 def test_import_error_is_only_prelaunch_decline(native, monkeypatch):
     provider, events = native
     del provider.__dict__["_all_gather_ops"]
-    import minisgl.distributed.sgl as sgl
+    import minisgl.distributed.multimem.provider as sgl
 
     def unavailable(name):
         raise ModuleNotFoundError(name)
@@ -356,7 +356,7 @@ def _gloo_worker(rank, init_path, mode, results):
                     assert actual.is_contiguous()
             results.put((rank, "exact"))
         else:
-            provider = SGLangMNNVLProvider(
+            provider = MultimemProvider(
                 SimpleNamespace(
                     disabled=False, has_multicast=not (mode == "capability" and rank == 0)
                 ),

@@ -1,15 +1,6 @@
-"""Optional baa9bef SDK dense GEMM policy, without SGLang runtime config.
-
-The SDK's initialize_bf16_gemm_config reads get_exec and mutates dispatch
-state; this adapter never calls it. Its policy owns only AUTO eligibility,
-Split-K's SDK environment switch, and references to the SDK's pure selectors
-and original tactic table. Imports happen only after a real CUDA input exists.
-"""
-
 from __future__ import annotations
 
 import importlib
-from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 
@@ -42,37 +33,13 @@ class Policy:
 
 @cache
 def _load_policy():
-    try:
-        context = importlib.import_module("sglang.srt.runtime_context")
-        # SDK AUTO hardware fact works before execution-config publication.
-        if not context.get_platform().is_sm100:
-            return None
-        sdk = importlib.import_module("sglang.srt.layers.quantization.unquant")
-        tgv = importlib.import_module("sglang.kernels.ops.gemm.cutedsl_bf16_gemm")
-        invariant = importlib.import_module("sglang.srt.batch_invariant_ops")
-    except (ImportError, OSError):
+    from minisgl.utils import is_sm100_supported
+
+    if not is_sm100_supported():
         return None
-    required = (
-        getattr(sdk, "use_bf16_splitk_gemm", None),
-        getattr(sdk, "should_enable_bf16_splitk_gemm", None),
-        getattr(tgv, "use_cutedsl_bf16_gemm", None),
-        getattr(tgv, "cutedsl_bf16_gemm", None),
-        getattr(tgv, "cutedsl_bf16_gemm_out", None),
-        getattr(invariant, "is_batch_invariant_mode_enabled", None),
-    )
-    backend = getattr(getattr(sdk, "Bf16GemmBackend", None), "CUTEDSL", None)
-    if (
-        backend is None
-        or not isinstance(getattr(sdk, "_BF16_SPLITK_TUNED_TACTICS", None), Mapping)
-        or not all(callable(fn) for fn in required)
-    ):
-        return None
-    return Policy(
-        sdk,
-        tgv,
-        bool(sdk.should_enable_bf16_splitk_gemm(backend)),
-        invariant.is_batch_invariant_mode_enabled,
-    )
+    from minisgl.kernel.gemm import splitk_tactics, tgv
+
+    return Policy(splitk_tactics, tgv, True, torch.are_deterministic_algorithms_enabled)
 
 
 @cache

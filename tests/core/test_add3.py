@@ -161,7 +161,7 @@ def test_projection_preserves_fp32_output_and_casts_shared_before_prefix():
     x = torch.full((2, 4), 1.003, dtype=torch.float32)
     shared = torch.full_like(x, 0.07)
     residual = torch.full((2, 4), -0.2, dtype=torch.bfloat16)
-    result = backend.project_outputs(
+    result = backend.epilogue.project_outputs(
         SimpleNamespace(), x, shared, output_dtype=torch.bfloat16, residual=residual
     )
     assert result.dtype == torch.float32

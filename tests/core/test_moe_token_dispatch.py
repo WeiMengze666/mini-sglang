@@ -13,7 +13,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from minisgl.distributed import fi_moe as F
 from minisgl.distributed.info import DistributedInfo
-from minisgl.moe.token_dispatch import FlashInferTokenDispatcher
+from minisgl.moe.dispatch import FlashInferTokenDispatcher
 
 
 class DeviceTensor(torch.Tensor):

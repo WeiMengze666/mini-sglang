@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import secrets
 
+from .formats import reasoning as reasoning_formats
+from .formats.xtml_tools import ToolDetector
+
 
 def validate_parser_names(reasoning=None, tool_calls=None):
-    if reasoning:
-        from sglang.srt.parser.reasoning_parser import ReasoningParser
+    unknown_reasoning = (
+        reasoning if reasoning and reasoning.lower() not in reasoning_formats.FORMATS else None
+    )
+    unknown_tools = tool_calls if tool_calls and tool_calls != "kimi_k3" else None
+    if unknown_reasoning or unknown_tools:
+        from .formats.external import validate_parser_names as validate_external
 
-        if reasoning.lower() not in ReasoningParser.DetectorMap:
-            raise ValueError(f"Unknown reasoning parser: {reasoning}")
-    if tool_calls:
-        from sglang.srt.function_call.function_call_parser import FunctionCallParser
-
-        if tool_calls not in FunctionCallParser.ToolCallParserEnum:
-            raise ValueError(f"Unknown tool-call parser: {tool_calls}")
+        validate_external(unknown_reasoning, unknown_tools)
 
 
 class CompletionParser:
@@ -26,47 +27,23 @@ class CompletionParser:
         self.call_ids = {}
         if not reasoning and not tool_calls:
             return
-        from sglang.srt.entrypoints.openai.protocol import ChatCompletionRequest
-
-        data = dict(request or {})
-        if not data.get("messages"):
-            data["messages"] = [{"role": "user", "content": data.get("prompt") or ""}]
-        native_request = ChatCompletionRequest.model_validate(data)
-        active_tools = bool(
-            tool_calls and native_request.tools and native_request.tool_choice != "none"
+        data = request or {}
+        reasoning = (
+            reasoning.lower() if reasoning and data.get("separate_reasoning", True) else None
         )
-        if reasoning and native_request.separate_reasoning:
-            from sglang.srt.parser.reasoning_parser import ReasoningParser
+        tool_calls = tool_calls if data.get("tools") and data.get("tool_choice") != "none" else None
+        if reasoning in reasoning_formats.FORMATS:
+            self.reasoning = reasoning_formats.ReasoningParser(reasoning, data)
+            reasoning = None
+        if tool_calls == "kimi_k3":
+            self.tools = ToolDetector()
+            tool_calls = None
+        if reasoning or tool_calls:
+            from .formats.external import create
 
-            options = {
-                "model_type": reasoning,
-                "request": native_request,
-                "tokenizer": tokenizer,
-                "stream_reasoning": native_request.stream_reasoning,
-                "tool_call_parser_active": active_tools,
-            }
-            self.reasoning = ReasoningParser(**options)
-            mode = self.reasoning.detector.reasoning_default
-            if mode in (
-                "thinking",
-                "enable_thinking",
-                "explicit_thinking",
-                "explicit_enable_thinking",
-            ):
-                toggle = mode.removeprefix("explicit_")
-                value = (native_request.chat_template_kwargs or {}).get(toggle)
-                enabled = value is True if mode.startswith("explicit_") else value is not False
-                if self.reasoning.detector.force_reasoning != enabled:
-                    self.reasoning = ReasoningParser(**options, force_reasoning=enabled)
-        if active_tools:
-            from sglang.srt.function_call.function_call_parser import FunctionCallParser
-
-            self.tools = FunctionCallParser(
-                native_request.tools,
-                tool_calls,
-                tokenizer=tokenizer,
-                tool_choice=native_request.tool_choice,
-            )
+            extra_reasoning, extra_tools = create(reasoning, tool_calls, data, tokenizer)
+            self.reasoning = self.reasoning or extra_reasoning
+            self.tools = self.tools or extra_tools
 
     def finish_reason(self, reason=None):
         if reason in (None, "stop"):
@@ -113,4 +90,9 @@ class CompletionParser:
 
     def finish(self):
         reasoning, content = self.reasoning.parse_stream_end() if self.reasoning else ("", "")
-        return self._content(reasoning, content, streaming=True)
+        result = self._content(reasoning, content, streaming=True)
+        if self.tools:
+            tail, _ = self.tools.parse_stream_end()
+            if tail:
+                result["content"] = (result.get("content") or "") + tail
+        return result

@@ -2,11 +2,17 @@
 
 The released Kimi-K3 checkpoint runs through Mini's text server on eight B300 GPUs. The measured runtime is `c3c8b04`. It produced 326.28 output tokens/s against 328.86 for SGLang on the 900-second AgentX workload. The comparison includes tail latency and the client drain behavior. [Serving results](kimi-k3-performance.md) · [Machine-readable results](validation/kimi-k3-delivery-16k.json)
 
+## Following a request through the runtime
+
+The model declares the attention algorithm for each layer. `HybridAttnBackend` builds one set of packed query offsets and gives the KDA and MLA backends their own metadata. KDA selects its prefill or decode kernel when it runs the layer. For the measured cache policy, prefill uses FlashInfer with BF16 state checkpoints and decode uses the indexed Triton recurrence. MLA uses FlashInfer paged attention and combines the DCP ranks' partial outputs using their log-sum-exp values.
+
+The router defines the score, expert IDs and weights. Local expert implementations in `moe/experts` own weight packing, activation precision and GEMMs. An executor supporting EP declares the token payloads it can exchange. The dispatcher transports those rows and combines the results using the inverse mapping. After EP and expert-TP complete, only the shared expert output needs a TP reduction. The layer supplies its projection, normalizer and residual to the MoE epilogue.
+
 ## Run the measured configuration
 
 Use the [saved server and AIPerf commands](../benchmark/online/profiles/kimi-k3-sglang.json) with the respective environments. The Mini runtime uses SGLang kernel sources at `baa9bef`, FlashInfer 0.7.1 and Torch 2.14.1+cu130. The reference server uses SGLang `94602c9`, FlashInfer 0.6.18 and Torch 2.13.0. Both measurements use AIPerf 0.13.0. The checkpoint and trusted tokenizer are at `/data/models/Kimi-K3`.
 
-Install Mini with `python -m pip install -e ".[native]"` in the Mini environment. The measured run used Python 3.12 and loaded the pinned SGLang checkout from its `python/` directory on `PYTHONPATH`. The attention, collective and parser adapters import that SDK. Use a separate environment for the reference server. [Mini SDK revision](https://github.com/sgl-project/sglang/tree/baa9befa381511cd4d56f83980951e5a45fffc6d) · [Reference server revision](https://github.com/sgl-project/sglang/tree/94602c9c2b7cbdb8efd5c52802dac6a1c180089e)
+Install Mini with `python -m pip install -e ".[native]"` in its own environment. Mini calls FlashInfer directly and packages the selected CUDA and Triton kernels used by KDA, MLA, MoE and MNNVL. The K3 reasoner and tool-call parser run in-process. The published baseline used the original external kernel checkout. Keep the reference server in its own environment. [Kernel source and licenses](../python/minisgl/kernel/licenses/UPSTREAM.txt) · [Reference server revision](https://github.com/sgl-project/sglang/tree/94602c9c2b7cbdb8efd5c52802dac6a1c180089e)
 
 Both measured servers used the following CUDA and NCCL environment on this host.
 
@@ -79,8 +85,8 @@ common=(--model /data/models/Kimi-K3 --cases cases.json --batch-size 8 \
   --activation-precision mxfp8 --kv-cache-dtype fp8_e4m3 --recurrent-state-dtype bfloat16 \
   --cuda-graph --cuda-graph-max-bs 48)
 torchrun --standalone --nnodes=1 --nproc-per-node=8 tests/validation/gsm8k_suite.py \
-  "${common[@]}" --engine mini --attention-backend fi,sgl --distributed-backend mnnvl \
-  --distributed-provider minisgl.distributed.sgl --output quality-mini
+  "${common[@]}" --engine mini --attention-backend auto --distributed-backend mnnvl \
+  --distributed-provider minisgl.distributed.multimem.provider --output quality-mini
 python tests/validation/gsm8k_suite.py "${common[@]}" --engine sglang --attention-backend auto \
   --expected-reference-revision 94602c9c2b7cbdb8efd5c52802dac6a1c180089e \
   --weight-loader-prefetch-checkpoints --weight-loader-prefetch-num-threads 8 \

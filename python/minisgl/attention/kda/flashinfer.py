@@ -1,9 +1,12 @@
 """Public FlashInfer KDA adapter; external state uses the framework's K,V order."""
 
 from contextlib import ExitStack
-from functools import cache
 
 import torch
+
+
+def supports_chunk_prefill(device):
+    return device.type == "cuda" and torch.cuda.get_device_capability(device) in ((10, 0), (10, 3))
 
 
 def recurrent_kda(
@@ -12,11 +15,10 @@ def recurrent_kda(
     if is_decode and q.shape[0] != 1:
         raise ValueError("KDA decode requires one token per request")
     if q.shape[0] == 1 or lower_bound is None:
-        # The native SDK portfolio preserves either BF16 or FP32 state for
-        # cases the public FlashInfer portfolio does not currently cover.
+        # The Triton recurrence covers single-token and unbounded-gate inputs.
         from .registry import get_kda_kernel
 
-        return get_kda_kernel("sgl").recurrence(
+        return get_kda_kernel("triton").recurrence(
             q, k, v, forget, beta_logits, a_log, dt_bias, state, lower_bound, is_decode=is_decode
         )
     from flashinfer import recurrent_kda as run
@@ -55,21 +57,14 @@ def recurrent_kda(
     return output[0], final[0].transpose(-1, -2).contiguous()
 
 
-# The official class retains only its callable, not scheduler or request state.
-@cache
-def _prefill_kernel():
-    from sglang.srt.layers.attention.linear.kernels.kda_flashinfer_prefill import (
-        FlashInferKDAPrefillKernel,
-    )
-
-    return FlashInferKDAPrefillKernel()
-
-
 def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
     """Opt-in native FI prefill preserving the original indexed state storage."""
     import math
 
-    from . import sgl
+    from flashinfer.kda import recurrent_kda as run
+    from tvm_ffi import use_torch_stream
+
+    from . import triton
     from .prefill import prepare, supports
 
     tracked = getattr(metadata, "checkpoints", None)
@@ -78,27 +73,23 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
             raise ValueError("Checkpoint prefill input no longer meets its validated portfolio")
         return None
     lower_bound = layer._config.gate_lower_bound
-    # This pinned SDK facade reshapes gate bias to [H,D], but FI's grouped
-    # all-T1 portfolio requires a flat bias. Use mature chunk prefill before
-    # any convolution/state write; this is an ABI capability limit, not arithmetic.
-    # Capability rejection precedes every convolution/state write.
+    # Grouped single-token inputs and unbounded gates use Triton. Select
+    # before convolution since it advances the request's working state.
     if (
         len(x) <= 1
         or (metadata.lengths and all(length == 1 for length in metadata.lengths))
         or lower_bound is None
         or not math.isfinite(lower_bound)
         or lower_bound >= 0
-        or torch.cuda.get_device_capability(x.device) not in ((10, 0), (10, 3))
+        or not supports_chunk_prefill(x.device)
     ):
         if tracked is not None:
             raise ValueError("Checkpoint prefill cannot switch to an untracked fallback")
-        return sgl.indexed_prefill(layer, x, pool, layer_id, indices, metadata)
+        return triton.indexed_prefill(layer, x, pool, layer_id, indices, metadata)
     if torch.cuda.is_current_stream_capturing():
         raise RuntimeError(
             "Native FI KDA prefill requires eager execution; full prefill graph is unsupported"
         )
-    kernel = _prefill_kernel()
-    _, _, stream = sgl._kernels()
     with ExitStack() as borrows:
         destinations = (
             [
@@ -115,38 +106,35 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
         )
         prepared, gate = prepare(layer, x, pool, layer_id, indices, metadata, **conv_tracking)
         q, k, v, g, beta, recurrent, plan, indices = prepared
-        tracking = {}
-        if tracked is not None:
-            snapshots = recurrent.new_empty(
-                (len(tracked.plans), *recurrent.shape[1:]), dtype=torch.float32
-            )
-            tracking = {
-                "state_checkpoint_cu_starts": tracked.cu_starts,
-                "num_state_checkpoints": len(tracked.plans),
-                "state_checkpoint_every_n_tokens": tracked.quantum,
-                "state_checkpoint_indices": tracked.destinations,
-                "track_ssm_h_batch_src": tracked.track_rows,
-                "track_state": snapshots,
-            }
-        # No exception recovery after prepare: a native error aborts this forward.
-        with stream():
-            output = kernel.extend(
-                q,
-                k,
-                v,
-                g,
-                beta,
-                ssm_states=recurrent,
-                cache_indices=indices,
-                query_start_loc=plan["cu_seqlens"],
-                A_log=layer.A_log,
-                dt_bias=layer.dt_bias,
+        snapshots = (
+            recurrent.new_empty((len(destinations), *recurrent.shape[1:]))
+            if tracked is not None
+            else None
+        )
+        with use_torch_stream():
+            output = run(
+                q=q.contiguous(),
+                k=k.contiguous(),
+                v=v.contiguous(),
+                g=g[:, : q.shape[1]].contiguous(),
+                beta=beta[:, : q.shape[1]].contiguous(),
+                A_log=layer.A_log.reshape(-1).float().contiguous(),
+                dt_bias=layer.dt_bias.reshape(q.shape[2], 128).float().contiguous(),
+                initial_state=recurrent,
+                output_final_state=False,
+                use_qk_l2norm_in_kernel=True,
+                use_gate_in_kernel=True,
                 lower_bound=lower_bound,
-                return_intermediate_states=tracked is not None,
-                **tracking,
-            )
+                cu_seqlens=plan["cu_seqlens"],
+                ssm_state_indices=indices,
+                beta_is_logit=True,
+                state_checkpoints=snapshots,
+                checkpoint_cu_starts=tracked.cu_starts if tracked else None,
+                checkpoint_state_indices=tracked.destinations if tracked else None,
+                checkpoint_every_n_tokens=tracked.quantum if tracked else 0,
+                backend="cute-dsl",
+            )[0]
         if tracked is not None:
-            output, _ = output
             for (_, recurrent_state), snapshot in zip(destinations, snapshots):
                 # Public destination is K,V; the mature kernel snapshot is V,K.
                 recurrent_state.transpose(-1, -2).copy_(snapshot)

@@ -80,7 +80,7 @@ def test_native_mla_precision_pages_graphs_and_stream(monkeypatch, cp, dtype, un
                 source[:, :512],
                 source[:, 512:],
                 table[row, : lengths[row]],
-                implementation="sgl",
+                implementation="native",
             )
             actual = torch.cat(cache.gather_mla(layer, table[row, rank : lengths[row] : cp]), -1)
             torch.testing.assert_close(

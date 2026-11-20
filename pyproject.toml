@@ -35,11 +35,11 @@ dependencies = [
     "prompt_toolkit",
     "openai",
     "apache-tvm-ffi>=0.1.4",
-    "sglang-kernel==0.4.9",
     "quack-kernels",
 ]
 
 [project.optional-dependencies]
+flashattention = ["flash-attn-4>=4.0.0b40"]
 native = [
     "flashinfer-python>=0.7.1,<0.8",
     "triton>=3.8,<4",
@@ -66,7 +66,7 @@ package-dir = {"" = "python"}
 where = ["python"]
 
 [tool.setuptools.package-data]
-"*" = ["csrc/**/*"]
+"*" = ["csrc/**/*", "licenses/*"]
 
 [tool.black]
 line-length = 100

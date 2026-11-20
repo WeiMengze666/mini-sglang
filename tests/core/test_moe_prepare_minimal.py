@@ -16,7 +16,8 @@ from minisgl.distributed.layout import ParallelLayout
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.latent_moe import GroupedRouter, LatentMoE
 from minisgl.moe import prepare as runtime
-from minisgl.moe.fused import FusedMoe
+from minisgl.moe.experts import flashinfer_tuning as tuning
+from minisgl.moe.experts.fused import FusedMoe
 from test_flashinfer_route_dtype import executor as cpu_boundary
 
 
@@ -76,7 +77,7 @@ def setup(monkeypatch, layout):
     calibration.moe_topk_ids_init = route_initializer
     monkeypatch.setitem(sys.modules, calibration.__name__, calibration)
     monkeypatch.setattr(sys.modules["flashinfer"], "__version__", "cpu-fake", raising=False)
-    monkeypatch.setattr(runtime, "_domain", lambda *args: ("same-cpu-fi-domain",))
+    monkeypatch.setattr(tuning, "_domain", lambda *args: ("same-cpu-fi-domain",))
     monkeypatch.setattr(torch.cuda, "synchronize", lambda *args: None)
     monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
     return op, calls, state
@@ -133,16 +134,16 @@ def test_real_forward_and_startup_share_identical_prepared_arguments(monkeypatch
     if mode != "bf16":
         op._precision = "mxfp8"
         x = x.float()
-        from minisgl.moe import sgl
+        from minisgl.moe import routing as routing_ops
 
         q, scale = x.to(torch.float8_e4m3fn), torch.ones(3, 8, dtype=torch.uint8)
         packed = torch.zeros(3, 2, dtype=torch.int32)
         monkeypatch.setattr(
-            sgl,
+            routing_ops,
             "fused_route_quant",
             lambda *args: (None, None, packed, q, scale) if mode == "packed" else None,
         )
-        module = ModuleType("sglang.kernels.ops.quantization.per_token_group_quant")
+        module = ModuleType("minisgl.kernel.experts.group_quant")
         module.per_token_group_quant = lambda *args, **kw: (q, scale)
         monkeypatch.setitem(sys.modules, module.__name__, module)
     prepared = op.prepare_inputs(backend, x, routing)
@@ -358,9 +359,9 @@ def test_tactic_domain_rejects_different_fi_environment(monkeypatch):
             multi_processor_count=148,
         ),
     )
-    before = runtime._domain(context(), "same-fi-version")
+    before = tuning._domain(context(), "same-fi-version")
     monkeypatch.setenv("FLASHINFER_AUTOTUNER_TEST_DOMAIN", "different")
-    assert runtime._domain(context(), "same-fi-version") != before
+    assert tuning._domain(context(), "same-fi-version") != before
     assert not torch.cuda.is_initialized()
 
 
@@ -462,7 +463,7 @@ def test_prepare_calibrates_global_routes_preserving_local_work_and_buffers(
     native_calls = []
     monkeypatch.setattr(op, "_run", lambda *args: native_calls.append(args))
     rng = torch.random.get_rng_state().clone()
-    runtime.prepare_local(FusedMoe(), op, layer.gate.routing, context(layout, local_rows=(rows,)))
+    tuning.prepare_local(FusedMoe(), op, layer.gate.routing, context(layout, local_rows=(rows,)))
     assert torch.equal(torch.random.get_rng_state(), rng)
     assert len(native_calls) == len(prepared_inputs) == len(state.calibration_calls) == 1
     actual, before = native_calls[0], prepared_inputs[0]
@@ -499,7 +500,7 @@ def test_packed_calibration_preserves_unsigned_ids_and_bf16_weight_bits(monkeypa
     monkeypatch.setattr(api, "moe_topk_ids_init", lambda *a, **k: lambda *args: sampled.clone())
     target = torch.zeros_like(sampled)
     pointer = target.data_ptr()
-    runtime._calibrate_routes(
+    tuning._calibrate_routes(
         SimpleNamespace(_global_experts=65536, _experts=8192, _start=57344), target
     )
     assert ((target >> 16) & 0xFFFF).tolist() == [[57344, 24577]]

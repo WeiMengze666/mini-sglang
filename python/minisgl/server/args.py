@@ -243,7 +243,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         "--distributed-provider",
         type=str,
         default=ServerArgs.distributed_provider,
-        help="MNNVL provider module, for example minisgl.distributed.sgl (native kernels).",
+        help="MNNVL provider module, for example minisgl.distributed.multimem.provider (native kernels).",
     )
     parser.add_argument(
         "--attention-provider",

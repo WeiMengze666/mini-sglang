@@ -101,7 +101,7 @@ def test_other_index_semantics_keep_original_launcher(monkeypatch, case):
 
 @pytest.mark.parametrize(
     "missing",
-    ["sglang", "sglang.kernels", "sglang.kernels.ops.embeddings.vocab_parallel_embedding"],
+    ["minisgl", "minisgl.kernel", "minisgl.kernel.vocab_embedding"],
 )
 def test_only_absent_native_module_is_optional(monkeypatch, missing):
     def absent(name):

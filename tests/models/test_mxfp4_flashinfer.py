@@ -13,13 +13,13 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_flashinfer_executor_imports_without_cuda_side_effect():
-    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
     assert FlashInferMXFP4Experts is not None
 
 
 def test_flashinfer_executor_rejects_situ_bf16_policy():
-    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
     with pytest.raises(ValueError, match="SiTU.*mxfp8"):
         FlashInferMXFP4Experts(
@@ -33,7 +33,7 @@ def test_flashinfer_executor_rejects_situ_bf16_policy():
 
 
 def test_flashinfer_executor_rejects_non_cuda_weights():
-    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
     with pytest.raises(ValueError, match="at least one local expert"):
         FlashInferMXFP4Experts(
@@ -61,7 +61,7 @@ def _expert(hidden=256, intermediate=256, dtype=torch.bfloat16):
 
 
 def test_flashinfer_silu_bf16_matches_decoded_reference():
-    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
     torch.manual_seed(7)
     expert = _expert()
@@ -92,7 +92,7 @@ def test_flashinfer_silu_bf16_matches_decoded_reference():
 
 
 def test_flashinfer_situ_mxfp8_is_finite_and_repeatable():
-    from minisgl.moe.flashinfer import FlashInferMXFP4Experts
+    from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
 
     torch.manual_seed(11)
     expert = _expert()

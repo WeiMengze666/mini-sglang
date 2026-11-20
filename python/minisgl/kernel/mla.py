@@ -7,9 +7,10 @@ import torch
 
 @cache
 def _kernels():
-    from sglang.kernels.jit.utils import is_arch_support_pdl
-    from sglang.kernels.ops.kvcache import mla_buffer
+    from minisgl.utils.arch import is_sm90_supported as is_arch_support_pdl
     from tvm_ffi import use_torch_stream
+
+    from .latent import buffer as mla_buffer
 
     return mla_buffer, is_arch_support_pdl(), use_torch_stream
 
@@ -62,8 +63,9 @@ def store_mla(latent, key, locations, pages, storage, *, page_size, cp_size, cp_
 
 @cache
 def _gather_kernels():
-    from sglang.kernels.ops.kvcache.mla_buffer import get_mla_kv_buffer_triton
     from tvm_ffi import use_torch_stream
+
+    from .latent.buffer import get_mla_kv_buffer_triton
 
     return get_mla_kv_buffer_triton, use_torch_stream
 
@@ -102,8 +104,9 @@ def try_gather_mla(storage, locations, latent, key) -> bool:
 
 @cache
 def _concat_query_kernels():
-    from sglang.kernels.ops.attention import set_mla_kv_concat_q
     from tvm_ffi import use_torch_stream
+
+    from .latent import store_query as set_mla_kv_concat_q
 
     return set_mla_kv_concat_q, use_torch_stream
 
@@ -144,8 +147,9 @@ def store_mla_and_concat_query(storage, locations, latent, key, query, suffix, *
 
 @cache
 def _zero_kv_kernels():
-    from sglang.kernels.ops.attention import fixup_zero_kv
     from tvm_ffi import use_torch_stream
+
+    from .latent import fixup as fixup_zero_kv
 
     return fixup_zero_kv, use_torch_stream
 

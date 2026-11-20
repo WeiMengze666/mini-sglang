@@ -8,7 +8,7 @@ import torch
 @cache
 def _native_lse_combine():
     try:
-        from sglang.kernels.ops.attention.dcp_kernels import dcp_lse_combine_triton
+        from minisgl.kernel.collectives.dcp import dcp_lse_combine_triton
     except ImportError:
         return None
     return dcp_lse_combine_triton

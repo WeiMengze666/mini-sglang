@@ -37,8 +37,8 @@ def _native_api():
         fi = importlib.import_module("flashinfer.comm.dcp_alltoall")
         mapping = importlib.import_module("flashinfer.comm.mapping")
         mnnvl = importlib.import_module("flashinfer.comm.mnnvl")
-        kernels = importlib.import_module("sglang.kernels.ops.attention.dcp_kernels")
-        common = importlib.import_module("sglang.srt.utils.common")
+        kernels = importlib.import_module("minisgl.kernel.collectives.dcp")
+        common = importlib.import_module("minisgl.distributed.topology")
     except (ImportError, OSError):
         return None
     fields = {

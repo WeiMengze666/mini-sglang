@@ -234,3 +234,25 @@ def test_prefill_precision_matches_native_runner(
         record_property("native_kernel_inputs", json.dumps(calls[0], sort_keys=True))
     assert tvm_ffi.get_raw_stream(ffi_device) == previous
     torch.cuda.current_stream().wait_stream(producer)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_paged_prefix_merge_uses_natural_log_partitions(dtype):
+    from minisgl.kernel.latent.merge import merge_state
+    from tvm_ffi import use_torch_stream
+
+    a = torch.randn(11, 3, 64, dtype=dtype, device="cuda")
+    b = torch.randn_like(a)
+    sa, sb = torch.randn(2, 11, 3, device=a.device)
+    sa[0].fill_(-torch.inf)
+    a[0].zero_()
+    out, lse = torch.empty_like(a), torch.empty_like(sa)
+    with use_torch_stream():
+        result, normalizer = merge_state(a, sa, b, sb, out, lse)
+    expected_lse = torch.logaddexp(sa.double(), sb.double())
+    expected = (sa.double() - expected_lse).exp()[..., None] * a + (
+        sb.double() - expected_lse
+    ).exp()[..., None] * b
+    assert result is out and normalizer is lse
+    torch.testing.assert_close(out, expected.to(dtype), rtol=torch.finfo(dtype).eps, atol=2e-6)
+    torch.testing.assert_close(lse.double(), expected_lse, rtol=2e-5, atol=2e-6)

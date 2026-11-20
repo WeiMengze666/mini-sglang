@@ -57,7 +57,7 @@ def test_standard_checkpoint_expert_selection_and_tensor_slices(tmp_path, monkey
 @pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")
 @pytest.mark.parametrize("tokens,remote_only", [(1, True), (3, True), (65, False)])
 def test_stacked_fused_experts_ep_and_expert_tensor_parallel(tokens, remote_only):
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe.experts.fused import FusedMoe
 
     torch.manual_seed(47)
     x = torch.randn(tokens, 32, dtype=torch.bfloat16, device="cuda") * 0.2
@@ -100,7 +100,7 @@ def test_stacked_fused_experts_ep_and_expert_tensor_parallel(tokens, remote_only
 @pytest.mark.parametrize("tokens", [38, 65])
 def test_single_local_expert_mixture_matches_dense_reference(tokens):
     import torch.nn.functional as F
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe.experts.fused import FusedMoe
 
     torch.manual_seed(149)
     dtype, device = torch.bfloat16, "cuda"
@@ -143,7 +143,7 @@ def _distributed_worker(rank, init_file):
     from minisgl.core import Context, set_global_ctx
     from minisgl.distributed.layout import configure_parallel, get_parallel_layout
     from minisgl.layers.moe import MoELayer
-    from minisgl.moe.fused import FusedMoe
+    from minisgl.moe.experts.fused import FusedMoe
 
     torch.set_num_threads(1)
     torch.cuda.set_device(rank)

@@ -59,8 +59,8 @@ def test_native_call_preserves_storage_and_uses_matching_query_precision(monkeyp
     )
     monkeypatch.setitem(
         sys.modules,
-        "sglang.kernels.ops.attention.utils",
-        SimpleNamespace(concat_mla_absorb_q_general=concat),
+        "minisgl.kernel.latent.concat",
+        SimpleNamespace(concat_mla_absorb_q=concat),
     )
     monkeypatch.setitem(sys.modules, "tvm_ffi", SimpleNamespace(use_torch_stream=nullcontext))
     # Physical pages can have alignment gaps; the adapter must preserve strides.
@@ -149,8 +149,8 @@ def test_native_scheduling_bound_is_local_and_positive(monkeypatch, cp, rank, gl
     )
     monkeypatch.setitem(
         sys.modules,
-        "sglang.kernels.ops.attention.utils",
-        SimpleNamespace(concat_mla_absorb_q_general=lambda q, suffix: torch.cat((q, suffix), -1)),
+        "minisgl.kernel.latent.concat",
+        SimpleNamespace(concat_mla_absorb_q=lambda q, suffix: torch.cat((q, suffix), -1)),
     )
     monkeypatch.setitem(sys.modules, "tvm_ffi", SimpleNamespace(use_torch_stream=nullcontext))
     local_length = global_length // cp + int(rank < global_length % cp)
@@ -192,11 +192,9 @@ def test_prepared_query_is_forwarded_without_concat_or_cast(monkeypatch):
     )
     monkeypatch.setitem(
         sys.modules,
-        "sglang.kernels.ops.attention.utils",
+        "minisgl.kernel.latent.concat",
         SimpleNamespace(
-            concat_mla_absorb_q_general=lambda *args: pytest.fail(
-                "prepared query was concatenated twice"
-            )
+            concat_mla_absorb_q=lambda *args: pytest.fail("prepared query was concatenated twice")
         ),
     )
     monkeypatch.setitem(sys.modules, "tvm_ffi", SimpleNamespace(use_torch_stream=nullcontext))

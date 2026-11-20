@@ -9,11 +9,13 @@ from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.layout import ParallelLayout
 from minisgl.engine.engine import Engine, WorkerOwner
 from minisgl.moe import create_moe_backend, select_moe_backend
-from minisgl.moe.base import TorchExpertExecutor
+from minisgl.moe.dispatch import DispatchLayout
 from minisgl.moe.ep import FlashInferEPBackend
-from minisgl.moe.flashinfer import FlashInferMXFP4Experts
-from minisgl.moe.fused import FusedMoe
-from minisgl.moe.prepare import MoePreparation, _signature
+from minisgl.moe.experts.flashinfer import FlashInferMXFP4Experts
+from minisgl.moe.experts.flashinfer_tuning import _signature
+from minisgl.moe.experts.fused import FusedMoe
+from minisgl.moe.experts.torch import TorchExpertExecutor
+from minisgl.moe.prepare import MoePreparation
 from test_moe_engine_startup import construction as construction
 
 
@@ -40,6 +42,15 @@ def context(mesh=None, **options):
     options.setdefault("max_prefill_tokens", 16384)
     options.setdefault("max_decode_tokens", 48)
     return MoePreparation(**options)
+
+
+def layout_for_carrier(dtype):
+    return DispatchLayout(
+        8,
+        2,
+        ((torch.float8_e4m3fn, 256), (torch.float8_e4m3fn, 8), (dtype, 2)),
+        (torch.bfloat16, 256),
+    )
 
 
 def signature(ctx):
@@ -158,14 +169,14 @@ def test_capability_rejection_precedes_resource_mutation(monkeypatch, invalid):
         ctx = replace(ctx, abort=None)
     plan = (signature(ctx),)
     if invalid == "frontend":
-        plan = (plan[0]._replace(activation_precision="bf16"),)
+        plan = (plan[0]._replace(dispatch_layouts=()),)
     monkeypatch.setattr(groups.ExpertParallel, "prepare", lambda *a: pytest.fail("allocated"))
     with pytest.raises(ValueError, match="explicit token budgets"):
         FlashInferEPBackend().prepare_transport(plan, ctx)
 
 
 def test_portable_FP32_executor_is_rejected_without_casting_or_allocation():
-    with pytest.raises(NotImplementedError, match="MXFP8 FlashInfer"):
+    with pytest.raises(NotImplementedError, match="token exchange layout"):
         FlashInferEPBackend().prepare_local(TorchExpertExecutor(()), None, context(), dry_run=True)
 
 
@@ -239,9 +250,14 @@ def test_full_frontend_then_owner_dispatch_compute_combine_restore(
         events.append(("combine", counts[rank]))
         return torch.zeros(counts[rank], 256, dtype=partials.dtype)
 
-    backend._dispatchers[8, 2, 256, carrier] = SimpleNamespace(dispatch=dispatch, combine=combine)
+    backend._dispatchers[layout_for_carrier(carrier)] = SimpleNamespace(
+        dispatch=dispatch, combine=combine
+    )
     executor = SimpleNamespace(
-        _global_experts=8, prepare_dispatch_inputs=front, forward_dispatched=compute
+        global_experts=8,
+        dispatch_output_dtype=torch.bfloat16,
+        prepare_dispatch_inputs=front,
+        forward_dispatched=compute,
     )
     result = backend.forward_experts(executor, torch.zeros(rows, 256), object())
     assert result.shape == (rows, 256) and result.dtype == torch.bfloat16
@@ -279,7 +295,7 @@ def test_shared_has_one_TP_sum_and_routed_has_no_second_AR(monkeypatch):
         return value + 1
 
     parallel = SimpleNamespace(all_reduce=all_reduce)
-    mixture, tail = backend.forward_outputs(
+    mixture, tail = backend.epilogue.forward_outputs(
         parallel,
         lambda out: mixed,
         lambda out: shared,
@@ -287,7 +303,7 @@ def test_shared_has_one_TP_sum_and_routed_has_no_second_AR(monkeypatch):
         output_dtype=torch.bfloat16,
     )
     projection = SimpleNamespace(forward=lambda value: events.append("up") or value * 2)
-    result = backend.project_outputs(
+    result = backend.epilogue.project_outputs(
         parallel,
         mixture,
         tail,
@@ -306,10 +322,11 @@ def test_unknown_portfolio_fails_before_dispatch(monkeypatch):
     backend = FlashInferEPBackend()
     backend._ready, backend._mesh = True, Mesh(2, 0, [])
     executor = SimpleNamespace(
-        _global_experts=8,
+        global_experts=8,
+        dispatch_output_dtype=torch.bfloat16,
         prepare_dispatch_inputs=lambda *a: (
             torch.zeros(1, 2, dtype=torch.int32),
-            (torch.zeros(1, 256), None, torch.zeros(1, 2, dtype=torch.float16)),
+            (torch.zeros(1, 256), torch.zeros(1, 8), torch.zeros(1, 2, dtype=torch.float16)),
         ),
     )
     with pytest.raises(NotImplementedError, match="prepared EP portfolio"):
@@ -411,14 +428,19 @@ def test_native_failure_aborts_once_without_retry_or_group_cleanup(monkeypatch, 
         raise failure
 
     backend._abort = abort
-    backend._dispatchers[8, 2, 256, torch.int32] = SimpleNamespace(
+    backend._dispatchers[layout_for_carrier(torch.int32)] = SimpleNamespace(
         dispatch=dispatch, combine=lambda *a: pytest.fail("retry/combine")
     )
     executor = SimpleNamespace(
-        _global_experts=8,
+        global_experts=8,
+        dispatch_output_dtype=torch.bfloat16,
         prepare_dispatch_inputs=lambda *a: (
             torch.zeros(2, 2, dtype=torch.int32),
-            (torch.zeros(2, 256), torch.zeros(2, 8), torch.zeros(2, 2, dtype=torch.int32)),
+            (
+                torch.zeros(2, 256, dtype=torch.float8_e4m3fn),
+                torch.zeros(2, 8, dtype=torch.float8_e4m3fn),
+                torch.zeros(2, 2, dtype=torch.int32),
+            ),
         ),
     )
     with pytest.raises(RuntimeError if returns else Abort) as raised:

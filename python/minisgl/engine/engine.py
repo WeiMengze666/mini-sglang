@@ -217,7 +217,7 @@ class Engine:
 
         # ======================= Attention & MoE backend initialization ========================
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
-            config.attention_backend, config.model_config
+            config.attention_backend, config.model_config,
         )
         self.checkpoint_quantum = _prepare_checkpoint_model(
             self.attn_backend,
@@ -626,7 +626,7 @@ def _adjust_config(config: EngineConfig):
     if config.distributed_backend == "auto" and config.tp_info.size > 1 and is_sm100_supported():
         override("distributed_backend", "mnnvl")
         if config.distributed_provider is None:
-            override("distributed_provider", "minisgl.distributed.sgl")
+            override("distributed_provider", "minisgl.distributed.multimem.provider")
     if config.distributed_backend not in ("auto", "torch", "pynccl", "mnnvl"):
         raise ValueError("distributed_backend must be auto, torch, pynccl or mnnvl")
     if config.distributed_backend == "mnnvl" and not config.distributed_provider:
@@ -685,19 +685,17 @@ def _adjust_config(config: EngineConfig):
         )
         if config.model_config.num_qo_heads % config.tp_info.size:
             raise ValueError("MLA heads must be divisible by TP size")
-        if config.attention_backend == "auto":
-            strategy = getattr(config, "state_cache_strategy", "auto")
-            override("attention_backend", "fi,sgl" if strategy == "extra_buffer" else "sgl")
-        backends = [
-            SUPPORTED_ATTENTION_BACKENDS[name] for name in config.attention_backend.split(",")
-        ]
-        if any(not backend.stateful_layers for backend in backends):
-            raise ValueError("Selected attention backend does not support stateful layers")
         requested_graphs = bool(config.cuda_graph_bs) or (
             config.cuda_graph_bs is None and (config.cuda_graph_max_bs or 0) > 0
         )
-        if requested_graphs and not backends[-1].cuda_graphs:
-            raise ValueError("Selected decode attention backend does not support CUDA graphs")
+        if config.attention_backend != "auto":
+            backends = [
+                SUPPORTED_ATTENTION_BACKENDS[name] for name in config.attention_backend.split(",")
+            ]
+            if any(not backend.stateful_layers for backend in backends):
+                raise ValueError("Selected attention backend does not support stateful layers")
+            if requested_graphs and not backends[-1].cuda_graphs:
+                raise ValueError("Selected decode attention backend does not support CUDA graphs")
         if not requested_graphs:
             override("cuda_graph_bs", [])
             override("cuda_graph_max_bs", 0)
@@ -716,7 +714,14 @@ def _adjust_config(config: EngineConfig):
         return
 
     if config.attention_backend == "auto":
-        backend = "trtllm" if is_sm100_supported() else ("fa,fi" if is_sm90_supported() else "fi")
+        from importlib.util import find_spec
+
+        if is_sm100_supported():
+            backend = "trtllm"
+        elif is_sm90_supported() and find_spec("flash_attn_interface") is not None:
+            backend = "flashattention,flashinfer"
+        else:
+            backend = "flashinfer"
         override("attention_backend", backend)
         logger.info_rank0(f"Auto-selected attention backend: {config.attention_backend}")
 

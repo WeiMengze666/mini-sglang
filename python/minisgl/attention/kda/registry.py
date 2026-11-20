@@ -192,28 +192,28 @@ def _flashinfer_recurrence(*args, is_decode=False):
     return recurrent_kda(*args, is_decode=is_decode)
 
 
-def _sgl_recurrence(*args, is_decode=False):
+def _triton_recurrence(*args, is_decode=False):
     if not _supports_cuda_recurrence(args[0]):
         return _torch_recurrence(*args, is_decode=is_decode)
-    from .sgl import recurrent_kda
+    from .triton import recurrent_kda
 
     return recurrent_kda(*args, is_decode=is_decode)
 
 
-def _sgl_project(layer, x):
-    from .sgl import project
+def _project(layer, x):
+    from .projection import project
 
     return project(layer, x)
 
 
-def _sgl_decode(layer, x, state):
-    from .sgl import decode
+def _fused_decode(layer, x, state):
+    from .fused_decode import decode
 
     return decode(layer, x, state)
 
 
-def _sgl_indexed_decode(layer, x, pool, layer_id, indices, metadata):
-    from .sgl import indexed_decode
+def _triton_indexed_decode(layer, x, pool, layer_id, indices, metadata):
+    from .triton import indexed_decode
 
     return indexed_decode(layer, x, pool, layer_id, indices, metadata)
 
@@ -224,8 +224,8 @@ def _flashinfer_indexed_prefill(*args):
     return indexed_prefill(*args)
 
 
-def _sgl_indexed_prefill(*args):
-    from .sgl import indexed_prefill
+def _triton_indexed_prefill(*args):
+    from .triton import indexed_prefill
 
     return indexed_prefill(*args)
 
@@ -251,12 +251,12 @@ register_kda_kernel(
     checkpoint_quantum=_native_checkpoint_quantum,
 )
 register_kda_kernel(
-    "sgl",
-    _sgl_recurrence,
-    _sgl_decode,
-    project=_sgl_project,
-    indexed_decode=_sgl_indexed_decode,
-    indexed_prefill=_sgl_indexed_prefill,
+    "triton",
+    _triton_recurrence,
+    _fused_decode,
+    project=_project,
+    indexed_decode=_triton_indexed_decode,
+    indexed_prefill=_triton_indexed_prefill,
     prepare_checkpoints=_native_prepare_checkpoints,
     checkpoint_quantum=_native_checkpoint_quantum,
     indexed_decode_padding=True,
