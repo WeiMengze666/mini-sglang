@@ -9,6 +9,8 @@ from typing import Literal
 import torch
 import torch.distributed as dist
 
+from .topology import supports_flashinfer_alltoall
+
 
 @dataclass(frozen=True)
 class AttentionExchangeSpec:
@@ -38,7 +40,6 @@ def _native_api():
         mapping = importlib.import_module("flashinfer.comm.mapping")
         mnnvl = importlib.import_module("flashinfer.comm.mnnvl")
         kernels = importlib.import_module("minisgl.kernel.collectives.dcp")
-        common = importlib.import_module("minisgl.distributed.topology")
     except (ImportError, OSError):
         return None
     fields = {
@@ -50,7 +51,7 @@ def _native_api():
         "CommBackend": getattr(mnnvl, "TorchDistBackend", None),
         "pack": getattr(kernels, "dcp_pack_a2a_send", None),
         "combine": getattr(kernels, "dcp_lse_combine_triton", None),
-        "topology_supported": getattr(common, "is_fi_a2a_supported", None),
+        "topology_supported": supports_flashinfer_alltoall,
     }
     return SimpleNamespace(**fields) if all(callable(fn) for fn in fields.values()) else None
 

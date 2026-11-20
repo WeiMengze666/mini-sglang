@@ -90,9 +90,7 @@ def test_actual_auto_extra_buffer_factory_keeps_native_decode_capability(monkeyp
     ctx = core.Context(64)
     ctx.kv_cache = cache_metadata()
     monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
-    backend = create_attention_backend(
-        config.attention_backend, model
-    )
+    backend = create_attention_backend(config.attention_backend, model)
     assert isinstance(backend, HybridAttnBackend)
     assert backend.kda_backend.prefill_kernel.name == "flashinfer"
     assert backend.kda_backend.decode_kernel.name == "triton"
@@ -325,3 +323,16 @@ def test_mla_capture_native_decline_precedes_store_and_portable_fallback(capture
     with pytest.raises(error, match=message):
         backend.forward_layer(Layer(), 0, torch.zeros(1, 3), batch, cache, None)
     assert calls == (["native", "store"] if capture_size is None else ["native"])
+
+
+def test_flashattention_graph_allocates_the_last_partial_page():
+    from types import SimpleNamespace
+
+    from minisgl.attention.flashattention import FlashAttentionBackend
+
+    backend = FlashAttentionBackend.__new__(FlashAttentionBackend)
+    backend.kvcache = SimpleNamespace(device=torch.device("cpu"))
+    backend.capture = None
+    backend.page_size = 64
+    backend.init_capture_graph(max_seq_len=65, bs_list=[1, 4])
+    assert backend.capture.page_table.shape == (4, 2)

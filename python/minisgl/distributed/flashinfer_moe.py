@@ -8,6 +8,7 @@ import torch
 import torch.distributed as dist
 
 from .info import DistributedInfo
+from .topology import supports_flashinfer_alltoall
 
 
 @cache
@@ -18,7 +19,6 @@ def _native_api():
         "flashinfer.comm.mnnvl",
         "flashinfer.comm.dlpack_utils",
         "flashinfer.comm.comm_backend",
-        "minisgl.distributed.topology",
         "tvm_ffi",
     ):
         try:
@@ -27,7 +27,7 @@ def _native_api():
             if error.name and (name == error.name or name.startswith(error.name + ".")):
                 return None
             raise
-    ops, memory, dlpack, backend, common, stream = modules
+    ops, memory, dlpack, backend, stream = modules
     fields = {
         "size": getattr(ops, "moe_a2a_get_workspace_size_per_rank", None),
         "initialize": getattr(ops, "moe_a2a_initialize", None),
@@ -37,7 +37,7 @@ def _native_api():
         "memory": getattr(memory, "SymmDeviceMemory", None),
         "pack": getattr(dlpack, "pack_strided_memory", None),
         "backend": getattr(backend, "TorchDistBackend", None),
-        "supported": getattr(common, "is_fi_a2a_supported", None),
+        "supported": supports_flashinfer_alltoall,
         "stream": getattr(stream, "use_torch_stream", None),
     }
     return SimpleNamespace(**fields) if all(callable(fn) for fn in fields.values()) else None
