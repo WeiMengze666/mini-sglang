@@ -94,10 +94,10 @@ def test_decode_graph_matches_indexed_native_pool(batch, state_dtype, request):
     a, dt = torch.randn(heads, device="cuda"), torch.randn(heads * 128, device="cuda")
     repeated = a.repeat(batch), dt.repeat(batch)
     for _ in range(3):
-        recurrent_kda(*args, *repeated, state, -5.0)
+        recurrent_kda(*args, *repeated, state, -5.0, is_decode=True)
     graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(graph):
-        actual, final = recurrent_kda(*args, *repeated, state, -5.0)
+        actual, final = recurrent_kda(*args, *repeated, state, -5.0, is_decode=True)
     for step in range(3):
         for part in args:
             part.mul_(1.015625)

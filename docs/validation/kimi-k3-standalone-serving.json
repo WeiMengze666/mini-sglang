@@ -29,14 +29,26 @@
       "mla_decode": "flashinfer"
     },
     "mini_server_importable_sglang": false,
-    "mini_server_importable_sgl_kernel": false
+    "mini_server_importable_sgl_kernel": false,
+    "mini_measured_commit": "9a1e8eb116cae012ce2e3765d1e202ec31d55dfa",
+    "mini_measured_tag": "kimi-k3-agentx-standalone-20261120"
   },
   "comparison": {
     "same_benchmark_argv": true,
     "same_resolved_workload_except_artifact_directory": true,
     "output_throughput_ratio": 0.9943901564320143,
     "reference": "Retained official job 9 on the same machine; one observation per runtime. The Mini prefill/decode scheduling interval is 8; the official default is 0.",
-    "drain": "AIPerf logged a timeout waiting for cancelled credits in both runs."
+    "drain": "AIPerf logged a timeout waiting for cancelled credits in both runs.",
+    "matched_requests": {
+      "trace_keys": 417,
+      "all_completion_lengths_equal": true,
+      "mean_delta_mini_minus_reference_ms": {
+        "time_to_first_token": -816.667,
+        "inter_token_latency": 3.285,
+        "request_latency": -67.339
+      },
+      "scope": "Matched by workload trace metadata. Runtime prompt accounting and cache-bust prefix text can differ."
+    }
   },
   "runs": {
     "mini": {
@@ -127,6 +139,16 @@
         "profile_export_aiperf.json": "67d3326164248f059a6555e1906c78bcdca51acd2effff14411bdfc31e098813",
         "profile_export.jsonl": "d57885bbe219659f225c721d33a00b7c84d3b63bf41f152576ca346ba98cbe05",
         "aiperf.log": "1333640602be27382d0e6e9285d876044c3c477493187d82408fd2c4a92ac504"
+      },
+      "packages": {
+        "torch": "2.14.1+cu130",
+        "flashinfer-python": "0.7.1",
+        "triton": "3.8.0",
+        "apache-tvm-ffi": "0.1.11",
+        "nvidia-cutlass-dsl": "4.8.0",
+        "transformers": "5.19.0",
+        "sglang": null,
+        "sglang-kernel": null
       }
     },
     "official": {
@@ -214,6 +236,16 @@
         "profile_export_aiperf.json": "7056bce5d44bb02a01331066016f045f1708adb5d3d8408e9d46049cfb97281e",
         "profile_export.jsonl": "e6799f82f49307136bd06b9684048cb8852628f2ba3847241d7296706a7d6b0d",
         "aiperf.log": "9fdcd7c4bbb681ab78c81ab9868b9a63c23d06b42a629b510bdf09b8bf99ead3"
+      },
+      "packages": {
+        "torch": "2.13.0",
+        "flashinfer-python": "0.6.18",
+        "triton": "3.7.1",
+        "apache-tvm-ffi": "0.1.11",
+        "nvidia-cutlass-dsl": "4.6.2",
+        "transformers": "5.12.1",
+        "sglang": "0.5.20",
+        "sglang-kernel": "0.4.7"
       }
     }
   }

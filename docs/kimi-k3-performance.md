@@ -2,7 +2,7 @@
 
 ## Standalone backends on 2026-11-20
 
-Mini delivered **327.02 output tokens/s**, or **99.44%** of the retained SGLang result, using the same AIPerf arguments and resolved workload. The isolated Mini server imported neither the SGLang runtime nor its kernel extension. Both runs used TP8/DCP8/EP1 with MXFP8 expert activations, FP8 E4M3 KV and BF16 KDA state. [Measurements, command lines and artifact hashes](validation/kimi-k3-standalone-serving.json)
+Mini delivered **327.02 output tokens/s**, or **99.44%** of the retained SGLang result, using the same AIPerf arguments and resolved workload. The isolated Mini server imported neither the SGLang runtime nor its kernel extension. Both runs used TP8/DCP8/EP1 with MXFP8 expert activations, FP8 E4M3 KV and BF16 KDA state. [Measured runtime snapshot](https://github.com/WeiMengze666/mini-sglang/tree/kimi-k3-agentx-standalone-20261120) · [Measurements, command lines and artifact hashes](validation/kimi-k3-standalone-serving.json)
 
 | Metric | Mini standalone | SGLang |
 | --- | ---: | ---: |
