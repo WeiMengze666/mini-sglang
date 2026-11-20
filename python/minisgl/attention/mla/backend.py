@@ -50,12 +50,13 @@ class MLAAttentionBackend(LayerAttnBackend):
         cp.prepare_exchange(spec, enabled=spec is not None)
 
     def build_metadata(self, batch, *, cu_seqlens_q=None):
+        is_decode = getattr(batch, "is_decode", False)
         metadata = (
             MLAMetadata.from_batch(batch, self.kvcache.device)
             if cu_seqlens_q is None
             else MLAMetadata(cu_seqlens_q)
         )
-        if hasattr(self.attention, "decode") and batch.is_decode:
+        if hasattr(self.attention, "decode") and is_decode:
             if any(req.extend_len != 1 for req in batch.reqs):
                 raise ValueError("MLA decode requires one new token per request")
             # The scheduler already supplied dummy input/KV rows for graph padding.
@@ -66,7 +67,7 @@ class MLAAttentionBackend(LayerAttnBackend):
                 [req.device_len for req in rows],
                 get_global_ctx().page_table,
             )
-        if not batch.is_decode and hasattr(self.attention, "prepare_prefill"):
+        if not is_decode and hasattr(self.attention, "prepare_prefill"):
             metadata.prefill = self.attention.prepare_prefill(
                 batch, get_global_ctx().page_table, ContextParallel(), metadata.cu_seqlens_q
             )

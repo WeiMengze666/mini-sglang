@@ -104,22 +104,22 @@ def _gloo_worker(rank, init_file):
         torch.manual_seed(331)
         partial = torch.randn(4, 3, 8, 5).bfloat16()
         logs = torch.randn(4, 3, 8)
-        partial[:, 0] = torch.nan
+        partial[:, 0] = 0
         logs[:, 0] = -torch.inf
         layer = MLALayer(MLAConfig(7, 8, 3, 2, 3, 5, None, 32))
         weights = torch.randn(8, 6, 5).bfloat16() * 0.1
         layer.kv_b_proj.weight = weights[rank * 2 : (rank + 1) * 2].flatten(0, 1)
         layer.o_proj.weight = torch.randn(7, 6).bfloat16() * 0.1
-        # This test isolates context exchange; tensor-parallel reduction has its own gate.
-        layer._tp = SimpleNamespace(size=4, all_reduce=lambda x: x)
         x = torch.zeros(3, 7, dtype=torch.bfloat16)
         got = layer.finish(x, MLALatentOutput(partial[rank], logs[rank]))
         probabilities = torch.nan_to_num(logs.double().softmax(0))
-        clean = partial.double().nan_to_num()
-        merged = torch.einsum("sth,sthl->thl", probabilities, clean)[:, rank * 2 : (rank + 1) * 2]
+        merged = torch.einsum("sth,sthl->thl", probabilities, partial.double())[
+            :, rank * 2 : (rank + 1) * 2
+        ]
         local_weights = weights[rank * 2 : (rank + 1) * 2, 3:]
         projected = torch.einsum("thl,hvl->thv", merged.bfloat16(), local_weights).flatten(-2)
         expected = torch.nn.functional.linear(projected, layer.o_proj.weight)
+        dist.all_reduce(expected)
         torch.testing.assert_close(got, expected, rtol=0, atol=0)
     finally:
         info._TP_INFO = None

@@ -139,6 +139,19 @@ def _worker(rank, world, init_file, device_type):
                 reference.forward_batch(step, reference_cache, table, all_logits=True)
             )
         expected_decode = torch.cat(expected_decode)
+        chunk_cache = HybridCache(cache_config(c), 16, 4, 2, torch.float32, "cpu")
+        ref_parts = []
+        for start, stop in ((0, 1), (1, 4), (4, len(tokens))):
+            req_batch = _batch(tokens[start:stop], start)
+            req_batch.out_loc = table[0, start:stop]
+            ref_parts.append(
+                reference.forward_batch(req_batch, chunk_cache, table, all_logits=True)
+            )
+        ref_chunks = torch.cat(ref_parts)
+        # Establish the effect of chunk geometry on the single-rank model, then
+        # compare distributed cache restore with the same chunk boundaries.
+        torch.testing.assert_close(ref_chunks, expected, rtol=4e-5, atol=2e-5)
+        assert (ref_chunks - expected).norm() / expected.norm() < 1e-5
         info._TP_INFO = DistributedInfo(rank, world)
         for dcp, ep in ((2, 1), (1, 2), (2, 2), (4, 4)):
             configure_parallel(dcp_size=dcp, ep_size=ep)
@@ -206,8 +219,8 @@ def _worker(rank, world, init_file, device_type):
                 gpu_table[1, :4] = gpu_table[0, :4]
                 chunks.append(run(4, len(tokens), slot=1, uid=20))
                 chunked = torch.cat(chunks)
-                torch.testing.assert_close(chunked, expected, rtol=4e-5, atol=2e-5)
-                assert (chunked - expected).norm() / expected.norm() < 1e-5
+                torch.testing.assert_close(chunked, ref_chunks, rtol=4e-5, atol=2e-5)
+                assert (chunked - ref_chunks).norm() / ref_chunks.norm() < 1e-5
                 cache.release_request(1, 20)
                 cache.recurrent.drop_checkpoint(checkpoint)
                 # Heterogeneous requests share projections and collectives,
@@ -232,6 +245,7 @@ def _worker(rank, world, init_file, device_type):
                 left = _batch([3], len(tokens), slot=0, uid=40)
                 right = _batch([9], len(other_tokens), slot=1, uid=41)
                 decode = SimpleNamespace(
+                    is_decode=True,
                     reqs=left.reqs + right.reqs,
                     input_ids=torch.cat((left.input_ids, right.input_ids)).to(device),
                     positions=torch.cat((left.positions, right.positions)).to(device),
