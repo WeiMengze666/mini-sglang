@@ -1,34 +1,14 @@
 # MoE backends
 
-The model describes routing, expert projections, shared branches and optional
-latent normalization. `BaseMoeBackend` selects expert execution after loading
-and combines distributed partials before the model applies nonlinear operations.
-Its collective calls use `TensorParallel`, which delegates to `DistributedImpl`.
-Kernel adapters do not construct another framework's scheduler or model runner.
+A model supplies the router scores, expert weights and any shared branch. `factory.py` selects an executor using the checkpoint format, activation precision and device. The engine prepares communication resources before sizing the KV cache.
 
-`--moe-backend fused` retains the portable/dense implementation and selects
-packed experts using their format and configured linear backend.
-`--moe-backend marlin` opts into the mature Marlin MXFP4 GEMMs, gated activation
-and top-k sum from the optional SGLang kernel SDK. Integer route planning remains
-model independent. This backend requires BF16 activations and owns repacked
-weights, so the loader does not retain them in a second raw-weight arena.
-The initial integration targets SGLang commit
-`baa9befa381511cd4d56f83980951e5a45fffc6d`; CPU fallback needs no optional SDK.
+| Step | Owner | Inputs and outputs |
+| --- | --- | --- |
+| Select experts | `routing.py` | Turn router logits into expert IDs and weights. A native executor may fuse routing with activation quantization. |
+| Dispatch and combine | `dispatch.py`, `ep.py` | Send token rows to the ranks that own their experts, then return weighted outputs in token order. The executor declares the payload layout. |
+| Compute local experts | `experts/` | The Torch, Triton, FlashInfer and Marlin adapters own weight preparation and local computation. FlashInfer tactic selection lives alongside its executor. |
+| Finish the layer | `epilogue.py` | Combine routed and shared outputs, perform any outstanding reduction and apply the model's projection or residual. |
 
-Expert executors may declare `input_dtype`. The projection producer retains that
-precision until the executor consumes it. In particular, FlashInfer MXFP8
-quantization can consume FP32 latent projection accumulators; rounding them to
-BF16 before quantization changes the activation contract. Marlin consumes BF16.
-An unsupported FP32 projection format fails explicitly instead of silently
-rounding away the requested precision.
+`--moe-backend fused` selects local computation using the weight format. `marlin` uses packed MXFP4 weights and BF16 activations. `flashinfer-ep` adds expert exchange through the configured process groups. All three use the same routing semantics.
 
-Activation quantization, KV-cache storage, recurrent-state storage and
-convolution storage are independent precision choices. Numerical and performance
-comparisons must match all four, as well as TP/DCP/EP topology and the request
-workload. Passing an adapter's component tests is not full-model acceptance.
-
-The Marlin adapter zero-pads unsupported small hidden widths to the mature
-GEMM portfolio's alignment, using zero FP4 codes and unit E8M0 scales. Logical
-model dimensions are preserved at the boundary. Aligned widths reuse the
-original tensors, including the released checkpoint's expert hidden width.
-No additional numerical kernel is defined by this padding adapter.
+An executor may declare its input dtype. For example, a FlashInfer MXFP8 executor can quantize FP32 latent projections directly, while Marlin consumes BF16. The model's KV cache and recurrent-state dtypes are independent of this selection. See the [kernel provenance](../kernel/licenses/UPSTREAM.txt) and [distributed backends](../../../docs/distributed-backends.md).

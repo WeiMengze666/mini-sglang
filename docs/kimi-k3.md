@@ -1,6 +1,6 @@
 # Kimi-K3 text inference
 
-The released Kimi-K3 checkpoint runs through Mini's text server on eight B300 GPUs. The measured runtime is `c3c8b04`. It produced 326.28 output tokens/s against 328.86 for SGLang on the 900-second AgentX workload. The comparison includes tail latency and the client drain behavior. [Serving results](kimi-k3-performance.md) · [Machine-readable results](validation/kimi-k3-delivery-16k.json)
+Kimi-K3 runs on eight B300 GPUs with Mini's packaged kernels. Its standalone serving run delivered 327.02 output tokens/s against 328.86 for SGLang on the specified 900-second AgentX workload. The comparison includes client drain and tail latency. [Serving results](kimi-k3-performance.md) · [Machine-readable results](validation/kimi-k3-standalone-serving.json)
 
 ## Following a request through the runtime
 
@@ -42,7 +42,7 @@ EP is 1 for this comparison. The checkpoint stores MXFP4 expert weights. The sel
 | Attention dispatch | `attention/base.py` composes prefill and decode backends. The hybrid backend selects KDA or MLA by layer ID. Algorithm packages adapt the native kernels and own their metadata and workspaces. |
 | Token and recurrent state | `kvcache/mla_pool.py` owns logical-to-physical MLA pages. `recurrent_pool.py` owns state leases and checkpoints. `hybrid_cache.py` matches a prefix up to a restorable recurrent checkpoint. |
 | Parallel groups and communication | `distributed/layout.py` derives DCP, expert and expert-tensor coordinates from TP. `DistributedImpl` selects a collective provider, including MNNVL. DCP gathers the required decode heads and combines partition results. |
-| Expert execution | `moe/flashinfer.py` adapts expert arithmetic. `moe/token_dispatch.py` handles dispatch and combine for the optional `flashinfer-ep` backend. |
+| Expert execution | `moe/experts/flashinfer.py` adapts expert arithmetic. `moe/dispatch.py` handles dispatch and combine for the optional `flashinfer-ep` backend. |
 | Request lifecycle | `scheduler/` owns admission, chunking, page allocation and completion. The frontend passes chat formatting to the tokenizer and selects reasoning and tool parsers by name. |
 
 Native KDA decode is selected by the attention backend. The MLA package uses FlashInfer/TRT-LLM and CuTe-DSL kernels. New models can reuse these packages by supplying the same layer and cache contracts. [Attention backends](../python/minisgl/attention/README.md) · [Distributed backends](distributed-backends.md) · [Tokenizer and chat](kimi-k3-tokenizer.md)

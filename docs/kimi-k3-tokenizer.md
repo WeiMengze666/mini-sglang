@@ -2,8 +2,7 @@
 
 The measured server uses `--trust-remote-code` to load the checkpoint tokenizer
 and its formatter through Transformers. Generation stop IDs come from the
-checkpoint generation configuration. The HTTP layer delegates reasoning and
-tool-call parsing to the configured SGLang detectors, including during streaming.
+checkpoint generation configuration. The HTTP layer uses Mini’s built-in XTML reasoning and tool detectors for Kimi-K3, including during streaming.
 [Completion parser](../python/minisgl/server/parsers.py) · [Native parser tests](../tests/models/test_completion_parsers.py)
 
 ## Data-only text tokenizer

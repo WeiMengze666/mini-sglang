@@ -1,5 +1,20 @@
 # Kimi-K3 serving performance target
 
+## Standalone backends on 2026-11-20
+
+Mini delivered **327.02 output tokens/s**, or **99.44%** of the retained SGLang result, using the same AIPerf arguments and resolved workload. The isolated Mini server imported neither the SGLang runtime nor its kernel extension. Both runs used TP8/DCP8/EP1 with MXFP8 expert activations, FP8 E4M3 KV and BF16 KDA state. [Measurements, command lines and artifact hashes](validation/kimi-k3-standalone-serving.json)
+
+| Metric | Mini standalone | SGLang |
+| --- | ---: | ---: |
+| Completed / deadline cancellations / request errors | 418 / 5 / 0 | 421 / 5 / 0 |
+| Output tokens / client request window | 307,396 / 940.002 s | 309,131 / 940.005 s |
+| Output tokens/s | 327.02 | 328.86 |
+| TTFT p50 / p99, s | 1.02 / 30.22 | 1.36 / 54.52 |
+| Inter-token latency p50 / p95 / p99, ms | 33.22 / 72.28 / 137.94 | 30.57 / 62.57 / 86.65 |
+| End-to-end latency p50 / p99, s | 12.30 / 245.20 | 12.68 / 224.97 |
+
+This comparison uses one measurement per runtime, including request drain. Both clients reported a timeout waiting for cancelled credits. The p99 inter-token latency gap is 51.29 ms.
+
 ## Accepted throughput point, 16K prefill (2026-11-18)
 
 On the same eight-B300 server, Mini `c3c8b04` delivered **99.22% of the retained SGLang throughput**. Both runs used TP8/DCP8/EP1, 393 AgentX dataset entries, concurrency 48 and seed 42. Mini used a prefill/decode scheduling interval of 8. The official server reported its default interval of 0. Its KDA backend was Triton. Mini used the newer upstream FlashInfer KDA prefill adapter and SGLang decode backend. [Exact arguments](../benchmark/online/profiles/kimi-k3-sglang.json) · [Versions, denominators and artifact hashes](validation/kimi-k3-delivery-16k.json)
