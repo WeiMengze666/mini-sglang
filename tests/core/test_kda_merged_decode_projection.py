@@ -111,18 +111,9 @@ def test_low_rank_and_other_dtypes_keep_original_projection_contract(monkeypatch
         config = SimpleNamespace(
             linear_attn_config={"kda_layers": [1], "num_heads": 16, "head_dim": 4}
         )
-        assert (
-            KimiCheckpoint(config, ParallelLayout(DistributedInfo(3, 8))).shard(
-                "model.layers.0.self_attn.g_a_proj.weight"
-            )
-            is None
-        )
-        assert (
-            KimiCheckpoint(config, ParallelLayout(DistributedInfo(3, 8)))
-            .shard("model.layers.0.self_attn.g_b_proj.weight")
-            .start
-            == 24
-        )
+        checkpoint = KimiCheckpoint(config, ParallelLayout(DistributedInfo(3, 8)))
+        assert checkpoint.shard("model.layers.0.self_attn.g_a_proj.weight") is None
+        assert checkpoint.shard("model.layers.0.self_attn.g_b_proj.weight").start == 24
     assert not torch.cuda.is_initialized()
 
 

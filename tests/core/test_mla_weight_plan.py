@@ -202,12 +202,11 @@ def test_checkpoint_slices_remain_tp_local_for_all_dcp_sizes(cp_size, rank):
         v_head_dim=128,
         linear_attn_config={"kda_layers": []},
     )
+    checkpoint = KimiCheckpoint(config, ParallelLayout(DistributedInfo(rank, 8), dcp_size=cp_size))
     for name, width in [
         ("q_b_proj.weight", 192),
         ("q_proj.weight", 192),
         ("kv_b_proj.weight", 256),
     ]:
-        spec = KimiCheckpoint(
-            config, ParallelLayout(DistributedInfo(rank, 8), dcp_size=cp_size)
-        ).shard("model.layers.0.self_attn." + name)
+        spec = checkpoint.shard("model.layers.0.self_attn." + name)
         assert spec.length == 12 * width and spec.start == rank * 12 * width

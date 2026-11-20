@@ -295,18 +295,14 @@ def test_two_rank_gloo_model_cache_chunk_decode_and_manual_moe(tmp_path):
 
 def test_shard_spec_and_invalid_splits():
     c = _config()
-    validate_partitions(c, ParallelLayout(DistributedInfo(0, 2)))
-    spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(
-        "model.layers.0.self_attn.q_proj.weight"
-    )
+    layout = ParallelLayout(DistributedInfo(1, 2))
+    checkpoint = KimiCheckpoint(c, layout)
+    checkpoint.validate()
+    spec = checkpoint.shard("model.layers.0.self_attn.q_proj.weight")
     assert (spec.axis, spec.start, spec.stop) == (0, 8, 16)
-    spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(
-        "model.layers.1.self_attn.kv_b_proj.weight"
-    )
+    spec = checkpoint.shard("model.layers.1.self_attn.kv_b_proj.weight")
     assert (spec.axis, spec.start, spec.stop) == (0, 10, 20)
-    spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(
-        "model.layers.1.mlp.experts.3.w2.weight"
-    )
+    spec = checkpoint.shard("model.layers.1.mlp.experts.3.w2.weight")
     assert (spec.axis, spec.start, spec.stop) == (1, 3, 6)
     for name in (
         "model.layers.1.self_attn.kv_a_proj_with_mqa.weight",
@@ -315,13 +311,8 @@ def test_shard_spec_and_invalid_splits():
         "model.layers.0.self_attn.o_norm.weight",
         "model.layers.0.self_attn.f_a_proj.weight",
     ):
-        assert KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(name) is None
-    assert (
-        KimiCheckpoint(_config(vocab=23), ParallelLayout(DistributedInfo(1, 2))).shard(
-            "lm_head.weight"
-        )
-        is None
-    )
+        assert checkpoint.shard(name) is None
+    assert KimiCheckpoint(_config(vocab=23), layout).shard("lm_head.weight") is None
     with pytest.raises(ValueError, match="rank must belong"):
         KimiCheckpoint(c, ParallelLayout(DistributedInfo(2, 2))).shard("lm_head.weight")
     with pytest.raises(ValueError, match="KDA heads"):
