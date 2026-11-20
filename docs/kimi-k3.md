@@ -1,18 +1,18 @@
 # Kimi-K3 text inference
 
-Kimi-K3 runs on eight B300 GPUs with Mini's packaged kernels. Its standalone serving run delivered 327.02 output tokens/s against 328.86 for SGLang on the specified 900-second AgentX workload. The comparison includes client drain and tail latency. [Serving results](kimi-k3-performance.md) · [Machine-readable results](validation/kimi-k3-standalone-serving.json)
+Kimi-K3 runs on eight B300 GPUs with Mini’s packaged kernels. The release wheel and the retained SGLang reference each delivered **328.86 output tokens/s** on the 900-second AgentX workload. Mini’s p99 inter-token latency was 136.71 ms versus 86.65 ms for SGLang. The first standalone snapshot reached 327.02 output tokens/s. [Serving results](kimi-k3-performance.md) · [Machine-readable measurements](validation/kimi-k3-standalone-serving.json)
 
 ## Following a request through the runtime
 
 The model declares the attention algorithm for each layer. `HybridAttnBackend` builds one set of packed query offsets and gives the KDA and MLA backends their own metadata. KDA selects its prefill or decode kernel when it runs the layer. For the measured cache policy, prefill uses FlashInfer with BF16 state checkpoints and decode uses the indexed Triton recurrence. MLA uses FlashInfer paged attention and combines the DCP ranks' partial outputs using their log-sum-exp values.
 
-The router defines the score, expert IDs and weights. Local expert implementations in `moe/experts` own weight packing, activation precision and GEMMs. An executor supporting EP declares the token payloads it can exchange. The dispatcher transports those rows and combines the results using the inverse mapping. After EP and expert-TP complete, only the shared expert output needs a TP reduction. The layer supplies its projection, normalizer and residual to the MoE epilogue.
+The router defines the score, expert IDs and weights. Local expert implementations in `moe/experts` own weight packing, activation precision and GEMMs. An executor supporting EP declares the token payloads it can exchange. The dispatcher transports those rows and combines the results using the inverse mapping. After expert exchange and expert tensor parallelism complete, the MoE epilogue reduces the shared expert output across TP. The layer supplies its projection, normalizer and residual to the MoE epilogue.
 
 ## Run the measured configuration
 
 Use the [saved server and AIPerf commands](../benchmark/online/profiles/kimi-k3-sglang.json) with the respective environments. The Mini runtime uses SGLang kernel sources at `baa9bef`, FlashInfer 0.7.1 and Torch 2.14.1+cu130. The reference server uses SGLang `94602c9`, FlashInfer 0.6.18 and Torch 2.13.0. Both measurements use AIPerf 0.13.0. The checkpoint and trusted tokenizer are at `/data/models/Kimi-K3`.
 
-Install Mini with `python -m pip install -e ".[native]"` in its own environment. Mini calls FlashInfer directly and packages the selected CUDA and Triton kernels used by KDA, MLA, MoE and MNNVL. The K3 reasoner and tool-call parser run in-process. The published baseline used the original external kernel checkout. Keep the reference server in its own environment. [Kernel source and licenses](../python/minisgl/kernel/licenses/UPSTREAM.txt) · [Reference server revision](https://github.com/sgl-project/sglang/tree/94602c9c2b7cbdb8efd5c52802dac6a1c180089e)
+Install Mini with `python -m pip install -e ".[native]"` in its own environment. Mini calls FlashInfer directly and packages the selected CUDA and Triton kernels used by KDA, MLA, MoE and MNNVL. The K3 reasoner and tool-call parser run in-process. The historical 16K baseline on Mini `c3c8b04` used an external kernel checkout. Keep the reference server in its own environment. [Kernel source and licenses](../python/minisgl/kernel/licenses/UPSTREAM.txt) · [Reference server revision](https://github.com/sgl-project/sglang/tree/94602c9c2b7cbdb8efd5c52802dac6a1c180089e)
 
 Both measured servers used the following CUDA and NCCL environment on this host.
 
@@ -49,23 +49,20 @@ Native KDA decode is selected by the attention backend. The MLA package uses Fla
 
 ## Validation
 
-The released checkpoint completed all 1,319 GSM8K test questions. Every run used the same pretokenized inputs and gold answers, greedy decoding, batch size 8, a 4,096-token context and a 1,024-token output limit. Prefix reuse was disabled. The scorer was rerun on every saved response.
+All three Mini expert layouts completed the 1,319-question GSM8K test split on eight B300 GPUs. Each used the same pretokenized inputs and gold labels as the retained official reference, greedy decoding, batch size 8, a 4,096-token context and a 1,024-token output limit. Prefix reuse was disabled. The scorer reparsed every saved answer and Mini checked all real sampling rows for finite logits.
 
-| Run | Correct | Accuracy | Invalid final answers | Reached the output limit |
-| --- | ---: | ---: | ---: | ---: |
-| Mini, EP1 | 1,283 | 97.27% | 0 | 0 |
-| Mini, EP2 | 1,283 | 97.27% | 0 | 1 |
-| Mini, EP8 | 1,280 | 97.04% | 1 | 1 |
-| SGLang, with worker precision records | 1,281 | 97.12% | 1 | 2 |
-| SGLang, first run | 1,281 | 97.12% | 0 | 0 |
+| Runtime | Correct / 1,319 | Accuracy | Invalid final answers | Reached output limit | Entire token sequence equal to official |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SGLang TP8/DCP8/EP1 | 1,281 | 97.12% | 1 | 2 | Reference |
+| Mini EP1, PyNCCL | 1,281 | 97.12% | 1 | 0 | 635 |
+| Mini EP2, MNNVL | 1,283 | 97.27% | 0 | 1 | 650 |
+| Mini EP8, MNNVL | 1,280 | 97.04% | 1 | 1 | 644 |
 
-Mini EP1 and the observed SGLang run gave the same numeric answer on 1,310 questions. Five were correct only on Mini and three only on SGLang. Their entire generated token sequences matched on 654 questions. The two official runs produced identical token sequences on 661. All eight workers on each side reported the same Torch math settings. Mini’s real sampling rows had finite logits throughout. Combined with the layer and state checks below, the results support accepting the measured configuration for text inference. [Paired quality evidence](validation/kimi-k3-delivery-quality.json)
+EP1 used the release wheel and the TP transport selected by the AgentX server. It gave the same valid numeric answer as SGLang on 1,310 questions. Mini alone answered 4 correctly and SGLang alone answered 4 correctly. Two runs of the official server independently scored 1,281 and produced identical token sequences on 661 questions. [Scores, paired differences, execution precision and artifact hashes](validation/kimi-k3-standalone-quality.json)
 
-The combined CPU/Gloo run passed 2,442 tests, skipped 780 and retained two expected differences against HF. Coverage includes dense and packed checkpoint loading, full versus chunked prefill, concurrent requests, state restoration, slot reuse and cancellation. Independent Moonshot and FLA checks compare per-layer outputs, attention residuals and recurrent updates. The reference tokenizer and parsers also run against the released checkpoint. [Reference checks and known HF differences](kimi-k3-official-cpu-reference.md)
+The EP2 and EP8 evaluations used the standalone wheel built at `4ad9d9d` and the FlashInfer expert dispatcher. Every generated token sequence in each layout matched its earlier full-model Mini run. The checkpoint has 92 routed layers. With TP8, EP2 assigns 448 experts to each partition with four-way expert tensor parallelism. EP8 assigns 112 full-width experts per rank. The AgentX throughput comparison uses EP1.
 
-In the full quality runs, all eight ranks used the native FlashInfer expert dispatcher for EP2 and EP8. The 92 routed layers each loaded 448 local experts with four-way tensor parallelism at EP2 and 112 full-width local experts at EP8. One EP2 response reached the output cap after giving the correct answer. One EP8 response reached the same cap without a final answer.
-
-A separate eight-GPU HTTP lifecycle run on ancestor `4436c21` exercised EP2 and EP8. Each layout completed 102 eight-token requests with cancellation and slot reuse. The serving result above uses TP8/DCP8/EP1. Historical results and earlier precision configurations are recorded separately. [Validation history](kimi-k3-history.md)
+The CPU suite, including multi-process Gloo and independent HF/FLA references, recorded 2,397 passes, 701 skips and two expected HF differences. On B300, 81 direct comparisons with upstream covered KDA gates, state updates, chunk continuation, graph replay, expert routing and arithmetic. Fifteen DCP tests exercised shard reduction against a dense reference and graph replay. Separate checks covered MNNVL collectives and FlashAttention 4 on dense and MoE models. [Component results](validation/kimi-k3-standalone-quality.json) · [Known HF differences](kimi-k3-official-cpu-reference.md) · [Earlier validation](kimi-k3-history.md)
 
 ### Reproduce the paired GSM8K run
 
@@ -85,8 +82,8 @@ common=(--model /data/models/Kimi-K3 --cases cases.json --batch-size 8 \
   --activation-precision mxfp8 --kv-cache-dtype fp8_e4m3 --recurrent-state-dtype bfloat16 \
   --cuda-graph --cuda-graph-max-bs 48)
 torchrun --standalone --nnodes=1 --nproc-per-node=8 tests/validation/gsm8k_suite.py \
-  "${common[@]}" --engine mini --attention-backend auto --distributed-backend mnnvl \
-  --distributed-provider minisgl.distributed.multimem.provider --output quality-mini
+  "${common[@]}" --engine mini --attention-backend auto --distributed-backend pynccl \
+  --weight-loader-prefetch-checkpoints --weight-loader-prefetch-num-threads 8 --output quality-mini
 python tests/validation/gsm8k_suite.py "${common[@]}" --engine sglang --attention-backend auto \
   --expected-reference-revision 94602c9c2b7cbdb8efd5c52802dac6a1c180089e \
   --weight-loader-prefetch-checkpoints --weight-loader-prefetch-num-threads 8 \
@@ -98,7 +95,7 @@ python tests/validation/compare_accuracy.py --left quality-mini --right quality-
 
 ### Reproduce an expert-parallel quality run
 
-Keep the official output from the EP1 command above. For Mini, change the values of `--ep-size` and `--moe-backend` in the common options to `2` and `flashinfer-ep`, and write to `quality-mini-ep2`. With TP8, this gives two expert partitions and four-way tensor parallelism within each expert. Use `8` for one full expert partition per rank and write to `quality-mini-ep8`.
+Keep the official output from the EP1 command above. For Mini, change the values of `--ep-size` and `--moe-backend` in the common options to `2` and `flashinfer-ep`, and write to `quality-mini-ep2`. Both EP runs use `--distributed-backend mnnvl --distributed-provider minisgl.distributed.multimem.provider`. With TP8, this gives two expert partitions and four-way tensor parallelism within each expert. Use `8` for one full expert partition per rank and write to `quality-mini-ep8`.
 
 ```bash
 python tests/validation/compare_accuracy.py --left quality-mini-ep2 --right quality-official \

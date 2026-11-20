@@ -2,18 +2,18 @@
 
 ## Standalone backends on 2026-11-20
 
-Mini delivered **327.02 output tokens/s**, or **99.44%** of the retained SGLang result, using the same AIPerf arguments and resolved workload. The isolated Mini server imported neither the SGLang runtime nor its kernel extension. Both runs used TP8/DCP8/EP1 with MXFP8 expert activations, FP8 E4M3 KV and BF16 KDA state. [Measured runtime snapshot](https://github.com/WeiMengze666/mini-sglang/tree/kimi-k3-agentx-standalone-20261120) · [Measurements, command lines and artifact hashes](validation/kimi-k3-standalone-serving.json)
+The release wheel delivered **328.86 output tokens/s** on AgentX, matching the retained SGLang measurement on the same eight B300 GPUs. The earlier standalone snapshot reached **99.44%** of that reference. Both Mini servers ran in environments without the SGLang runtime or its extension. Each run used 393 entries, concurrency 48, 16K prefill, TP8/DCP8/EP1, MXFP8 expert activations, FP8 E4M3 KV and BF16 KDA state. [Server and AIPerf commands](../benchmark/online/profiles/kimi-k3-sglang.json) · [Measurements, versions and raw artifact hashes](validation/kimi-k3-standalone-serving.json)
 
-| Metric | Mini standalone | SGLang |
-| --- | ---: | ---: |
-| Completed / deadline cancellations / request errors | 418 / 5 / 0 | 421 / 5 / 0 |
-| Output tokens / client request window | 307,396 / 940.002 s | 309,131 / 940.005 s |
-| Output tokens/s | 327.02 | 328.86 |
-| TTFT p50 / p99, s | 1.02 / 30.22 | 1.36 / 54.52 |
-| Inter-token latency p50 / p95 / p99, ms | 33.22 / 72.28 / 137.94 | 30.57 / 62.57 / 86.65 |
-| End-to-end latency p50 / p99, s | 12.30 / 245.20 | 12.68 / 224.97 |
+| Metric | SGLang `94602c9` | Mini [first snapshot](https://github.com/WeiMengze666/mini-sglang/tree/kimi-k3-agentx-standalone-20261120) | Mini [release wheel](https://github.com/WeiMengze666/mini-sglang/tree/eae7954894f5de74c39d7135cdce57ab02755e59) |
+| --- | ---: | ---: | ---: |
+| Output tokens/s | 328.86 | 327.02 | 328.86 |
+| Completed / deadline cancellations / request errors | 421 / 5 / 0 | 418 / 5 / 0 | 429 / 5 / 0 |
+| Completed output tokens / request window, s | 309,131 / 940.005 | 307,396 / 940.002 | 309,131 / 940.003 |
+| Time to first token p50 / p95 / p99, s | 1.36 / 10.83 / 54.52 | 1.02 / 10.28 / 30.22 | 1.09 / 11.58 / 26.50 |
+| Inter-token latency p50 / p95 / p99, ms | 30.57 / 62.57 / 86.65 | 33.22 / 72.28 / 137.94 | 32.80 / 65.06 / 136.71 |
+| End-to-end latency p50 / p99, s | 12.68 / 224.97 | 12.30 / 245.20 | 11.89 / 220.76 |
 
-This comparison uses one measurement per runtime, including request drain. Both clients reported a timeout waiting for cancelled credits. The p99 inter-token latency gap is 51.29 ms.
+The p99 inter-token latency gap is **50.06 ms** for the release wheel. Across 420 matched trace turns, Mini and SGLang reported equal completion lengths. All three throughput calculations use the actual request window including drain after the 900-second send period. Each client reported a timeout while returning cancelled credits. Eight completed release requests had at least 524,288 prompt tokens and the longest had 601,733. The two Mini snapshots share one official measurement. The software versions and scheduler intervals differ as recorded in the [serving evidence](validation/kimi-k3-standalone-serving.json).
 
 ## Accepted throughput point, 16K prefill (2026-11-18)
 
@@ -35,7 +35,7 @@ A follow-up run of the asynchronous attention metadata candidate (`d1378f5`,
 GPUq 189) used the same arguments and produced 312,149 output tokens in 940.003
 seconds, or **332.07 tokens/s**. It completed 416 requests, with four deadline
 cancellations and zero request errors. Its p95/p99 ITL was 67.62/142.45 ms and
-p95/p99 TTFT was 13,880/30,145 ms. The delivery candidate remains `c3c8b04`,
+p95/p99 TTFT was 13,880/30,145 ms. The November 18 delivery used `c3c8b04`,
 which met the throughput target with lower measured ITL tails and was frozen for
 the paired quality run.
 
@@ -92,9 +92,8 @@ expands that to 20252160 logical slots and 512-token logical pages; Mini already
 logs the logical count. Neither count describes current usage. The official
 32.593 GiB includes one dummy 64-row page per MLA layer.
 
-Final current-source model quality remains unqualified. The separate explicit
-`flashinfer-ep` backend has CPU qualification only; full native EP, NCCL/Graph and
-whole-model acceptance are pending. The official Triton KDA prefill adapter is a
+At the November 17 checkpoint, full-model quality and native GPU EP acceptance
+were pending. Later standalone quality results are in the [Kimi-K3 guide](kimi-k3.md#validation). The official Triton KDA prefill adapter is a
 separate candidate awaiting native checkpoint/restore and serving validation.
 This candidate is published separately; it does not promote the main branch or
 complete the full Kimi-K3 objective.

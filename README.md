@@ -24,18 +24,13 @@ Mini-SGLang is a compact implementation of [SGLang](https://github.com/sgl-proje
 
 ## Kimi-K3 text serving
 
-The Kimi-K3 text runtime composes KDA and MLA attention, a hybrid prefix cache,
-context and expert parallelism, and native FlashInfer expert kernels. On eight
-B300 GPUs it measured 326.28 output tokens/s against SGLang's 328.86 on AgentX.
-The [Kimi-K3 guide](docs/kimi-k3.md) covers the launch configuration and subsystem
-interfaces. The [serving comparison](docs/kimi-k3-performance.md) includes tail
-latency, software versions and measurement boundaries. On the complete GSM8K
-test split, Mini answered 1,283 of 1,319 questions correctly and the official
-server answered 1,281. [Paired quality results](docs/validation/kimi-k3-delivery-quality.json)
+Kimi-K3 composes KDA and MLA attention, hybrid prefix caching, context parallelism and expert parallelism in the Mini runtime. On eight B300 GPUs, both the Mini release wheel and SGLang reached **328.86 output tokens/s** on the 900-second AgentX profile. Their p99 inter-token latencies were 136.71 ms and 86.65 ms, respectively. [Launch configuration and architecture](docs/kimi-k3.md) · [Serving comparison](docs/kimi-k3-performance.md)
+
+On the full GSM8K split, Mini EP1 answered 1,281 of 1,319 questions correctly and SGLang answered 1,281. The EP2 and EP8 results include separate full-split evaluations. [Quality results and reproduction commands](docs/kimi-k3.md#validation)
 
 ## 🚀 Quick Start
 
-> **⚠️ Platform Support**: Mini-SGLang currently supports **Linux only** (x86_64 and aarch64). Windows and macOS are not supported due to dependencies on Linux-specific CUDA kernels (`sgl-kernel`, `flashinfer`). We recommend using [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) on Windows or Docker for cross-platform compatibility.
+> **⚠️ Platform Support**: Mini-SGLang currently supports **Linux only** (x86_64 and aarch64). Windows and macOS are not supported due to dependencies on Linux-specific CUDA dependencies, including FlashInfer. We recommend using [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) on Windows or Docker for cross-platform compatibility.
 
 ### 1. Environment Setup
 

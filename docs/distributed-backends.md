@@ -35,19 +35,17 @@ The provider has two initialization steps:
 
 Existing external providers only need the second step. Mini verifies that the
 native provider's CPU/device groups have matching coordinates and ordered ranks.
-The native adapter warms the SDK's actual P2P cache before distributed
-initialization because the pinned SDK's cold check otherwise consults its
-framework-wide coordinator. Local workers serialize this probe using a private
-cache keyed by device UUIDs, CUDA and driver versions. The caller's cache setting
-is restored even if the probe fails. No SGLang coordinator is initialized, and
-the peer test is not skipped. Restrict `CUDA_VISIBLE_DEVICES` to the local worker
-allocation; the bootstrap verifies this boundary.
+The provider probes peer access before starting the process groups. Workers serialize
+the probe and share a cache keyed by local device UUIDs, CUDA and driver versions.
+Set `CUDA_VISIBLE_DEVICES` to the local allocation so that the probe covers the
+same devices as the communicator.
 
-The tested SDK is SGLang `baa9befa381511cd4d56f83980951e5a45fffc6d` with Torch
-2.14.1+cu130 on eight B300 devices. The [component checks](validation/native-mnnvl.json) cover provider lifetime
-and eager and captured collectives. The [Kimi-K3 serving run](kimi-k3-performance.md)
-used this provider with TP8/DCP8 on a single node. The throughput measurement
-covers the complete runtime and does not isolate the effect of the provider.
+The packaged implementation follows upstream revision `baa9bef`. Eight-B300
+component tests cover eager collectives, graph replay and provider lifetime.
+The full-model EP2 and EP8 quality runs select MNNVL explicitly. The standalone
+AgentX profile leaves TP transport on `auto`, which selects PyNCCL with this
+server configuration. [Component checks](validation/native-mnnvl.json) ·
+[Serving measurements](kimi-k3-performance.md)
 
 ## Collective resource lifetime
 

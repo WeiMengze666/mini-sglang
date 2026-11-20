@@ -173,8 +173,9 @@
     "status": "Canonical AgentX acceptance preserves900 sending plus30 request grace and10 cancellation-credit wait; reduced/profiler diagnostics are separate."
   },
   "baseline": {
-    "status": "GPUq 9 and 157 supply the 16K serving comparison. Earlier measurements retain their original configurations.",
+    "status": "The standalone measurements from GPUq 8 and 20 use the retained official 16K reference. Earlier comparisons identify their own source snapshots.",
     "evidence": [
+      "docs/validation/kimi-k3-standalone-serving.json",
       "docs/validation/kimi-k3-delivery-16k.json",
       "docs/validation/kimi-k3-aiperf-mini-r0.json",
       "docs/validation/kimi-k3-replacement-baseline-20261110.json",
@@ -236,7 +237,7 @@
       "--prefill-decode-interval",
       "8"
     ],
-    "status": "GPUq 157 measured the selected runtime at c3c8b042e70121dc60125549123b14ffe2e1ded7.",
+    "status": "GPUq 20 measured the standalone wheel at eae7954894f5de74c39d7135cdce57ab02755e59 with the retained official reference and the same resolved AIPerf workload.",
     "precision": {
       "model": "torch.bfloat16",
       "moe_activation": "mxfp8 via native auto on supported MXFP4/SM100 hardware",
@@ -245,7 +246,7 @@
       "convolution_state": "torch.bfloat16"
     },
     "orchestration_note": "1800s collective bootstrap timeout for checkpoint loading; no arithmetic/workload change. Both public prefill budgets are16384; state capacity is derived from ratio.31, with one working and two overlap tracking slots per running request.",
-    "evidence": "docs/validation/kimi-k3-delivery-16k.json"
+    "evidence": "docs/validation/kimi-k3-standalone-serving.json"
   },
   "accounting_note": "Native K3 API deducts3 generation-stub tokens from prompt usage; model input IDs verified identical on all512 completed S0 requests. Mini reports actual IDs. Normalize input-derived metrics in comparison; retain raw exports."
 }

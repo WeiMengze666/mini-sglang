@@ -1,0 +1,386 @@
+{
+  "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+  "scorer_file_sha256": "57573d1b97e10a3d040e1c5dc53cecd79c0a7378fe670af687e3f111098fe550",
+  "runs": {
+    "official": {
+      "correct": 1281,
+      "invalid_answers": 1,
+      "truncated": 2,
+      "generated_tokens": 142541,
+      "responses_sha256": "d952f378c477879dcc938a3ac1814626e6cb40ec37f46e5b8b755d555ac848cb",
+      "report_sha256": "4623e7c63a98671c312cf089e41b73e2d1b33864a491b4fbfbd283df1174c5c4",
+      "examples": 1319,
+      "accuracy_pct": 97.11902956785444,
+      "execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "page_size": 64,
+        "ep_size": 1
+      },
+      "provenance_sha256": "b654a64031c28cd7bb02b6db88ae48a58c3e542a2df4f845afd28acb89d09e20"
+    },
+    "official_repeat_pair": {
+      "both_correct": 1280,
+      "both_wrong": 37,
+      "left_only_correct": 1,
+      "right_only_correct": 1,
+      "same_valid_answer": 1315,
+      "identical_token_ids": 661,
+      "score_delta_percentage_points": 0.0
+    },
+    "mini_ep1": {
+      "score": {
+        "correct": 1281,
+        "invalid_answers": 1,
+        "truncated": 0,
+        "generated_tokens": 140839,
+        "responses_sha256": "6addf994bfe7fbfc691687510ecd7ee6a6561596fb9de968c926e348fbfaa20e",
+        "report_sha256": "8bb97ab9eea85d0b43ee071ae619e05cc80aff350b2663a957622ee282d22c91",
+        "examples": 1319,
+        "accuracy_pct": 97.11902956785444
+      },
+      "execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 1,
+        "page_size": 64
+      },
+      "finite_sampled_logits": true,
+      "previous_release_pair": {
+        "both_correct": 1277,
+        "both_wrong": 32,
+        "left_only_correct": 4,
+        "right_only_correct": 6,
+        "same_valid_answer": 1308,
+        "identical_token_ids": 657,
+        "score_delta_percentage_points": -0.1516300227445034
+      },
+      "previous_responses_sha256": "087039f71eaeacb4765347998dfc935f5eb7f1168f01a5ec0eac29e17c2ceaf6",
+      "paired_with_official": {
+        "both_correct": 1277,
+        "both_wrong": 34,
+        "left_only_correct": [
+          37,
+          73,
+          926,
+          1003
+        ],
+        "right_only_correct": [
+          12,
+          205,
+          777,
+          868
+        ],
+        "same_valid_answer": 1310,
+        "identical_token_ids": 635,
+        "accuracy_delta_percentage_points": 0.0
+      },
+      "evaluation_seconds": 636.4981013239958,
+      "provenance_sha256": "fd5edbf6911607196ccd3ab6293fe6257bb3f325e5d2bd494598d2b0d4acce91",
+      "launcher_sha256": "c124dad1dca920113a837608acd5c8f25a5abe7d8c429f45f40eaa5eb6ca970e",
+      "gpuq_job": 21,
+      "runtime_commit": "eae7954894f5de74c39d7135cdce57ab02755e59",
+      "tp_collective": "pynccl",
+      "wheel_sha256": "97dca2a83e072d0217e5224808693f447b20da7d5ae5e2c8ec7f68551f104c96"
+    },
+    "mini_ep2": {
+      "score": {
+        "correct": 1283,
+        "invalid_answers": 0,
+        "truncated": 1,
+        "generated_tokens": 142614,
+        "responses_sha256": "68789ad33ebb8ab7ae6093e24d6f85649189aea3c01a5d17640b3fe76c99dae2",
+        "report_sha256": "156bdbdfad7bf23c91e7923a2d13753c293d3cc6548e8b5e482c27749784333d",
+        "examples": 1319,
+        "accuracy_pct": 97.27065959059894
+      },
+      "execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 2,
+        "page_size": 64
+      },
+      "finite_sampled_logits": true,
+      "previous_release_pair": {
+        "both_correct": 1283,
+        "both_wrong": 36,
+        "left_only_correct": 0,
+        "right_only_correct": 0,
+        "same_valid_answer": 1319,
+        "identical_token_ids": 1319,
+        "score_delta_percentage_points": 0.0
+      },
+      "previous_responses_sha256": "68789ad33ebb8ab7ae6093e24d6f85649189aea3c01a5d17640b3fe76c99dae2",
+      "paired_with_official": {
+        "both_correct": 1278,
+        "both_wrong": 33,
+        "left_only_correct": [
+          37,
+          73,
+          306,
+          635,
+          926
+        ],
+        "right_only_correct": [
+          12,
+          187,
+          1038
+        ],
+        "same_valid_answer": 1309,
+        "identical_token_ids": 650,
+        "accuracy_delta_percentage_points": 0.1516300227445034
+      },
+      "evaluation_seconds": 716.4926460990027,
+      "provenance_sha256": "2d96748839f460ab8b6fe9770a2610f106566fd5ab91832cef254c9ec6ce42d6",
+      "launcher_sha256": "775369404a46471b8706f033372e437e06a4aee739f1b85d62ec7cf6baca3cef",
+      "gpuq_job": 15,
+      "runtime_commit": "4ad9d9d3ba6eae740caf7216dcd030754b16db53",
+      "tp_collective": "mnnvl",
+      "wheel_sha256": "3f6532b8f2aedfb63e3afbb4fda7a1b78e42021b1f1009a31b088a973a26786f"
+    },
+    "mini_ep8": {
+      "score": {
+        "correct": 1280,
+        "invalid_answers": 1,
+        "truncated": 1,
+        "generated_tokens": 141119,
+        "responses_sha256": "ccf46096355395349b078cbeef96d418a7927c68eaca4b85ae70df255aa423d6",
+        "report_sha256": "b9cf0bf996983ccdcee7da1bc433498adf1f9d6897c4a6455835db90ecc7dacd",
+        "examples": 1319,
+        "accuracy_pct": 97.04321455648218
+      },
+      "execution_contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 8,
+        "page_size": 64
+      },
+      "finite_sampled_logits": true,
+      "previous_release_pair": {
+        "both_correct": 1280,
+        "both_wrong": 39,
+        "left_only_correct": 0,
+        "right_only_correct": 0,
+        "same_valid_answer": 1318,
+        "identical_token_ids": 1319,
+        "score_delta_percentage_points": 0.0
+      },
+      "previous_responses_sha256": "ccf46096355395349b078cbeef96d418a7927c68eaca4b85ae70df255aa423d6",
+      "paired_with_official": {
+        "both_correct": 1276,
+        "both_wrong": 34,
+        "left_only_correct": [
+          37,
+          340,
+          926,
+          1003
+        ],
+        "right_only_correct": [
+          205,
+          322,
+          552,
+          796,
+          951
+        ],
+        "same_valid_answer": 1309,
+        "identical_token_ids": 644,
+        "accuracy_delta_percentage_points": -0.0758150113722517
+      },
+      "evaluation_seconds": 705.4156907340002,
+      "provenance_sha256": "2d96748839f460ab8b6fe9770a2610f106566fd5ab91832cef254c9ec6ce42d6",
+      "launcher_sha256": "a6061466444a8fb220ec2708fc3717abbe978da6f73161060b245e82b4529e07",
+      "gpuq_job": 16,
+      "runtime_commit": "4ad9d9d3ba6eae740caf7216dcd030754b16db53",
+      "tp_collective": "mnnvl",
+      "wheel_sha256": "3f6532b8f2aedfb63e3afbb4fda7a1b78e42021b1f1009a31b088a973a26786f"
+    }
+  },
+  "protocol": {
+    "dataset": "GSM8K test",
+    "pretokenized_examples": 1319,
+    "temperature": 0,
+    "thinking": false,
+    "max_context": 4096,
+    "max_new_tokens": 1024,
+    "batch_size": 8,
+    "prefix_cache": false,
+    "official_revision": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+    "comparison": "Each saved response was parsed again and matched to the canonical gold label."
+  },
+  "component_tests": {
+    "git_commit": "eae7954894f5de74c39d7135cdce57ab02755e59",
+    "cpu": {
+      "suite": [
+        "tests/core",
+        "tests/models",
+        "tests/test_kimi_cache.py",
+        "tests/misc"
+      ],
+      "passed": 2397,
+      "skipped": 701,
+      "log_sha256": "1cbceafcf35550f9107468d387f99a1618238d8a8f1bd9a536a9bcc91399c305",
+      "isolated_k3_parser_cases": 25,
+      "parser_and_tokenizer_with_upstream_environment": 30,
+      "expected_failures": 2,
+      "gloo_and_independent_hf_fla_enabled": true
+    },
+    "hardware": "B300",
+    "verified": {
+      "indexed_kda_prefix_checkpoint": {
+        "job": 1,
+        "exit": 0,
+        "log_sha256": "aae9edb206b0e9ae106d83b880a81e6bc21d5b15a7d1635b680702bf8bc48031"
+      },
+      "mnnvl": {
+        "job": 3,
+        "ranks": 8,
+        "exit": 0,
+        "log_sha256": "2b0360916fe566037fcdf7e5808d3b1ddb04ec99a114a91b9b2aaa9d176cd4e6"
+      },
+      "dcp": {
+        "job": 10,
+        "passed": 15,
+        "tests": "Dense FP64 reference, FP32 and BF16 shard reduction, noncontiguous inputs, exact eager/graph replay, invalid and empty shards."
+      },
+      "ep2_smoke": {
+        "job": 9,
+        "report_sha256": "c883d7a99cb9a8ede7512aa6511d6a093f603e3dae7ead54280a0e5e0f7c429f",
+        "correct": 8,
+        "expected": 8,
+        "invalid": 0,
+        "truncated": 0
+      },
+      "flashattention4": {
+        "job": 10,
+        "provider": "flash-attn-4 4.0.0b40",
+        "results": {
+          "dense": {
+            "scope": "synthetic model compatibility",
+            "comparison": "exact FP32 values; BF16 eager outputs are converted losslessly",
+            "moe": false,
+            "world_size": 1,
+            "ep_size": 1,
+            "cases": [
+              {
+                "slots": [
+                  3,
+                  0,
+                  6,
+                  1
+                ],
+                "max_abs_logits": 0.0
+              },
+              {
+                "slots": [
+                  6,
+                  2
+                ],
+                "max_abs_logits": 0.0
+              },
+              {
+                "slots": [
+                  4
+                ],
+                "max_abs_logits": 0.0
+              },
+              {
+                "slots": [
+                  5,
+                  2,
+                  0
+                ],
+                "max_abs_logits": 0.0
+              }
+            ]
+          },
+          "moe": {
+            "scope": "synthetic model compatibility",
+            "comparison": "exact FP32 values; BF16 eager outputs are converted losslessly",
+            "moe": true,
+            "world_size": 1,
+            "ep_size": 1,
+            "cases": [
+              {
+                "slots": [
+                  3,
+                  0,
+                  6,
+                  1
+                ],
+                "max_abs_logits": 0.0
+              },
+              {
+                "slots": [
+                  6,
+                  2
+                ],
+                "max_abs_logits": 0.0
+              },
+              {
+                "slots": [
+                  4
+                ],
+                "max_abs_logits": 0.0
+              },
+              {
+                "slots": [
+                  5,
+                  2,
+                  0
+                ],
+                "max_abs_logits": 0.0
+              }
+            ]
+          }
+        }
+      },
+      "upstream_kernel_comparison": {
+        "upstream": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+        "safe_decode_contract_and_state": 25,
+        "chunk_continuation": 6,
+        "decode_graph_replay": 6,
+        "expert_execution_and_routing": 44,
+        "jobs": [
+          13,
+          18
+        ],
+        "logs_sha256": [
+          "a858cb401f57632480fa1e31e7afcb1b725f204c1a7a746e6b42ce61cbe3bd09",
+          "be1fdc66fa9a0fa6ee7bd7860492d620777a13c029b1e708e94b0108cfe90c84"
+        ],
+        "scope": "Comparison process imports the pinned upstream as an oracle. Serving and standalone quality workers exclude both upstream packages."
+      }
+    },
+    "packaging": {
+      "git_commit": "eae7954894f5de74c39d7135cdce57ab02755e59",
+      "wheel_sha256": "97dca2a83e072d0217e5224808693f447b20da7d5ae5e2c8ec7f68551f104c96",
+      "native_source_or_license_files_verified": 63,
+      "missing_files": []
+    }
+  },
+  "known_reference_differences": [
+    "Synthetic Hugging Face top-1 weight renormalization",
+    "Synthetic Hugging Face MLA low-rank RMSNorm epsilon"
+  ],
+  "evidence_scope": "Full greedy model runs and upstream component comparisons qualify the measured precision and layouts. Individual disagreements are recorded by question and generation. Full-vocabulary equality is outside this evaluation."
+}

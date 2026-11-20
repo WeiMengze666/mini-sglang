@@ -37,7 +37,7 @@
     "same_benchmark_argv": true,
     "same_resolved_workload_except_artifact_directory": true,
     "output_throughput_ratio": 0.9943901564320143,
-    "reference": "Retained official job 9 on the same machine; one observation per runtime. The Mini prefill/decode scheduling interval is 8; the official default is 0.",
+    "reference": "The two Mini runs use the same retained official measurement on eight B300 GPUs. The Mini prefill/decode scheduling interval is 8 and the official default is 0.",
     "drain": "AIPerf logged a timeout waiting for cancelled credits in both runs.",
     "matched_requests": {
       "trace_keys": 417,
@@ -48,7 +48,45 @@
         "request_latency": -67.339
       },
       "scope": "Matched by workload trace metadata. Runtime prompt accounting and cache-bust prefix text can differ."
-    }
+    },
+    "release_same_resolved_workload": true,
+    "release_output_throughput_ratio": 1.000002095544188,
+    "release_drain_errors": [
+      "Timeout waiting 10.0s for cancelled credits to return. Some credits may be stuck. Forcing phase completion. (runner.py:1204)"
+    ],
+    "release_matched_requests": {
+      "common_unique_requests": 420,
+      "key_fields": [
+        "source_trace_id",
+        "source_outer_idx",
+        "turn_index",
+        "agent_depth",
+        "source_kind"
+      ],
+      "key_set_sha256": "b60adeeb7fca9cfaccc72196c01eb1f13fe45357ce32f21675d93de535786178",
+      "matched_usage_mismatch_counts": {
+        "usage_prompt_tokens": {
+          "comparable": 420,
+          "different": 420
+        },
+        "usage_prompt_cache_read_tokens": {
+          "comparable": 387,
+          "different": 32
+        },
+        "usage_completion_tokens": {
+          "comparable": 420,
+          "different": 0
+        }
+      },
+      "same_benchmark_argv": true,
+      "same_resolved_workload_except_artifact_directory": true,
+      "mean_delta_mini_minus_reference_ms": {
+        "time_to_first_token": -868.999,
+        "inter_token_latency": 1.799,
+        "request_latency": -483.661
+      }
+    },
+    "request_window": "AIPerf profiling start through the last request, including drain. Output counts and timing were reconciled against the per-request export for all three runs."
   },
   "runs": {
     "mini": {
@@ -149,7 +187,21 @@
         "transformers": "5.19.0",
         "sglang": null,
         "sglang-kernel": null
-      }
+      },
+      "prompt_coverage": {
+        "reported_max_prompt_tokens": 601732,
+        "completed_prompts_at_least_131072": 83,
+        "completed_prompts_at_least_524288": 8
+      },
+      "cache_capacity": {
+        "shared_state_slots": 367,
+        "logical_KV_tokens": 19963904,
+        "logical_page_tokens": 512,
+        "rank_physical_page_tokens": 64,
+        "state_to_KV_byte_budget_ratio": 0.31,
+        "source_server_log_sha256": "819899b7a62f986774d176c0031b26388d337a37c10abcec3920c82746fab10f"
+      },
+      "tp_collective": "PyNCCL (auto, use_pynccl=true)"
     },
     "official": {
       "gpuq_job": 9,
@@ -246,7 +298,136 @@
         "transformers": "5.12.1",
         "sglang": "0.5.20",
         "sglang-kernel": "0.4.7"
+      },
+      "prompt_coverage": {
+        "reported_max_prompt_tokens": 601728,
+        "completed_prompts_at_least_131072": 84,
+        "completed_prompts_at_least_524288": 8
+      },
+      "cache_capacity": {
+        "shared_state_slots": 372,
+        "logical_KV_tokens": 20252160,
+        "logical_page_tokens": 512,
+        "rank_physical_page_tokens": 64,
+        "state_to_KV_byte_budget_ratio": 0.31,
+        "source_server_log_sha256": "652b43ca4b4b6eb1f761dc2100a091e90c08cbd1761420d034588eb230971a3a"
       }
+    },
+    "mini_release": {
+      "gpuq_job": 20,
+      "date": "2026-11-20",
+      "server_argv": [
+        "/home/axis/mengze/mini-sglang/experiment/standalone-runtime-20261119/venv/bin/python",
+        "-m",
+        "minisgl",
+        "--trust-remote-code",
+        "--model-path",
+        "/data/models/Kimi-K3",
+        "--served-model-name",
+        "moonshotai/Kimi-K3",
+        "--tp-size",
+        "8",
+        "--dcp-size",
+        "8",
+        "--page-size",
+        "64",
+        "--context-length",
+        "1048576",
+        "--mem-fraction-static",
+        "0.90",
+        "--kv-cache-dtype",
+        "fp8_e4m3",
+        "--mamba-ssm-dtype",
+        "bfloat16",
+        "--mamba-radix-cache-strategy",
+        "extra_buffer",
+        "--mamba-full-memory-ratio",
+        "0.31",
+        "--max-running-requests",
+        "48",
+        "--max-prefill-tokens",
+        "16384",
+        "--chunked-prefill-size",
+        "16384",
+        "--cuda-graph-max-bs-decode",
+        "48",
+        "--reasoning-parser",
+        "kimi_k3",
+        "--tool-call-parser",
+        "kimi_k3",
+        "--enable-metrics",
+        "--enable-cache-report",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "38080",
+        "--distributed-timeout",
+        "1800",
+        "--weight-loader-prefetch-checkpoints",
+        "--weight-loader-prefetch-num-threads",
+        "8",
+        "--prefill-decode-interval",
+        "8"
+      ],
+      "completed": 429,
+      "deadline_cancelled": 5,
+      "request_errors": 0,
+      "output_tokens": 309131.0,
+      "request_window_ns": 940002607127,
+      "output_tokens_per_second": 328.8618538461506,
+      "latency_ms": {
+        "time_to_first_token": {
+          "avg": 2491.6338478951047,
+          "p50": 1086.240356,
+          "p95": 11583.551888199992,
+          "p99": 26495.168763639853
+        },
+        "inter_token_latency": {
+          "avg": 36.22527538061671,
+          "p50": 32.79619454464286,
+          "p95": 65.0597101081094,
+          "p99": 136.70911324461528
+        },
+        "request_latency": {
+          "avg": 27555.976000177154,
+          "p50": 11887.712973,
+          "p95": 102292.1168189998,
+          "p99": 220755.6657027989
+        }
+      },
+      "cache_read_percent": 91.7244777669868,
+      "raw_sha256": {
+        "run.json": "2c662128cbd3cd94279fcbd441abdc6df6f7e6af3875eb1859f95ea9197d1339",
+        "profile_export_aiperf.json": "c58b6653605e42047330c2113a5cd645eba1f5a0da6ae82dfe9112c7c655edc7",
+        "profile_export.jsonl": "af419b7afc80be01b3fd2a4706d0d3c763285a71c3bcffe304a1594fa7ab834e",
+        "aiperf.log": "80d2928dd1a26700fa3c9134dc3c624396a4a17be2d3731e82874e9e8f673047"
+      },
+      "packages": {
+        "torch": "2.14.1+cu130",
+        "flashinfer-python": "0.7.1",
+        "triton": "3.8.0",
+        "apache-tvm-ffi": "0.1.11",
+        "nvidia-cutlass-dsl": "4.8.0",
+        "transformers": "5.19.0",
+        "sglang": null,
+        "sglang-kernel": null
+      },
+      "prompt_coverage": {
+        "reported_max_prompt_tokens": 601733,
+        "completed_prompts_at_least_131072": 83,
+        "completed_prompts_at_least_524288": 8
+      },
+      "cache_capacity": {
+        "shared_state_slots": 367,
+        "logical_KV_tokens": 19963904,
+        "logical_page_tokens": 512,
+        "rank_physical_page_tokens": 64,
+        "state_to_KV_byte_budget_ratio": 0.31,
+        "source_server_log_sha256": "9810593cf29035c77df87fe22822f29f287e5885dfd8819a41c0a37c18738964"
+      },
+      "tp_collective": "PyNCCL (auto, use_pynccl=true)",
+      "runtime_commit": "eae7954894f5de74c39d7135cdce57ab02755e59",
+      "wheel_sha256": "97dca2a83e072d0217e5224808693f447b20da7d5ae5e2c8ec7f68551f104c96"
     }
   }
 }
