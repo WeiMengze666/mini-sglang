@@ -22,7 +22,7 @@ including graph capture and subsequent pointer registration.
 
 
 The built-in native provider leaves its workspace cap and tuned thresholds at
-the SDK defaults (16 MiB for the pinned SDK, with SDK environment overrides).
+the upstream defaults (16 MiB for this revision, with environment overrides).
 The generic factory's expected collective-size hint is separate from this
 workspace budget. Larger inputs use the existing same-rank NCCL fallback;
 architecture selection, graph registration and resource lifetime are unchanged.

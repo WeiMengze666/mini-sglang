@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import torch
-from minisgl.distributed.fi_moe import FlashInferMoEWorkspace
+from minisgl.distributed.flashinfer_moe import FlashInferMoEWorkspace
 
 
 class DispatchLayout(NamedTuple):

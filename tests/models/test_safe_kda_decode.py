@@ -65,7 +65,9 @@ def test_safe_decode_matches_public_operator_and_reports_packed_delta(
     graph = None
     received = []
 
-    def observed_public(**kw):
+    candidate = triton._safe_decode_kernel()
+
+    def observed_candidate(**kw):
         assert kw["a"] is forget and kw["b"].data_ptr() == beta.data_ptr()
         assert kw["b"].shape == (1, batch, heads) and kw["b"].stride()[1:] == (144, 1)
         assert kw["initial_state_source"] is actual_state and kw["cu_seqlens"] is qsl
@@ -96,9 +98,9 @@ def test_safe_decode_matches_public_operator_and_reports_packed_delta(
                 "beta_storage_offset": kw["b"].storage_offset(),
             }
         )
-        return fused_sigmoid_gating_delta_rule_update(**kw)
+        return candidate(**kw)
 
-    monkeypatch.setattr(triton, "_safe_decode_kernel", lambda: observed_public)
+    monkeypatch.setattr(triton, "_safe_decode_kernel", lambda: observed_candidate)
 
     def adapter():
         with use_torch_stream():

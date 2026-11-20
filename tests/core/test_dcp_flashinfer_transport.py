@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from minisgl.distributed import context as C
-from minisgl.distributed import fi_dcp as F
+from minisgl.distributed import flashinfer_dcp as F
 from minisgl.distributed.impl import DistributedCommunicator, destroy_distributed
 from minisgl.distributed.info import DistributedInfo
 from minisgl.distributed.layout import configure_parallel

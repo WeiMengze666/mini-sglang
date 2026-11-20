@@ -87,7 +87,7 @@ class FlashInferMLAAdapter:
         output and both plans explicitly request natural-log FP32 LSE.
         """
         from minisgl.attention.config import MLAConfig
-        from minisgl.distributed.fi_dcp import AttentionExchangeSpec
+        from minisgl.distributed.flashinfer_dcp import AttentionExchangeSpec
 
         configs = [config for _, config in records if isinstance(config, MLAConfig)]
         if (

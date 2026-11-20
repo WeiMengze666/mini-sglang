@@ -3,7 +3,7 @@
 import torch
 import torch.distributed as dist
 
-from .fi_dcp import AttentionExchangeSpec, FlashInferDCPExchange, native_candidate
+from .flashinfer_dcp import AttentionExchangeSpec, FlashInferDCPExchange, native_candidate
 from .impl import DistributedCommunicator, TorchDistributedImpl
 from .layout import get_parallel_layout
 

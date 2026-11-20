@@ -11,7 +11,7 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-from minisgl.distributed import fi_moe as F
+from minisgl.distributed import flashinfer_moe as F
 from minisgl.distributed.info import DistributedInfo
 from minisgl.moe.dispatch import FlashInferTokenDispatcher
 
@@ -336,7 +336,7 @@ def test_prepare_derives_capacity_and_ep1_never_loads_provider(monkeypatch):
 
 
 def _gloo_worker(rank, rendezvous):
-    import minisgl.distributed.fi_moe as f
+    import minisgl.distributed.flashinfer_moe as f
 
     torch.set_num_threads(1)
     torch.cuda.is_current_stream_capturing = lambda: False
