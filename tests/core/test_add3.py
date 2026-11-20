@@ -198,7 +198,7 @@ def test_public_latent_optional_residual_survives_flattening(monkeypatch, case):
 
 
 def test_decoder_passes_head_once_to_mlp():
-    from minisgl.models.kimi_k3 import KimiDecoderLayer
+    from minisgl.models.kimi_k3.model import KimiDecoderLayer
 
     layer = object.__new__(KimiDecoderLayer)
     layer._block_size = None

@@ -20,7 +20,23 @@ from minisgl.layers.linear import (
 from minisgl.layers.norm import TorchRMSNorm
 
 
+class _LatentKVProjection(Linear):
+    def new_with_weight_format(self, weight_format, *, chunk_rows=128):
+        raise NotImplementedError("MLA kv_b_proj requires a dense weight for latent attention")
+
+
 class MLALayer(BaseOP):
+    @staticmethod
+    def weight_shards(tp, heads, nope_dim, rope_dim, value_dim):
+        query = tp.shard(0, heads, "MLA heads", nope_dim + rope_dim)
+        return {
+            "q_proj.weight": query,
+            "q_b_proj.weight": query,
+            "kv_b_proj.weight": tp.shard(0, heads, "MLA heads", nope_dim + value_dim),
+            "g_proj.weight": tp.shard(0, heads, "MLA heads", value_dim),
+            "o_proj.weight": tp.shard(1, heads, "MLA heads", value_dim),
+        }
+
     def __init__(self, config: MLAConfig) -> None:
         self._config = config
         self._tp, self._cp = TensorParallel(), ContextParallel()
@@ -31,7 +47,10 @@ class MLALayer(BaseOP):
         self._nope, self._rope = config.nope_dim, config.rope_dim
         self._value, self._latent = config.value_dim, config.latent_dim
         self._skip_rope = not config.use_rope
-        qdim = self._heads * (self._nope + self._rope)
+        shards = self.weight_shards(
+            self._tp.group, config.num_heads, self._nope, self._rope, self._value
+        )
+        qdim = shards["q_proj.weight"].length
         if config.q_lora_rank is None:
             self.q_proj = Linear(config.hidden_size, qdim)
         else:
@@ -40,7 +59,7 @@ class MLALayer(BaseOP):
             self.q_b_proj = Linear(config.q_lora_rank, qdim)
         self.kv_a_proj_with_mqa = Linear(config.hidden_size, self._latent + self._rope)
         self.kv_a_layernorm = TorchRMSNorm(self._latent, config.rms_norm_eps)
-        self.kv_b_proj = Linear(self._latent, self._heads * (self._nope + self._value))
+        self.kv_b_proj = _LatentKVProjection(self._latent, shards["kv_b_proj.weight"].length)
         self._output_gate = config.output_gate
         if self._output_gate:
             self.g_proj = Linear(config.hidden_size, self._heads * self._value)

@@ -8,6 +8,12 @@ The model declares the attention algorithm for each layer. `HybridAttnBackend` b
 
 The router defines the score, expert IDs and weights. Local expert implementations in `moe/experts` own weight packing, activation precision and GEMMs. An executor supporting EP declares the token payloads it can exchange. The dispatcher transports those rows and combines the results using the inverse mapping. After expert exchange and expert tensor parallelism complete, the MoE epilogue reduces the shared expert output across TP. The layer supplies its projection, normalizer and residual to the MoE epilogue.
 
+## Loading a checkpoint
+
+The model class selects a checkpoint format. The [streaming reader](../python/minisgl/checkpoint/loader.py) resolves the snapshot, checks the index and packed/scale pairs, filters remote experts and reads rank-local slices. KDA, MLA and gated experts declare the row or column ranges next to their projections. The same ranges size the local weights and select which bytes to read. A K3 expert’s `w2` uses the expert tensor-parallel group for its input columns. The reader translates those logical columns to the matching packed bytes and block scales, including when they reside in separate files.
+
+Llama and Qwen use the [Hugging Face checkpoint layout](../python/minisgl/checkpoint/huggingface.py). It combines rank-local Q/K/V and gate/up tensors and stacks local experts in global-ID order. KV head replication follows the QKV layer’s head partition. Model-specific naming stays in the checkpoint format. Execution-specific packing follows weight loading in the expert backend.
+
 ## Run the measured configuration
 
 Use the [saved server and AIPerf commands](../benchmark/online/profiles/kimi-k3-sglang.json) with the respective environments. The Mini runtime uses SGLang kernel sources at `baa9bef`, FlashInfer 0.7.1 and Torch 2.14.1+cu130. The reference server uses SGLang `94602c9`, FlashInfer 0.6.18 and Torch 2.13.0. Both measurements use AIPerf 0.13.0. The checkpoint and trusted tokenizer are at `/data/models/Kimi-K3`.
@@ -38,7 +44,7 @@ EP is 1 for this comparison. The checkpoint stores MXFP4 expert weights. The sel
 
 | Responsibility | Implementation |
 | --- | --- |
-| Model composition and checkpoint translation | `models/kimi_k3.py` wires projection, residual and expert layers. The model configuration supplies the layer predicate and projection dimensions. |
+| Model composition and checkpoint translation | [`models/kimi_k3/model.py`](../python/minisgl/models/kimi_k3/model.py) composes the layers. [`checkpoint.py`](../python/minisgl/models/kimi_k3/checkpoint.py) maps the released text names, quantization aliases and historical KDA head layout to their parameters. |
 | Attention dispatch | `attention/base.py` composes prefill and decode backends. The hybrid backend selects KDA or MLA by layer ID. Algorithm packages adapt the native kernels and own their metadata and workspaces. |
 | Token and recurrent state | `kvcache/mla_pool.py` owns logical-to-physical MLA pages. `recurrent_pool.py` owns state leases and checkpoints. `hybrid_cache.py` matches a prefix up to a restorable recurrent checkpoint. |
 | Parallel groups and communication | `distributed/layout.py` derives DCP, expert and expert-tensor coordinates from TP. `DistributedImpl` selects a collective provider, including MNNVL. DCP gathers the required decode heads and combines partition results. |

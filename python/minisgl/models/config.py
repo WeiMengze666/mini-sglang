@@ -63,7 +63,7 @@ class ModelConfig:
                     setattr(config, attr, getattr(top, attr))
 
         if getattr(config, "model_type", None) == "kimi_linear":
-            from .kimi_config import KimiTextConfig, cache_config, kda_config, mla_config
+            from .kimi_k3.config import KimiTextConfig, cache_config, kda_config, mla_config
 
             kimi = KimiTextConfig(**config.to_dict())
             kimi.validate_text()

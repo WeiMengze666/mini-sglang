@@ -4,12 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from minisgl.checkpoint.loader import load_checkpoint
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.layers.linear import Linear
 from minisgl.layers.norm import TorchRMSNorm
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import KimiK3Config, KimiTextConfig, cache_config
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM, attention_residual
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
+from minisgl.models.kimi_k3.config import KimiK3Config, KimiTextConfig, cache_config
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM, attention_residual
 
 
 def tiny_config():
@@ -248,7 +250,6 @@ def test_engine_guards_and_existing_model_config(tmp_path, monkeypatch):
 def test_complete_synthetic_checkpoint_load(tmp_path):
     import json
 
-    from minisgl.models.kimi_weight import load_kimi_weight
     from safetensors.torch import save_file
 
     model, config = setup_model()
@@ -258,7 +259,7 @@ def test_complete_synthetic_checkpoint_load(tmp_path):
     }
     save_file(raw, str(tmp_path / "model.safetensors"))
     (tmp_path / "config.json").write_text(json.dumps(config.hf_config.to_dict()))
-    loaded = dict(load_kimi_weight(str(tmp_path), "cpu"))
+    loaded = dict(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint))
     fresh = KimiK3LinearForCausalLM(config)
     fresh.load_state_dict(loaded)
     assert not loaded

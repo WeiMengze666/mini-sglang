@@ -18,12 +18,12 @@ from minisgl.distributed.impl import (
     FallbackDistributedImpl,
     destroy_distributed,
 )
-from minisgl.distributed.layout import configure_parallel
+from minisgl.distributed.layout import ParallelLayout, configure_parallel
 from minisgl.distributed.parallel import TensorParallel
 from minisgl.kvcache.config import HybridCacheConfig
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.layers.kda import KDALayer
-from minisgl.models.kimi_parallel import shard_spec
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
 
 
 def test_scoped_backend_selection_capture_and_single_owner_cleanup(monkeypatch):
@@ -110,7 +110,9 @@ def test_kda_parameter_state_and_capacity_are_independent_of_dcp(monkeypatch, cp
         ("A_log", (heads,), 0, 1),
     ]
     for name, shape, axis, block in params:
-        spec = shard_spec("model.layers.0.self_attn." + name, text, rank, 8, dcp_size=cp)
+        spec = KimiCheckpoint(text, ParallelLayout(DistributedInfo(rank, 8), dcp_size=cp)).shard(
+            "model.layers.0.self_attn." + name
+        )
         assert spec.axis == axis and spec.length == expected_heads * block
         assert spec.start == rank * expected_heads * block
         assert spec.slice(torch.empty(shape)).shape[axis] == expected_heads * block

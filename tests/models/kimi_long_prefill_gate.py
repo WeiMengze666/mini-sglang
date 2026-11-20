@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import torch
 from minisgl.kvcache.hybrid_pool import HybridCache
-from minisgl.models.kimi_config import cache_config
+from minisgl.models.kimi_k3.config import cache_config
 from run_kimi_runtime_gate import _close, load_fixture, verify_fixtures
 
 DECODE_STEPS = 3

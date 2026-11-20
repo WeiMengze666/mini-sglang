@@ -8,13 +8,14 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from minisgl.checkpoint.loader import load_checkpoint
 from minisgl.distributed import DistributedInfo
 from minisgl.distributed.context import init_context_parallel, merge_attention
 from minisgl.distributed.layout import ParallelLayout, configure_parallel
 from minisgl.kvcache.hybrid_pool import HybridCache
-from minisgl.models.kimi_config import cache_config
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
-from minisgl.models.kimi_parallel import owns_expert, shard_spec
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
+from minisgl.models.kimi_k3.config import cache_config
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM
 from test_kimi_parallel import _batch, _config, _initialize, _model_config
 
 
@@ -31,13 +32,19 @@ def test_independent_layout_and_checkpoint_slices():
     assert (layout.context.rank, layout.mla_decode.rank, layout.mla_decode.size) == (1, 1, 2)
     assert (layout.experts.rank, layout.expert_tensor.rank, layout.expert_tensor.size) == (1, 1, 2)
     assert list(layout.expert_range(4)) == [2, 3]
-    assert owns_expert("model.layers.1.mlp.experts.3.w2.weight", c, layout)
-    assert not owns_expert("model.layers.1.mlp.experts.1.w2.weight", c, layout)
-    q = shard_spec("model.layers.1.self_attn.q_b_proj.weight", c, 3, 4, dcp_size=2)
-    out = shard_spec("model.layers.1.self_attn.o_proj.weight", c, 3, 4, dcp_size=2)
+    assert KimiCheckpoint(c, layout).owns("model.layers.1.mlp.experts.3.w2.weight")
+    assert not KimiCheckpoint(c, layout).owns("model.layers.1.mlp.experts.1.w2.weight")
+    q = KimiCheckpoint(c, ParallelLayout(DistributedInfo(3, 4), dcp_size=2)).shard(
+        "model.layers.1.self_attn.q_b_proj.weight"
+    )
+    out = KimiCheckpoint(c, ParallelLayout(DistributedInfo(3, 4), dcp_size=2)).shard(
+        "model.layers.1.self_attn.o_proj.weight"
+    )
     # Projection weights stay TP-sharded. DCP gathers query heads only at decode.
     assert (q.start, q.stop, out.start, out.stop) == (12, 16, 9, 12)
-    assert q == shard_spec("model.layers.1.self_attn.q_b_proj.weight", c, 3, 4, dcp_size=1)
+    assert q == KimiCheckpoint(c, ParallelLayout(DistributedInfo(3, 4), dcp_size=1)).shard(
+        "model.layers.1.self_attn.q_b_proj.weight"
+    )
     with pytest.raises(ValueError):
         ParallelLayout(DistributedInfo(0, 4), 3, 2)
     with pytest.raises(ValueError):
@@ -50,7 +57,6 @@ def test_packed_checkpoint_preserves_global_expert_ids(tmp_path, monkeypatch):
     import run_kimi_runtime_gate as runtime
     from minisgl.models import create_model
     from minisgl.models.config import ModelConfig
-    from minisgl.models.kimi_weight import load_kimi_weight
     from minisgl.utils import cached_load_hf_config
 
     config = runtime.tiny_config()
@@ -60,7 +66,7 @@ def test_packed_checkpoint_preserves_global_expert_ids(tmp_path, monkeypatch):
     runtime.generate_fixtures(tmp_path / "fixture")
     path = str(tmp_path / "fixture/packed")
     model_config = ModelConfig.from_hf(cached_load_hf_config(path))
-    full = dict(load_kimi_weight(path, "cpu", packed=True))
+    full = dict(load_checkpoint(path, "cpu", checkpoint_type=KimiCheckpoint, packed=True))
     monkeypatch.setattr(layout_module, "_DCP_SIZE", 2)
     monkeypatch.setattr(layout_module, "_EP_SIZE", 2)
     expert_ids = set()
@@ -69,15 +75,21 @@ def test_packed_checkpoint_preserves_global_expert_ids(tmp_path, monkeypatch):
         with torch.device("meta"):
             model = create_model(model_config)
         model.load_weights(
-            load_kimi_weight(
-                path, "cpu", tp_size=2, tp_rank=rank, packed=True, dcp_size=2, ep_size=2
+            load_checkpoint(
+                path,
+                "cpu",
+                checkpoint_type=KimiCheckpoint,
+                layout=ParallelLayout(DistributedInfo(rank, 2), dcp_size=2, ep_size=2),
+                packed=True,
             ),
             device=torch.device("cpu"),
         )
         local = model.state_dict()
         for name, value in local.items():
             logical = name.replace("weight_packed", "weight").replace("weight_scale", "weight")
-            spec = shard_spec(logical, config, rank, 2, dcp_size=2, ep_size=2)
+            spec = KimiCheckpoint(
+                config, ParallelLayout(DistributedInfo(rank, 2), dcp_size=2, ep_size=2)
+            ).shard(logical)
             expected = full[name]
             if spec is not None:
                 start, length = spec.start, spec.length
@@ -161,8 +173,11 @@ def _worker(rank, world, init_file, device_type):
 
             def stream():
                 for name, value in state.items():
-                    if owns_expert(name, c, layout):
-                        spec = shard_spec(name, c, rank, world, dcp_size=dcp, ep_size=ep)
+                    if KimiCheckpoint(c, layout).owns(name):
+                        spec = KimiCheckpoint(
+                            c,
+                            ParallelLayout(DistributedInfo(rank, world), dcp_size=dcp, ep_size=ep),
+                        ).shard(name)
                         yield (
                             name,
                             (value if spec is None else spec.slice(value)).to(device).clone(),

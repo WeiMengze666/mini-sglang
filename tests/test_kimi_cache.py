@@ -4,7 +4,11 @@ import pytest
 import torch
 from minisgl.attention import create_torch_backend
 from minisgl.kvcache.hybrid_pool import HybridCache
-from minisgl.models.kimi_config import cache_bytes_per_token, cache_config, state_bytes_per_request
+from minisgl.models.kimi_k3.config import (
+    cache_bytes_per_token,
+    cache_config,
+    state_bytes_per_request,
+)
 
 
 def config():

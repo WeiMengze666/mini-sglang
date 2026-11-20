@@ -10,8 +10,9 @@ from minisgl.attention.kda import projection
 from minisgl.attention.kda.backend import KDAAttentionBackend, KDAMetadata
 from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
 from minisgl.distributed import DistributedInfo
+from minisgl.distributed.layout import ParallelLayout
 from minisgl.layers.kda import KDALayer
-from minisgl.models.kimi_parallel import shard_spec
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
 
 
 def build_layer(monkeypatch, *, rank=0, tp=8, full=True, dtype=torch.bfloat16, actual=False):
@@ -61,7 +62,9 @@ def test_real_stream_load_reload_keeps_tp_slices_inside_weight_arena(monkeypatch
         for part, offset in zip(("q", "k", "v", "g"), (0, 1, 2, 3)):
             full = torch.arange(64 * 8).reshape(64, 8).remainder(4).bfloat16() + offset + generation
             name = f"{part}_proj.weight"
-            spec = shard_spec("model.layers.0.self_attn." + name, config, rank, 8)
+            spec = KimiCheckpoint(config, ParallelLayout(DistributedInfo(rank, 8))).shard(
+                "model.layers.0.self_attn." + name
+            )
             assert (spec.axis, spec.start, spec.stop) == (0, rank * 8, (rank + 1) * 8)
             payload[name] = spec.slice(full).contiguous()
         layer.load_weights(payload.items(), device=torch.device("cpu"))
@@ -108,8 +111,18 @@ def test_low_rank_and_other_dtypes_keep_original_projection_contract(monkeypatch
         config = SimpleNamespace(
             linear_attn_config={"kda_layers": [1], "num_heads": 16, "head_dim": 4}
         )
-        assert shard_spec("model.layers.0.self_attn.g_a_proj.weight", config, 3, 8) is None
-        assert shard_spec("model.layers.0.self_attn.g_b_proj.weight", config, 3, 8).start == 24
+        assert (
+            KimiCheckpoint(config, ParallelLayout(DistributedInfo(3, 8))).shard(
+                "model.layers.0.self_attn.g_a_proj.weight"
+            )
+            is None
+        )
+        assert (
+            KimiCheckpoint(config, ParallelLayout(DistributedInfo(3, 8)))
+            .shard("model.layers.0.self_attn.g_b_proj.weight")
+            .start
+            == 24
+        )
     assert not torch.cuda.is_initialized()
 
 

@@ -9,7 +9,7 @@ from minisgl.attention.kda import causal_conv1d, gated_rms_norm, kda_log_decay, 
 from minisgl.attention.mla import apply_rotary, mla_attention
 from minisgl.layers.kda import KDALayer
 from minisgl.layers.mla import MLALayer
-from minisgl.models.kimi_config import kda_config, mla_config
+from minisgl.models.kimi_k3.config import kda_config, mla_config
 
 
 def config(**kwargs):

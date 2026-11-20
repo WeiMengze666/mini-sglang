@@ -2,7 +2,11 @@ import json
 
 import pytest
 import torch
-from minisgl.models.kimi_weight import decode_mxfp4, load_kimi_weight, normalize_kimi_name
+from minisgl.checkpoint.loader import load_checkpoint
+from minisgl.distributed.info import DistributedInfo
+from minisgl.distributed.layout import ParallelLayout
+from minisgl.layers.weight import decode_mxfp4
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint, text_weight_name
 from safetensors.torch import save_file
 
 
@@ -60,7 +64,7 @@ def test_loader_cross_shard_scales_text_filtering_and_native_names(tmp_path):
     (tmp_path / "config.json").write_text(
         json.dumps({"text_config": {"num_hidden_layers": 2, "dtype": "bfloat16"}})
     )
-    loaded = dict(load_kimi_weight(str(tmp_path), "cpu"))
+    loaded = dict(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint))
     assert set(loaded) == {
         "model.layers.0.mlp.gate_proj.weight",
         "model.layers.1.mlp.experts.0.w1.weight",
@@ -76,14 +80,21 @@ def test_missing_scale_duplicate_and_tp_requires_config(tmp_path):
         {"model.x.weight_packed": torch.ones(2, 16, dtype=torch.uint8)}, tmp_path / "a.safetensors"
     )
     with pytest.raises(ValueError, match="Missing MXFP4"):
-        list(load_kimi_weight(str(tmp_path), "cpu"))
+        list(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint))
     with pytest.raises(ValueError, match="requires checkpoint config.json"):
-        list(load_kimi_weight(str(tmp_path), "cpu", tp_size=2))
+        list(
+            load_checkpoint(
+                str(tmp_path),
+                "cpu",
+                checkpoint_type=KimiCheckpoint,
+                layout=ParallelLayout(DistributedInfo(0, 2)),
+            )
+        )
     save_file(
         {"model.x.weight_packed": torch.ones(2, 16, dtype=torch.uint8)}, tmp_path / "b.safetensors"
     )
     with pytest.raises(ValueError, match="Duplicate checkpoint"):
-        list(load_kimi_weight(str(tmp_path), "cpu"))
+        list(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint))
 
 
 def test_metadata_index_and_mtp_skip(tmp_path):
@@ -104,9 +115,11 @@ def test_metadata_index_and_mtp_skip(tmp_path):
             }
         )
     )
-    assert set(dict(load_kimi_weight(str(tmp_path), "cpu"))) == {"model.norm.weight"}
-    assert normalize_kimi_name("mm_projector.weight") is None
-    assert normalize_kimi_name("language_model.model.layers.93.mlp.w1.weight", 93) is None
+    assert set(dict(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint))) == {
+        "model.norm.weight"
+    }
+    assert text_weight_name("mm_projector.weight") is None
+    assert text_weight_name("language_model.model.layers.93.mlp.w1.weight", 93) is None
 
 
 @pytest.mark.parametrize("shape", [(4,), (1, 1, 4, 1)])
@@ -118,20 +131,22 @@ def test_a_log_reference_narrowing(tmp_path, shape):
     (tmp_path / "config.json").write_text(
         json.dumps({"text_config": {"linear_attn_config": {"num_heads": 3}}})
     )
-    result = dict(load_kimi_weight(str(tmp_path), "cpu"))["model.layers.0.self_attn.A_log"]
+    result = dict(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint))[
+        "model.layers.0.self_attn.A_log"
+    ]
     torch.testing.assert_close(result, torch.arange(3.0))
 
 
 def test_public_checkpoint_moe_and_legacy_prefix_mapping():
     # Actual moonshotai/Kimi-K3 index uses block_sparse_moe for routed layers.
     assert (
-        normalize_kimi_name(
+        text_weight_name(
             "language_model.model.layers.12.block_sparse_moe.experts.895.w3.weight_packed"
         )
         == "model.layers.12.mlp.experts.895.w3.weight_packed"
     )
     assert (
-        normalize_kimi_name("language_model.layers.12.block_sparse_moe.gate.weight")
+        text_weight_name("language_model.layers.12.block_sparse_moe.gate.weight")
         == "model.layers.12.mlp.gate.weight"
     )
 
@@ -148,7 +163,7 @@ def test_loader_public_checkpoint_moe_mapping(tmp_path):
         },
         tmp_path / "a.safetensors",
     )
-    result = dict(load_kimi_weight(str(tmp_path), "cpu"))
+    result = dict(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint))
     assert set(result) == {"model.layers.1.mlp.experts.0.w1.weight"}
     torch.testing.assert_close(
         result["model.layers.1.mlp.experts.0.w1.weight"], torch.ones(2, 32, dtype=torch.bfloat16)
@@ -169,7 +184,7 @@ def test_remote_fetches_metadata_before_weights_at_same_revision(tmp_path, monke
         return str(snapshot)
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
-    result = dict(load_kimi_weight("org/test-model", "cpu"))
+    result = dict(load_checkpoint("org/test-model", "cpu", checkpoint_type=KimiCheckpoint))
     assert len(calls) == 2
     assert calls[0][1]["allow_patterns"] == ["config.json", "model.safetensors.index.json"]
     assert calls[1][1]["revision"] == snapshot.name
@@ -185,7 +200,9 @@ def test_index_allows_hf_blob_symlink_but_rejects_traversal(tmp_path):
     (snapshot / "a.safetensors").symlink_to(blob)
     index = snapshot / "model.safetensors.index.json"
     index.write_text(json.dumps({"weight_map": {"model.norm.weight": "a.safetensors"}}))
-    assert set(dict(load_kimi_weight(str(snapshot), "cpu"))) == {"model.norm.weight"}
+    assert set(dict(load_checkpoint(str(snapshot), "cpu", checkpoint_type=KimiCheckpoint))) == {
+        "model.norm.weight"
+    }
     index.write_text(json.dumps({"weight_map": {"model.norm.weight": "../blob"}}))
     with pytest.raises(ValueError, match="outside model folder"):
-        list(load_kimi_weight(str(snapshot), "cpu"))
+        list(load_checkpoint(str(snapshot), "cpu", checkpoint_type=KimiCheckpoint))

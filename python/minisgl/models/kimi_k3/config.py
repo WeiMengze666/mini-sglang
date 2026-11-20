@@ -151,3 +151,33 @@ def cache_bytes_per_token(config, dtype):
 
 def state_bytes_per_request(config, dtype, tp_size=None):
     return cache_config(config).state_bytes_per_request(dtype, tp_size)
+
+
+def is_moe_layer(config, layer_id):
+    return (
+        config.num_experts > 0
+        and layer_id >= config.first_k_dense_replace
+        and layer_id % config.moe_layer_freq == 0
+    )
+
+
+def validate_partitions(config, layout):
+    """Check present layer families before allocating any weights."""
+    from minisgl.distributed.info import local_size
+
+    if config.linear_attn_config["kda_layers"]:
+        local_size(config.linear_attn_config["num_heads"], layout.tensor.size, "KDA heads")
+    if config.linear_attn_config["full_attn_layers"]:
+        local_size(config.num_attention_heads, layout.tensor.size, "MLA heads")
+    routed = sum(is_moe_layer(config, i) for i in range(config.num_hidden_layers))
+    if routed < config.num_hidden_layers:
+        local_size(config.intermediate_size, layout.tensor.size, "dense intermediate_size")
+    if routed:
+        layout.expert_range(config.num_experts)
+        local_size(config.moe_intermediate_size, layout.expert_tensor.size, "moe_intermediate_size")
+        if config.num_shared_experts:
+            local_size(
+                config.moe_intermediate_size * config.num_shared_experts,
+                layout.tensor.size,
+                "shared intermediate_size",
+            )

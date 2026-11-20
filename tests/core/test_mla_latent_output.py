@@ -11,6 +11,7 @@ import torch.multiprocessing as mp
 from minisgl.attention.config import MLAConfig
 from minisgl.attention.mla import MLALatentOutput
 from minisgl.distributed.context import merge_attention
+from minisgl.distributed.info import DistributedInfo
 from minisgl.layers.mla import MLALayer
 
 
@@ -34,7 +35,11 @@ def test_latent_readout_is_merged_before_local_value_projection(monkeypatch, cp_
         return merged[:, rank * 2 : (rank + 1) * 2]
 
     monkeypatch.setattr(
-        module, "TensorParallel", lambda: SimpleNamespace(size=cp_size, all_reduce=lambda x: x)
+        module,
+        "TensorParallel",
+        lambda: SimpleNamespace(
+            group=DistributedInfo(rank, cp_size), size=cp_size, all_reduce=lambda x: x
+        ),
     )
     monkeypatch.setattr(
         module,
@@ -144,7 +149,11 @@ def test_full_history_prefill_selects_local_heads_without_output_exchange(monkey
         raise AssertionError("Full-history prefill must not exchange partial outputs")
 
     monkeypatch.setattr(
-        module, "TensorParallel", lambda: SimpleNamespace(size=cp_size, all_reduce=lambda x: x)
+        module,
+        "TensorParallel",
+        lambda: SimpleNamespace(
+            group=DistributedInfo(rank, cp_size), size=cp_size, all_reduce=lambda x: x
+        ),
     )
     monkeypatch.setattr(
         module,

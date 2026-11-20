@@ -35,8 +35,8 @@ from minisgl.layers.linear import Linear
 from minisgl.layers.mla import MLALayer
 from minisgl.layers.norm import TorchRMSNorm
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import KimiTextConfig, cache_config, mla_config
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM, attention_residual
+from minisgl.models.kimi_k3.config import KimiTextConfig, cache_config, mla_config
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM, attention_residual
 
 REVISION = "f831ab66814297da540d832a5235f8e904f29d06"
 SOURCE_SHA256 = "9e3564c70ac21854ce5a090cc946c5dc76b70d1050ef50840449181a20fff44a"

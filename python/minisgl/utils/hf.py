@@ -81,7 +81,7 @@ def load_tokenizer(model_path: str, *, trust_remote_code: bool = False) -> PreTr
 def _load_hf_config(model_path: str) -> Any:
     raw, _ = PretrainedConfig.get_config_dict(model_path)
     if raw.get("model_type") in ("kimi_k3", "kimi_linear"):
-        from minisgl.models.kimi_config import KimiK3Config, KimiTextConfig
+        from minisgl.models.kimi_k3.config import KimiK3Config, KimiTextConfig
 
         cls = KimiK3Config if raw["model_type"] == "kimi_k3" else KimiTextConfig
         return cls(**raw)

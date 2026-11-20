@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urljoin, urlsplit
 
+from minisgl.models.kimi_k3.checkpoint import text_weight_name
+
 REVISION = "f831ab66814297da540d832a5235f8e904f29d06"
 MAX_HEADER = 8 * 1024 * 1024
 MAX_TOTAL = 128 * 1024 * 1024
@@ -297,8 +299,8 @@ def audit_text(tensors, expected, num_layers, normalize, decoded_dtype="BF16"):
 def declared_parameters(config_path):
     import torch
     from minisgl.models.config import ModelConfig
-    from minisgl.models.kimi_config import KimiK3Config
-    from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
+    from minisgl.models.kimi_k3.config import KimiK3Config
+    from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM
 
     raw = json.loads(config_path.read_text())
     text = raw.get("text_config", raw)
@@ -575,9 +577,8 @@ def main():
     ):
         errors.append("Index metadata.total_size disagrees with header tensor byte counts")
     expected, layers, dtype = declared_parameters(args.config)
-    from minisgl.models.kimi_weight import normalize_kimi_name
 
-    report = audit_text(tensors, expected, layers, normalize_kimi_name, dtype)
+    report = audit_text(tensors, expected, layers, text_weight_name, dtype)
     report["errors"] = errors + report["errors"]
     report.update(
         {

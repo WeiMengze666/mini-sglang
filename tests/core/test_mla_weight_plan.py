@@ -8,9 +8,11 @@ import torch
 import torch.nn.functional as F
 from minisgl.attention.config import MLAConfig
 from minisgl.distributed.context import ContextParallel
+from minisgl.distributed.info import DistributedInfo
+from minisgl.distributed.layout import ParallelLayout
 from minisgl.layers.base import BaseOP
 from minisgl.layers.mla import MLALayer
-from minisgl.models.kimi_parallel import shard_spec
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
 
 
 def build(monkeypatch, cp_size, *, rank=None, dtype=torch.bfloat16, qrank=4):
@@ -42,7 +44,11 @@ def build(monkeypatch, cp_size, *, rank=None, dtype=torch.bfloat16, qrank=4):
 
     cp.gather_heads = gather
     monkeypatch.setattr(
-        module, "TensorParallel", lambda: SimpleNamespace(size=tp_size, all_reduce=lambda x: x)
+        module,
+        "TensorParallel",
+        lambda: SimpleNamespace(
+            group=DistributedInfo(rank, tp_size), size=tp_size, all_reduce=lambda x: x
+        ),
     )
     monkeypatch.setattr(module, "ContextParallel", lambda: cp)
     monkeypatch.setattr(
@@ -201,5 +207,7 @@ def test_checkpoint_slices_remain_tp_local_for_all_dcp_sizes(cp_size, rank):
         ("q_proj.weight", 192),
         ("kv_b_proj.weight", 256),
     ]:
-        spec = shard_spec("model.layers.0.self_attn." + name, config, rank, 8, dcp_size=cp_size)
+        spec = KimiCheckpoint(
+            config, ParallelLayout(DistributedInfo(rank, 8), dcp_size=cp_size)
+        ).shard("model.layers.0.self_attn." + name)
         assert spec.length == 12 * width and spec.start == rank * 12 * width

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import torch
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import KimiK3Config
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
-from minisgl.models.kimi_weight import normalize_kimi_name
+from minisgl.models.kimi_k3.checkpoint import text_weight_name
+from minisgl.models.kimi_k3.config import KimiK3Config
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
         expected = set(KimiK3LinearForCausalLM(config).state_dict())
     actual = set()
     for raw in weights:
-        name = normalize_kimi_name(raw, config.num_layers)
+        name = text_weight_name(raw, config.num_layers)
         if name is None or name.endswith(".weight_scale"):
             continue
         if name.endswith(".weight_packed"):

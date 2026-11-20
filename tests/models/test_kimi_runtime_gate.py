@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 import torch
-from minisgl.models.kimi_weight import load_kimi_weight
+from minisgl.checkpoint.loader import load_checkpoint
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
 from run_kimi_runtime_gate import (
     generate_fixtures,
     load_fixture,
@@ -43,8 +44,16 @@ def test_repeatable_fixtures_and_cross_shard_dense_oracle(fixtures, tmp_path, mo
     assert generate_fixtures(fixtures) == manifest
     assert 0 < manifest["parameter_count"] < 150_000
     assert manifest["packed_tensor_count"] > 20
-    dense = dict(load_kimi_weight(str(fixtures / "dense"), "cpu", dtype=torch.float32))
-    decoded = dict(load_kimi_weight(str(fixtures / "packed"), "cpu", dtype=torch.float32))
+    dense = dict(
+        load_checkpoint(
+            str(fixtures / "dense"), "cpu", checkpoint_type=KimiCheckpoint, dtype=torch.float32
+        )
+    )
+    decoded = dict(
+        load_checkpoint(
+            str(fixtures / "packed"), "cpu", checkpoint_type=KimiCheckpoint, dtype=torch.float32
+        )
+    )
     assert dense.keys() == decoded.keys()
     for name in dense:
         torch.testing.assert_close(dense[name], decoded[name], rtol=0, atol=0)

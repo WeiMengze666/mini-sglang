@@ -11,16 +11,20 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn.functional as F
+from minisgl.checkpoint.loader import load_checkpoint
+from minisgl.distributed.info import DistributedInfo
+from minisgl.distributed.layout import ParallelLayout
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.layers.base import BaseOP, OPList
-from minisgl.models.kimi_config import (
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
+from minisgl.models.kimi_k3.config import (
     KimiTextConfig,
     cache_bytes_per_token,
     cache_config,
     state_bytes_per_request,
+    validate_partitions,
 )
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
-from minisgl.models.kimi_parallel import shard_spec, validate_tp_config
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM
 
 
 class _SimulatedGroup:
@@ -225,7 +229,7 @@ def _run_two_ranks(rank, init_file):
             parallel = KimiK3LinearForCausalLM(_model_config(c))
             local_state = {}
             for name, tensor in full_state.items():
-                spec = shard_spec(name, c, rank, 2)
+                spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(rank, 2))).shard(name)
                 local_state[name] = (tensor if spec is None else spec.slice(tensor)).clone()
             parallel.load_state_dict(local_state)
             assert not local_state
@@ -291,12 +295,18 @@ def test_two_rank_gloo_model_cache_chunk_decode_and_manual_moe(tmp_path):
 
 def test_shard_spec_and_invalid_splits():
     c = _config()
-    validate_tp_config(c, 2)
-    spec = shard_spec("model.layers.0.self_attn.q_proj.weight", c, 1, 2)
+    validate_partitions(c, ParallelLayout(DistributedInfo(0, 2)))
+    spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(
+        "model.layers.0.self_attn.q_proj.weight"
+    )
     assert (spec.axis, spec.start, spec.stop) == (0, 8, 16)
-    spec = shard_spec("model.layers.1.self_attn.kv_b_proj.weight", c, 1, 2)
+    spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(
+        "model.layers.1.self_attn.kv_b_proj.weight"
+    )
     assert (spec.axis, spec.start, spec.stop) == (0, 10, 20)
-    spec = shard_spec("model.layers.1.mlp.experts.3.w2.weight", c, 1, 2)
+    spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(
+        "model.layers.1.mlp.experts.3.w2.weight"
+    )
     assert (spec.axis, spec.start, spec.stop) == (1, 3, 6)
     for name in (
         "model.layers.1.self_attn.kv_a_proj_with_mqa.weight",
@@ -305,16 +315,21 @@ def test_shard_spec_and_invalid_splits():
         "model.layers.0.self_attn.o_norm.weight",
         "model.layers.0.self_attn.f_a_proj.weight",
     ):
-        assert shard_spec(name, c, 1, 2) is None
-    assert shard_spec("lm_head.weight", _config(vocab=23), 1, 2) is None
-    with pytest.raises(ValueError, match="TP rank"):
-        shard_spec("lm_head.weight", c, 2, 2)
+        assert KimiCheckpoint(c, ParallelLayout(DistributedInfo(1, 2))).shard(name) is None
+    assert (
+        KimiCheckpoint(_config(vocab=23), ParallelLayout(DistributedInfo(1, 2))).shard(
+            "lm_head.weight"
+        )
+        is None
+    )
+    with pytest.raises(ValueError, match="rank must belong"):
+        KimiCheckpoint(c, ParallelLayout(DistributedInfo(2, 2))).shard("lm_head.weight")
     with pytest.raises(ValueError, match="KDA heads"):
-        validate_tp_config(c, 3)
+        validate_partitions(c, ParallelLayout(DistributedInfo(0, 3)))
     c = _config()
     c.moe_intermediate_size = 7
     with pytest.raises(ValueError, match="moe_intermediate_size"):
-        validate_tp_config(c, 2)
+        validate_partitions(c, ParallelLayout(DistributedInfo(0, 2)))
 
 
 @pytest.mark.parametrize("odd_vocab", [False, True])
@@ -344,7 +359,7 @@ def test_simulated_collectives_model_and_independent_moe(monkeypatch, odd_vocab)
         model = KimiK3LinearForCausalLM(_model_config(c))
         local = {}
         for name, tensor in state.items():
-            spec = shard_spec(name, c, rank, 2)
+            spec = KimiCheckpoint(c, ParallelLayout(DistributedInfo(rank, 2))).shard(name)
             local[name] = (tensor if spec is None else spec.slice(tensor)).clone()
         model.load_state_dict(local)
         _attach_simulated_comm(model, _SimulatedComm(rank, group))
@@ -409,7 +424,6 @@ def test_simulated_collectives_packed_checkpoint_tp2_vs_dense_tp1(tmp_path, monk
     from minisgl.distributed import DistributedInfo
     from minisgl.models import create_model
     from minisgl.models.config import ModelConfig
-    from minisgl.models.kimi_weight import load_kimi_weight
     from minisgl.utils import cached_load_hf_config, torch_dtype
 
     # The current MLA backend requires the batch's explicit execution mode.
@@ -449,12 +463,12 @@ def test_simulated_collectives_packed_checkpoint_tp2_vs_dense_tp1(tmp_path, monk
             declared = model.state_dict()
 
             def stream():
-                for name, value in load_kimi_weight(
+                for name, value in load_checkpoint(
                     str(root / "packed"),
                     device,
+                    checkpoint_type=KimiCheckpoint,
+                    layout=ParallelLayout(DistributedInfo(rank, 2)),
                     dtype=dtype,
-                    tp_size=2,
-                    tp_rank=rank,
                     packed=True,
                 ):
                     if declared[name].is_floating_point():

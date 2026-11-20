@@ -7,15 +7,15 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn.functional as F
+from minisgl.checkpoint.loader import load_checkpoint
+from minisgl.distributed.info import DistributedInfo
+from minisgl.distributed.layout import ParallelLayout
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.latent_moe import LatentMoE
 from minisgl.layers.linear import Linear
-from minisgl.models.kimi_config import KimiTextConfig
-from minisgl.models.kimi_quant import (
-    quantization_rules,
-    replace_quantized_linears,
-)
-from minisgl.models.kimi_weight import decode_mxfp4, load_kimi_weight
+from minisgl.layers.weight import decode_mxfp4, quantization_rules
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint, configure_linears
+from minisgl.models.kimi_k3.config import KimiTextConfig
 from safetensors.torch import save_file
 
 
@@ -141,7 +141,7 @@ def test_meta_replacement_honors_targets_ignore_and_native_dense():
         layer.self_attn = BaseOP()
         layer.self_attn.q_proj = Linear(64, 64)
         model.lm_head = Linear(64, 64)
-    assert replace_quantized_linears(model, config()) == 12
+    assert configure_linears(model, config()) == 12
     assert getattr(layer.mlp.experts.op_list[0].w1, "weight_format", None) == "mxfp4"
     assert layer.mlp.shared_experts.up_proj.weight_format == "dense"
     assert layer.mlp.routed_expert_down_proj.weight_format == "dense"
@@ -150,7 +150,7 @@ def test_meta_replacement_honors_targets_ignore_and_native_dense():
     assert model.lm_head.weight_format == "dense"
     assert layer.mlp.gate.weight.dtype == torch.float32
     assert all(t.device.type == "meta" for t in model.state_dict().values())
-    assert replace_quantized_linears(model, config()) == 0
+    assert configure_linears(model, config()) == 0
 
 
 def test_specific_selectors_and_oplist_direct_children():
@@ -158,10 +158,10 @@ def test_specific_selectors_and_oplist_direct_children():
     model.layers = OPList([Linear(32, 32), Linear(32, 32)])
     quant = quant_config()
     quant["config_groups"]["group_0"]["targets"] = ["language_model.layers.0"]
-    assert replace_quantized_linears(model, SimpleNamespace(quantization_config=quant)) == 1
+    assert configure_linears(model, SimpleNamespace(quantization_config=quant)) == 1
     assert getattr(model.layers.op_list[0], "weight_format", None) == "mxfp4"
     assert model.layers.op_list[1].weight_format == "dense"
-    assert replace_quantized_linears(model, SimpleNamespace()) == 0
+    assert configure_linears(model, SimpleNamespace()) == 0
 
 
 def test_tiny_latent_moe_packed_matches_dense():
@@ -174,7 +174,7 @@ def test_tiny_latent_moe_packed_matches_dense():
         if name.endswith("norm.weight"):
             value.fill_(1)
     dense = copy.deepcopy(model)
-    assert replace_quantized_linears(model, c, chunk_rows=7) == 12
+    assert configure_linears(model, c, chunk_rows=7) == 12
     for packed_expert, dense_expert in zip(model.mlp.experts.op_list, dense.mlp.experts.op_list):
         for name in ("w1", "w2", "w3"):
             packed_op, dense_op = getattr(packed_expert, name), getattr(dense_expert, name)
@@ -211,7 +211,7 @@ def test_malformed_quantization_rejected(mutation, error):
     quant = quant_config()
     mutation(quant)
     with pytest.raises(error):
-        quantization_rules({"quantization_config": quant})
+        quantization_rules(quant)
 
 
 def test_overlapping_groups_fail_closed():
@@ -220,7 +220,7 @@ def test_overlapping_groups_fail_closed():
     quant = quant_config()
     quant["config_groups"]["duplicate"] = copy.deepcopy(quant["config_groups"]["group_0"])
     with pytest.raises(ValueError, match="Multiple"):
-        replace_quantized_linears(model, SimpleNamespace(quantization_config=quant))
+        configure_linears(model, SimpleNamespace(quantization_config=quant))
 
 
 @pytest.mark.parametrize("rows,cols,chunk", [(1, 31, 4), (1, 0, 4), (0, 32, 4), (1, 32, 0)])
@@ -236,7 +236,7 @@ def write_checkpoint(folder, tensors, c=None):
 
 
 def test_loader_packed_cross_shard_no_decode(monkeypatch, tmp_path):
-    import minisgl.models.kimi_weight as loader
+    import minisgl.checkpoint.loader as loader
 
     prefix = "language_model.model.layers.0.block_sparse_moe.experts.0.w1"
     packed, scale = fixture_weights(64, 32)
@@ -247,7 +247,9 @@ def test_loader_packed_cross_shard_no_decode(monkeypatch, tmp_path):
         raise AssertionError("Packed loading must not decode")
 
     monkeypatch.setattr(loader, "decode_mxfp4", forbidden_decode)
-    result = dict(load_kimi_weight(str(tmp_path), "cpu", packed=True))
+    result = dict(
+        load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint, packed=True)
+    )
     prefix = "model.layers.0.mlp.experts.0.w1"
     assert set(result) == {prefix + ".weight_packed", prefix + ".weight_scale"}
     torch.testing.assert_close(result[prefix + ".weight_packed"], packed)
@@ -260,14 +262,14 @@ def test_loader_packed_cross_shard_no_decode(monkeypatch, tmp_path):
 def test_packed_tp_slices_rows_and_block_columns_before_read(
     tmp_path, monkeypatch, projection, shape, axis, keep_packed
 ):
-    import minisgl.models.kimi_weight as loader
+    import minisgl.checkpoint.loader as loader
 
     prefix = f"model.layers.0.mlp.experts.0.{projection}"
     packed, scales = fixture_weights(*shape)
     write_checkpoint(
         tmp_path, {prefix + ".weight_packed": packed, prefix + ".weight_scale": scales}, config()
     )
-    original = loader._read_packed_pair
+    original = loader.read_mxfp4_pair
     seen_shapes = []
 
     def pair(*args, **kwargs):
@@ -275,17 +277,17 @@ def test_packed_tp_slices_rows_and_block_columns_before_read(
         seen_shapes.append(result[0].shape)
         return result
 
-    monkeypatch.setattr(loader, "_read_packed_pair", pair)
+    monkeypatch.setattr(loader, "read_mxfp4_pair", pair)
     results = []
     dense = decode_mxfp4(packed, scales, dtype=torch.float32)
     for rank in range(2):
         result = dict(
-            load_kimi_weight(
+            load_checkpoint(
                 str(tmp_path),
                 "cpu",
+                checkpoint_type=KimiCheckpoint,
+                layout=ParallelLayout(DistributedInfo(rank, 2)),
                 packed=keep_packed,
-                tp_size=2,
-                tp_rank=rank,
                 dtype=torch.float32,
             )
         )
@@ -313,7 +315,15 @@ def test_tp_dense_and_legacy_a_log_sliced(tmp_path):
         "model.layers.0.mlp.gate.weight": torch.randn(4, 64),
     }
     write_checkpoint(tmp_path, tensors, c)
-    result = dict(load_kimi_weight(str(tmp_path), "cpu", packed=True, tp_size=2, tp_rank=1))
+    result = dict(
+        load_checkpoint(
+            str(tmp_path),
+            "cpu",
+            checkpoint_type=KimiCheckpoint,
+            layout=ParallelLayout(DistributedInfo(1, 2)),
+            packed=True,
+        )
+    )
     torch.testing.assert_close(result["model.layers.0.self_attn.A_log"], torch.tensor([2.0, 3.0]))
     torch.testing.assert_close(
         result["model.layers.0.self_attn.q_proj.weight"],
@@ -333,7 +343,15 @@ def test_unaligned_packed_column_shard_rejected(tmp_path):
         config(moe_intermediate_size=32),
     )
     with pytest.raises(ValueError, match="align to 32"):
-        list(load_kimi_weight(str(tmp_path), "cpu", packed=True, tp_size=2))
+        list(
+            load_checkpoint(
+                str(tmp_path),
+                "cpu",
+                checkpoint_type=KimiCheckpoint,
+                layout=ParallelLayout(DistributedInfo(0, 2)),
+                packed=True,
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -355,7 +373,7 @@ def test_malformed_packed_pairs_rejected(tmp_path, mutation, match):
     mutation(tensors)
     write_checkpoint(tmp_path, tensors)
     with pytest.raises(ValueError, match=match):
-        list(load_kimi_weight(str(tmp_path), "cpu", packed=True))
+        list(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint, packed=True))
 
 
 def test_remote_index_downloads_only_selected_text_shards_at_pinned_revision(tmp_path, monkeypatch):
@@ -385,7 +403,9 @@ def test_remote_index_downloads_only_selected_text_shards_at_pinned_revision(tmp
         return str(snapshot)
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
-    result = dict(load_kimi_weight("synthetic/model", "cpu", packed=True))
+    result = dict(
+        load_checkpoint("synthetic/model", "cpu", checkpoint_type=KimiCheckpoint, packed=True)
+    )
     assert set(result) == {"model.norm.weight"}
     assert calls == [
         {"allow_patterns": ["config.json", "model.safetensors.index.json"]},
@@ -395,33 +415,46 @@ def test_remote_index_downloads_only_selected_text_shards_at_pinned_revision(tmp
 
 def test_selected_mla_kv_b_packing_fails_explicitly():
     model = BaseOP()
-    model.self_attn = BaseOP()
-    model.self_attn.kv_b_proj = Linear(32, 64)
+    from minisgl.attention.config import MLAConfig
+    from minisgl.layers.mla import MLALayer
+
+    model.self_attn = MLALayer(
+        MLAConfig(
+            hidden_size=32,
+            num_heads=2,
+            latent_dim=32,
+            nope_dim=8,
+            rope_dim=8,
+            value_dim=16,
+            q_lora_rank=None,
+            max_position_embeddings=128,
+        )
+    )
     quant = quant_config()
     quant["ignore"] = []
     with pytest.raises(NotImplementedError, match="MLA kv_b_proj"):
-        replace_quantized_linears(model, SimpleNamespace(quantization_config=quant))
+        configure_linears(model, SimpleNamespace(quantization_config=quant))
 
 
 def test_packed_metadata_slice_descriptors():
     from audit_kimi_packed_storage import sliced_descriptor
 
-    c = SimpleNamespace(hf_config=config())
+    checkpoint = KimiCheckpoint(config(), ParallelLayout(DistributedInfo(1, 2)))
     prefix = "model.layers.0.mlp.experts.0.w2"
-    assert sliced_descriptor(prefix + ".weight_packed", (32, 32), "U8", c, 1, 2) == (
+    assert sliced_descriptor(prefix + ".weight_packed", (32, 32), "U8", checkpoint) == (
         (32, 16),
         "U8",
         True,
     )
-    assert sliced_descriptor(prefix + ".weight_scale", (32, 1, 2, 1), "U8", c, 1, 2) == (
+    assert sliced_descriptor(prefix + ".weight_scale", (32, 1, 2, 1), "U8", checkpoint) == (
         (32, 1),
         "U8",
         True,
     )
     with pytest.raises(ValueError, match="exceeds"):
-        sliced_descriptor(prefix + ".weight_packed", (32, 16), "U8", c, 1, 2)
+        sliced_descriptor(prefix + ".weight_packed", (32, 16), "U8", checkpoint)
     with pytest.raises(ValueError, match="Invalid MXFP4"):
-        sliced_descriptor(prefix + ".weight_packed", (32, 17), "U8", c, 1, 2)
+        sliced_descriptor(prefix + ".weight_packed", (32, 17), "U8", checkpoint)
 
 
 def test_optional_official_packed_storage_headers():
@@ -430,7 +463,7 @@ def test_optional_official_packed_storage_headers():
 
     from audit_kimi_packed_storage import audit_rank, verified_headers
     from minisgl.models.config import ModelConfig
-    from minisgl.models.kimi_config import KimiK3Config
+    from minisgl.models.kimi_k3.config import KimiK3Config
 
     directory = os.environ.get("KIMI_PACKED_AUDIT_HEADERS")
     config_path = os.environ.get("KIMI_PACKED_AUDIT_CONFIG")
@@ -449,7 +482,7 @@ def test_optional_official_packed_storage_headers():
 def test_storage_auditor_reports_casts_and_rejects_packed_mismatch():
     from audit_kimi_packed_storage import audit_rank
     from minisgl.models.config import ModelConfig
-    from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
+    from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM
 
     c = config(q_lora_rank=32, kv_lora_rank=32, max_position_embeddings=64)
     c.linear_attn_config["short_conv_kernel_size"] = 4

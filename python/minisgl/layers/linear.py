@@ -335,6 +335,10 @@ class LinearReplicated(_LinearTPImpl):
 
 
 class LinearColParallelMerged(_LinearTPImpl):
+    @staticmethod
+    def weight_shard(tp, width):
+        return tp.shard(0, width, "column-parallel output")
+
     def __init__(
         self,
         input_size: int,
@@ -343,13 +347,23 @@ class LinearColParallelMerged(_LinearTPImpl):
     ):
         # check that all output sizes are divisible by tp_size
         tp_info = get_tp_info()
-        tp_output_sizes = [div_even(size, tp_info.size) for size in output_sizes]
+        tp_output_sizes = [self.weight_shard(tp_info, size).length for size in output_sizes]
         output_size = sum(output_sizes)
         tp_output_size = sum(tp_output_sizes)
         super().__init__(input_size, output_size, input_size, tp_output_size, has_bias)
 
 
 class LinearQKVMerged(_LinearTPImpl):
+    @staticmethod
+    def head_shard(tp, heads, head_dim):
+        from minisgl.distributed.shard import ShardSpec
+
+        if heads < tp.size:
+            replicas = div_even(tp.size, heads)
+            head = tp.rank // replicas
+            return ShardSpec(0, head * head_dim, (head + 1) * head_dim)
+        return tp.shard(0, heads, "attention heads", head_dim)
+
     def __init__(
         self,
         hidden_size: int,
@@ -361,11 +375,11 @@ class LinearQKVMerged(_LinearTPImpl):
         tp_info = get_tp_info()
 
         local_num_qo = div_even(num_qo_heads, tp_info.size)
-        local_num_kv = div_even(num_kv_heads, tp_info.size, allow_replicate=True)
+        local_kv_width = self.head_shard(tp_info, num_kv_heads, head_dim).length
         full_isize = hidden_size
         full_osize = (num_qo_heads + 2 * num_kv_heads) * head_dim
         local_isize = hidden_size
-        local_osize = (local_num_qo + 2 * local_num_kv) * head_dim
+        local_osize = local_num_qo * head_dim + 2 * local_kv_width
         super().__init__(full_isize, full_osize, local_isize, local_osize, has_bias)
 
 
@@ -381,6 +395,10 @@ class LinearRowParallel(_LinearTPImpl):
     another layer's call; semantic owners copy any value they retain. Without
     preparation, the ordinary allocating projection/reduction/add stays intact.
     """
+
+    @staticmethod
+    def weight_shard(tp, width):
+        return tp.shard(1, width, "row-parallel input")
 
     def __init__(
         self,

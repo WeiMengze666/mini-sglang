@@ -15,10 +15,10 @@ from minisgl.layers.latent_moe import GatedMLP, LatentMoE
 from minisgl.layers.linear import Linear
 from minisgl.layers.mla import MLALayer
 from minisgl.layers.norm import TorchRMSNorm
-from minisgl.models.kimi_config import kda_config, mla_config
 
-from .base import BaseLLMModel
-from .kimi_parallel import validate_tp_config
+from ..base import BaseLLMModel
+from .checkpoint import KimiCheckpoint, configure_linears
+from .config import is_moe_layer, kda_config, mla_config, validate_partitions
 
 
 class KimiDecoderLayer(BaseOP):
@@ -30,11 +30,7 @@ class KimiDecoderLayer(BaseOP):
         if not isinstance(attention_config, KDAConfig if self._is_kda else MLAConfig):
             raise ValueError("Declared attention configuration differs from the decoder layer")
         self.self_attn = KDALayer(attention_config) if self._is_kda else MLALayer(attention_config)
-        is_moe = (
-            config.num_experts > 0
-            and layer_id >= config.first_k_dense_replace
-            and layer_id % config.moe_layer_freq == 0
-        )
+        is_moe = is_moe_layer(config, layer_id)
         self.mlp = LatentMoE(config) if is_moe else GatedMLP(config)
         self.input_layernorm = TorchRMSNorm(config.hidden_size, config.rms_norm_eps)
         self.post_attention_layernorm = TorchRMSNorm(config.hidden_size, config.rms_norm_eps)
@@ -123,22 +119,23 @@ class KimiModel(BaseOP):
 
 
 class KimiK3LinearForCausalLM(BaseLLMModel):
+    checkpoint_type = KimiCheckpoint
+
     def __init__(self, config):
         self._config = config
         text = config.hf_config
         self._tp = TensorParallel()
         layout = get_parallel_layout()
-        validate_tp_config(text, self._tp.size, dcp_size=layout.dcp_size, ep_size=layout.ep_size)
-        self._sharded_vocab = self._tp.size > 1 and text.vocab_size % self._tp.size == 0
-        vocab_width = text.vocab_size // self._tp.size if self._sharded_vocab else text.vocab_size
+        validate_partitions(text, layout)
+        vocab_shard = Embedding.weight_shard(layout.tensor, text.vocab_size)
+        self._sharded_vocab = vocab_shard is not None
+        vocab_width = vocab_shard.length if vocab_shard else text.vocab_size
         self.model = KimiModel(text, config.attention_configs)
         self.lm_head = Linear(text.hidden_size, vocab_width)
         self._tie_embeddings = text.tie_word_embeddings
         if self._tie_embeddings:
             raise ValueError("Kimi-K3 text decoder requires untied embeddings")
-        from .kimi_quant import replace_quantized_linears
-
-        replace_quantized_linears(self, text)
+        configure_linears(self, text)
 
     def forward(self):
         ctx = get_global_ctx()

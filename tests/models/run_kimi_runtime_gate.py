@@ -18,11 +18,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import torch
+from minisgl.checkpoint.loader import load_checkpoint
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.models import create_model
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import KimiK3Config, KimiTextConfig, cache_config
-from minisgl.models.kimi_weight import load_kimi_weight
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
+from minisgl.models.kimi_k3.config import KimiK3Config, KimiTextConfig, cache_config
 from minisgl.utils import cached_load_hf_config, torch_dtype
 from safetensors.torch import save_file
 
@@ -198,9 +199,10 @@ def load_fixture(path: Path, dtype: torch.dtype, device: torch.device):
     # Mirror Engine's declared-parameter dtype assignment, including FP32 state parameters.
     weights = (
         (name, value.to(expected[name].dtype) if name in expected else value)
-        for name, value in load_kimi_weight(
+        for name, value in load_checkpoint(
             str(path),
             device,
+            checkpoint_type=KimiCheckpoint,
             dtype=dtype,
             packed=bool(getattr(config.hf_config, "quantization_config", None)),
         )

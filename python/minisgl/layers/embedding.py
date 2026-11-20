@@ -5,7 +5,7 @@ from typing import Dict
 import torch
 import torch.nn.functional as F
 from minisgl.core import get_global_ctx
-from minisgl.distributed import DistributedCommunicator, get_tp_info
+from minisgl.distributed import DistributedCommunicator, DistributedInfo, get_tp_info
 from minisgl.distributed.parallel import TensorParallel
 from minisgl.utils import div_ceil, nvtx_annotate
 
@@ -13,6 +13,14 @@ from .base import BaseOP
 
 
 class VocabParallelEmbedding(BaseOP):
+    @staticmethod
+    def weight_shard(tp, vocab_size):
+        from minisgl.distributed.shard import ShardSpec
+
+        width = div_ceil(vocab_size, tp.size)
+        start = min(tp.rank * width, vocab_size)
+        return ShardSpec(0, start, min(start + width, vocab_size))
+
     def __init__(
         self,
         num_embeddings: int,
@@ -20,13 +28,11 @@ class VocabParallelEmbedding(BaseOP):
     ):
         super().__init__()
         tp_info = get_tp_info()
-        tp_rank = tp_info.rank
         self.tp_size = tp_info.size
         self.num_embeddings = num_embeddings
         self.num_embeddings_tp = div_ceil(num_embeddings, self.tp_size)
-        start_idx = self.num_embeddings_tp * tp_rank
-        finish_idx = min(start_idx + self.num_embeddings_tp, num_embeddings)
-        self.vocab_range = (start_idx, finish_idx - start_idx)
+        shard = self.weight_shard(tp_info, num_embeddings)
+        self.vocab_range = (shard.start, shard.length)
         self.weight = torch.empty(self.num_embeddings_tp, embedding_dim)
         self._comm = DistributedCommunicator()
 
@@ -112,12 +118,19 @@ class ParallelLMHead(VocabParallelEmbedding):
 
 
 class Embedding(BaseOP):
+    @staticmethod
+    def weight_shard(tp, vocab_size):
+        if tp.size == 1 or vocab_size % tp.size:
+            return None
+        return tp.shard(0, vocab_size, "vocabulary")
+
     def __init__(self, vocab_size, hidden_size):
         self._tp = TensorParallel()
         self._vocab_size = vocab_size
-        self._sharded = self._tp.size > 1 and vocab_size % self._tp.size == 0
-        width = vocab_size // self._tp.size if self._sharded else vocab_size
-        self._start = self._tp.rank * width if self._sharded else 0
+        shard = self.weight_shard(DistributedInfo(self._tp.rank, self._tp.size), vocab_size)
+        self._sharded = shard is not None
+        width = shard.length if shard else vocab_size
+        self._start = shard.start if shard else 0
         self.weight = torch.empty(width, hidden_size)
 
     def forward(self, input_ids):

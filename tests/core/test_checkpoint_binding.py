@@ -9,9 +9,10 @@ import torch
 from minisgl.attention.base import BaseAttnBackend, HybridAttnBackend, PrefillDecodeAttnBackend
 from minisgl.attention.config import KDAConfig, MLAConfig
 from minisgl.attention.kda.registry import get_kda_kernel
+from minisgl.distributed.info import DistributedInfo
 from minisgl.layers.kda import KDALayer
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM, KimiModel
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM, KimiModel
 from test_kda_checkpoint_tracking import case as case
 from test_kimi_model import tiny_config
 
@@ -27,7 +28,7 @@ def no_gpu(monkeypatch):
 
 
 def test_spawn_pickle_and_actual_decoder_config_identity_with_heterogeneous_bounds(monkeypatch):
-    import minisgl.models.kimi_k3 as model_module
+    import minisgl.models.kimi_k3.model as model_module
 
     config = ModelConfig.from_hf(tiny_config())
     records = tuple(
@@ -196,7 +197,9 @@ def test_static_global_heads_do_not_compare_against_tp_local_heads(case, monkeyp
     import minisgl.layers.kda as kda
 
     config = KDAConfig(4, 96, 128, 4, gate_lower_bound=-5)
-    monkeypatch.setattr(kda, "TensorParallel", lambda: SimpleNamespace(size=8))
+    monkeypatch.setattr(
+        kda, "TensorParallel", lambda: SimpleNamespace(group=DistributedInfo(0, 8), size=8)
+    )
     layer = KDALayer(config)
     assert layer._config is config and layer._heads == 12
     case.backend.config.cache_config = replace(case.layout, num_heads=96)

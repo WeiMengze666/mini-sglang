@@ -6,10 +6,12 @@ import re
 import minisgl.distributed.layout as layouts
 import pytest
 import torch
+from minisgl.checkpoint.loader import load_checkpoint
 from minisgl.distributed import DistributedInfo, info
+from minisgl.distributed.layout import ParallelLayout
 from minisgl.models import create_model
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_weight import load_kimi_weight
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
 from run_kimi_runtime_gate import tiny_config
 from safetensors.torch import save_file
 
@@ -93,14 +95,12 @@ def test_packed_checkpoint_reconstructs_global_experts_after_ep_etp_loading(
         with torch.device("meta"):
             model = create_model(ModelConfig.from_hf(config))
         model.load_weights(
-            load_kimi_weight(
+            load_checkpoint(
                 str(path),
                 "cpu",
+                checkpoint_type=KimiCheckpoint,
+                layout=ParallelLayout(DistributedInfo(rank, 8), dcp_size=8, ep_size=ep),
                 packed=True,
-                tp_size=8,
-                tp_rank=rank,
-                dcp_size=8,
-                ep_size=ep,
             ),
             device=torch.device("cpu"),
         )

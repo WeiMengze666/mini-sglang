@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 from minisgl.distributed.layout import get_parallel_layout
-from minisgl.distributed.parallel import TensorParallel, local_size
+from minisgl.distributed.parallel import TensorParallel
 from minisgl.layers.activation import GatedActivation, situ_and_mul
 from minisgl.layers.base import BaseOP, OPList
 from minisgl.layers.linear import Linear, MergedLinear, linear_bf16, linear_fp32
@@ -22,12 +22,21 @@ def _activation(gate: torch.Tensor, up: torch.Tensor, config) -> torch.Tensor:
 class GatedMLP(BaseOP):
     """Dense/shared MLP: HF gate_proj, up_proj, down_proj names."""
 
+    @staticmethod
+    def weight_shards(tp, width):
+        rows = tp.shard(0, width, "MLP intermediate_size")
+        return {
+            "gate_proj.weight": rows,
+            "up_proj.weight": rows,
+            "down_proj.weight": tp.shard(1, width, "MLP intermediate_size"),
+        }
+
     def __init__(self, config, intermediate_size: int | None = None):
         self._config = config
         self._activation = GatedActivation.from_config(config)
         self._tp = TensorParallel()
         width = intermediate_size if intermediate_size is not None else config.intermediate_size
-        width = local_size(width, self._tp.size, "MLP intermediate_size")
+        width = self.weight_shards(self._tp.group, width)["gate_proj.weight"].length
         self.gate_proj = Linear(config.hidden_size, width)
         self.up_proj = Linear(config.hidden_size, width)
         self.down_proj = Linear(width, config.hidden_size)
@@ -78,15 +87,23 @@ class GatedMLP(BaseOP):
         return output if residual is None else output + residual
 
 
-class _Expert(BaseOP):
+class GatedExpert(BaseOP):
     """Checkpoint expert w1=gate, w2=down, w3=up."""
+
+    @staticmethod
+    def weight_shards(expert_tp, width):
+        rows = expert_tp.shard(0, width, "moe_intermediate_size")
+        return {
+            "w1.weight": rows,
+            "w3.weight": rows,
+            "w2.weight": expert_tp.shard(1, width, "moe_intermediate_size"),
+        }
 
     def __init__(self, hidden_size: int, intermediate_size: int, config):
         self._config = config
         self._activation = GatedActivation.from_config(config)
-        intermediate_size = local_size(
-            intermediate_size, get_parallel_layout().expert_tensor.size, "expert intermediate_size"
-        )
+        shards = self.weight_shards(get_parallel_layout().expert_tensor, intermediate_size)
+        intermediate_size = shards["w1.weight"].length
         self.w1 = Linear(hidden_size, intermediate_size)
         self.w2 = Linear(intermediate_size, hidden_size)
         self.w3 = Linear(hidden_size, intermediate_size)
@@ -151,7 +168,7 @@ class LatentMoE(BaseOP):
         width = latent or config.hidden_size
         expert_ids = get_parallel_layout().expert_range(config.num_experts)
         self.experts = OPList(
-            [_Expert(width, config.moe_intermediate_size, config) for _ in expert_ids],
+            [GatedExpert(width, config.moe_intermediate_size, config) for _ in expert_ids],
             indices=expert_ids,
         )
         shared = getattr(config, "num_shared_experts", None) or 0

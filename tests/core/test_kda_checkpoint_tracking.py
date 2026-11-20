@@ -8,7 +8,7 @@ import minisgl.core as core
 import pytest
 import torch
 from minisgl.attention.config import KDAConfig
-from minisgl.attention.kda import flashinfer, checkpoints, prefill, projection, triton
+from minisgl.attention.kda import checkpoints, flashinfer, prefill, projection, triton
 from minisgl.attention.kda.backend import KDAAttentionBackend
 from minisgl.attention.kda.registry import get_kda_kernel
 from minisgl.core import Batch, Req, SamplingParams
@@ -412,7 +412,7 @@ def test_real_k3_configs_keep_global96_while_tp8_pool_and_layer_use_local12(
     import minisgl.distributed.info as info
     from minisgl.distributed import DistributedInfo
     from minisgl.layers.kda import KDALayer
-    from minisgl.models.kimi_config import cache_config, kda_config
+    from minisgl.models.kimi_k3.config import cache_config, kda_config
 
     monkeypatch.setattr(info, "_TP_INFO", DistributedInfo(0, 8))
     model = SimpleNamespace(

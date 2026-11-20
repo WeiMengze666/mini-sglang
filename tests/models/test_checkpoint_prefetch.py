@@ -8,8 +8,10 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from minisgl.checkpoint import safetensors as checkpoint
+from minisgl.checkpoint.loader import load_checkpoint
 from minisgl.distributed import DistributedInfo
-from minisgl.models import checkpoint
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint
 from safetensors.torch import save_file
 
 
@@ -254,9 +256,8 @@ def test_both_engine_weight_paths_forward_prefetch_options(monkeypatch):
 
 def test_enabled_cross_shard_packed_scales_and_column_slices(tmp_path):
     import safetensors
+    from minisgl.checkpoint.safetensors import read_mxfp4_pair
     from minisgl.distributed.shard import ShardSpec
-    from minisgl.layers.weight import read_mxfp4_pair
-    from minisgl.models.kimi_weight import load_kimi_weight
 
     prefix = "model.layers.0.mlp.experts.0.w2"
     weight = torch.arange(64, dtype=torch.uint8).reshape(2, 32)
@@ -265,9 +266,16 @@ def test_enabled_cross_shard_packed_scales_and_column_slices(tmp_path):
     save_file({prefix + ".weight_packed": weight}, weight_path)
     save_file({prefix + ".weight_scale": scales}, scale_path)
     (tmp_path / "config.json").write_text(json.dumps({"num_hidden_layers": 1}))
-    plain = dict(load_kimi_weight(str(tmp_path), "cpu", packed=True))
+    plain = dict(load_checkpoint(str(tmp_path), "cpu", checkpoint_type=KimiCheckpoint, packed=True))
     staged = dict(
-        load_kimi_weight(str(tmp_path), "cpu", packed=True, prefetch=True, prefetch_num_threads=2)
+        load_checkpoint(
+            str(tmp_path),
+            "cpu",
+            checkpoint_type=KimiCheckpoint,
+            packed=True,
+            prefetch=True,
+            prefetch_num_threads=2,
+        )
     )
     assert plain.keys() == staged.keys()
     assert all(torch.equal(plain[name], staged[name]) for name in plain)

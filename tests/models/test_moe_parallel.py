@@ -12,8 +12,8 @@ from minisgl.distributed import DistributedInfo
 def test_standard_checkpoint_expert_selection_and_tensor_slices(tmp_path, monkeypatch, ep_size):
     import minisgl.distributed.info as info
     import minisgl.distributed.layout as layouts
-    import minisgl.models.weight as loader
-    from minisgl.models.config import ModelConfig
+    from minisgl.checkpoint.huggingface import HuggingFaceCheckpoint
+    from minisgl.checkpoint.loader import load_checkpoint
     from safetensors.torch import save_file
 
     torch.manual_seed(19)
@@ -25,13 +25,18 @@ def test_standard_checkpoint_expert_selection_and_tensor_slices(tmp_path, monkey
     state["model.layers.0.mlp.gate.weight"] = torch.randn(4, 8)
     save_file(state, tmp_path / "weights.safetensors")
     config = SimpleNamespace(model_type="qwen3_moe", is_moe=True, num_experts=4, num_kv_heads=2)
-    monkeypatch.setattr(loader, "cached_load_hf_config", lambda _: None)
-    monkeypatch.setattr(loader, "download_hf_weight", lambda _: str(tmp_path))
-    monkeypatch.setattr(ModelConfig, "from_hf", lambda _: config)
     monkeypatch.setattr(layouts, "_EP_SIZE", ep_size)
     for rank in range(4):
         monkeypatch.setattr(info, "_TP_INFO", DistributedInfo(rank, 4))
-        weights = dict(loader.load_weight(str(tmp_path), torch.device("cpu")))
+        weights = dict(
+            load_checkpoint(
+                tmp_path,
+                "cpu",
+                checkpoint_type=HuggingFaceCheckpoint,
+                config=config,
+                layout=layouts.get_parallel_layout(),
+            )
+        )
         layout = layouts.get_parallel_layout()
         gate, down = [], []
         for expert in layout.expert_range(4):

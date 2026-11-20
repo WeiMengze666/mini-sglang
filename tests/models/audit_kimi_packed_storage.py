@@ -29,11 +29,12 @@ from audit_kimi_headers import (
     validate_header,
     validate_manifest,
 )
+from minisgl.distributed.info import DistributedInfo
+from minisgl.distributed.layout import ParallelLayout
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import KimiK3Config
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
-from minisgl.models.kimi_parallel import shard_spec
-from minisgl.models.kimi_weight import normalize_kimi_name
+from minisgl.models.kimi_k3.checkpoint import KimiCheckpoint, text_weight_name
+from minisgl.models.kimi_k3.config import KimiK3Config
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM
 
 _DTYPE_NAMES = {
     torch.uint8: "U8",
@@ -91,7 +92,7 @@ def verified_headers(config_path, index_path, evidence):
     return tensors, manifest
 
 
-def sliced_descriptor(name, shape, dtype, config, rank, size):
+def sliced_descriptor(name, shape, dtype, checkpoint):
     """Physical packed layout resulting from the loader's logical TP slice."""
     shape = list(shape)
     is_packed = name.endswith(".weight_packed")
@@ -106,13 +107,13 @@ def sliced_descriptor(name, shape, dtype, config, rank, size):
     if name.endswith(".self_attn.A_log"):
         if len(shape) == 4 and shape[:2] == [1, 1] and shape[-1] == 1:
             shape = [shape[2]]
-        heads = config.hf_config.linear_attn_config["num_heads"]
+        heads = checkpoint.config.linear_attn_config["num_heads"]
         if len(shape) != 1 or shape[0] < heads:
             raise ValueError(f"Invalid A_log descriptor: {name}")
         shape = [heads]
         dtype = "F32"
     logical_name = name.rsplit(".", 1)[0] + ".weight" if is_packed or is_scale else name
-    spec = shard_spec(logical_name, config.hf_config, rank, size)
+    spec = checkpoint.shard(logical_name)
     if spec is not None:
         divisor = (2 if is_packed else 32 if is_scale else 1) if spec.axis == 1 else 1
         if (is_packed or is_scale) and spec.axis == 1 and (spec.start % 32 or spec.stop % 32):
@@ -170,15 +171,16 @@ def audit_rank(config, tensors, rank, size):
         "output_attn_res_proj",
         "gate",
     }
+    checkpoint = KimiCheckpoint(config.hf_config, ParallelLayout(DistributedInfo(rank, size)))
     for raw_name, (shape, dtype) in tensors.items():
-        name = normalize_kimi_name(raw_name, config.num_layers)
+        name = text_weight_name(raw_name, config.num_layers)
         if name is None:
             continue
         if name in actual:
             errors.append(f"Duplicate canonical key: {name}")
         actual.add(name)
         try:
-            shape, dtype, sharded = sliced_descriptor(name, shape, dtype, config, rank, size)
+            shape, dtype, sharded = sliced_descriptor(name, shape, dtype, checkpoint)
         except ValueError as exc:
             errors.append(str(exc))
             continue

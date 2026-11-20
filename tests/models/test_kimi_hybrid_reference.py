@@ -18,8 +18,8 @@ import torch.nn.functional as F
 from minisgl.attention import create_torch_backend
 from minisgl.kvcache.hybrid_pool import HybridCache
 from minisgl.models.config import ModelConfig
-from minisgl.models.kimi_config import cache_config
-from minisgl.models.kimi_k3 import KimiK3LinearForCausalLM
+from minisgl.models.kimi_k3.config import cache_config
+from minisgl.models.kimi_k3.model import KimiK3LinearForCausalLM
 from test_kimi_official_reference import (
     assert_close,
     causal_mask,

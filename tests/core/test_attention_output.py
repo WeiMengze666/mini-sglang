@@ -194,7 +194,7 @@ def test_unknown_custom_linear_factory_is_explicitly_rejected():
 
 
 def test_decoder_bank_snapshots_survive_shared_slot_reuse_and_mlp_returns_owned_sum(preparation):
-    from minisgl.models.kimi_k3 import KimiDecoderLayer
+    from minisgl.models.kimi_k3.model import KimiDecoderLayer
 
     tp = TensorParallel()
     projection = output_op(tp)
@@ -303,9 +303,7 @@ def test_kda_all_return_paths_forward_the_explicit_residual(path):
             SimpleNamespace(extend_len=2 if path == "packed_fallback" else 1, table_idx=i)
             for i in range(2)
         ],
-        attn_metadata=SimpleNamespace(
-            state_indices=torch.arange(2), native_decode_required=False
-        ),
+        attn_metadata=SimpleNamespace(state_indices=torch.arange(2), native_decode_required=False),
     )
     result = backend.forward_layer(
         Layer(), 0, x, batch, cache, torch.zeros(1, 2, dtype=torch.int32), residual=residual

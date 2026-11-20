@@ -10,7 +10,7 @@ from minisgl.attention.kda import (
     gated_rms_norm,
 )
 from minisgl.attention.kda.registry import KDAKernelSpec, KDAResult, get_kda_kernel
-from minisgl.distributed.parallel import TensorParallel, local_size
+from minisgl.distributed.parallel import TensorParallel
 from minisgl.layers.base import BaseOP
 from minisgl.layers.linear import Linear, LinearRowParallel, MergedLinear
 from minisgl.layers.norm import TorchRMSNorm
@@ -22,14 +22,35 @@ class _ConvWeight(BaseOP):
 
 
 class KDALayer(BaseOP):
+    @staticmethod
+    def weight_shards(tp, num_heads, head_dim):
+        heads = tp.shard(0, num_heads, "KDA heads")
+        channels = tp.shard(0, num_heads, "KDA heads", head_dim)
+        return {
+            "A_log": heads,
+            "b_proj.weight": heads,
+            "q_proj.weight": channels,
+            "k_proj.weight": channels,
+            "v_proj.weight": channels,
+            "q_conv1d.weight": channels,
+            "k_conv1d.weight": channels,
+            "v_conv1d.weight": channels,
+            "dt_bias": channels,
+            "g_proj.weight": channels,
+            "g_b_proj.weight": channels,
+            "f_b_proj.weight": channels,
+            "o_proj.weight": tp.shard(1, num_heads, "KDA heads", head_dim),
+        }
+
     def __init__(self, config: KDAConfig) -> None:
         self._config = config
         self._kernel_plans = {}
         self._qkvg = None
         self._tp = TensorParallel()
-        self._heads = local_size(config.num_heads, self._tp.size, "KDA heads")
+        shards = self.weight_shards(self._tp.group, config.num_heads, config.head_dim)
+        self._heads = shards["A_log"].length
         self._dim = config.head_dim
-        width = self._heads * self._dim
+        width = shards["q_proj.weight"].length
         hidden = config.hidden_size
         self.q_proj = Linear(hidden, width)
         self.k_proj = Linear(hidden, width)
