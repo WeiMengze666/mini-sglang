@@ -30,7 +30,18 @@ def summarize_run(directory: Path, *, prompt_token_offset: int = 0):
     directory = Path(directory).resolve()
     run_path = directory / "run.json"
     run = json.loads(run_path.read_text())
-    if run.get("status") != "completed" or run.get("benchmark_returncode") != 0:
+    status = run.get("status")
+    completed = status == "completed"
+    if status == "canonical_measurement_completed_requires_review":
+        # The GPUq controller finalizes the measurement before a separate review.
+        benchmark_end = run.get("benchmark_finished_wall_ns", 0)
+        stage_end = run.get("wall_finished_ns", 0)
+        completed = (
+            isinstance(benchmark_end, int)
+            and isinstance(stage_end, int)
+            and 0 < benchmark_end <= stage_end
+        )
+    if not completed or run.get("benchmark_returncode") != 0:
         raise ValueError(f"Run did not complete successfully: {directory}")
     files = list(directory.rglob("profile_export_aiperf.json"))
     if len(files) != 1:

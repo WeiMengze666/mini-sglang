@@ -110,3 +110,18 @@ def test_missing_package_metadata_is_unknown(tmp_path):
         data.pop("packages")
         path.write_text(json.dumps(data))
     assert compare_runs(left, right)["same_packages"] is None
+
+
+def test_gpuq_measurement_must_have_finished_benchmark_and_stage(tmp_path):
+    root = make_run(tmp_path, "controller")
+    path = root / "run.json"
+    record = json.loads(path.read_text())
+    record.update(
+        status="canonical_measurement_completed_requires_review", benchmark_finished_wall_ns=10
+    )
+    path.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="did not complete"):
+        summarize_run(root)
+    record["wall_finished_ns"] = 11
+    path.write_text(json.dumps(record))
+    assert summarize_run(root)["benchmark_id"] == "controller"
