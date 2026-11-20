@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.util import find_spec
 from typing import TYPE_CHECKING, List
 
 import torch
@@ -44,7 +43,7 @@ class FlashAttentionBackend(QKVAttnBackend):
         self.max_graph_bs = 0
         self.capture_bs: List[int] = []
         self.scale = config.head_dim**-0.5
-        self.version = 4 if is_sm100_supported() or find_spec("flash_attn_interface") is None else 3
+        self.version = 4 if is_sm100_supported() else 3
 
     def forward(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, layer_id: int, batch: Batch

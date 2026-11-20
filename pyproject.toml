@@ -39,7 +39,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-flashattention = ["flash-attn-4>=4.0.0b40"]
 native = [
     "flashinfer-python>=0.7.1,<0.8",
     "triton>=3.8,<4",

@@ -5,17 +5,14 @@ from contextlib import ExitStack
 import torch
 
 
-def supports_chunk_prefill(device):
-    return device.type == "cuda" and torch.cuda.get_device_capability(device) in ((10, 0), (10, 3))
-
-
 def recurrent_kda(
     q, k, v, forget, beta_logits, a_log, dt_bias, state, lower_bound, *, is_decode=False
 ):
     if is_decode and q.shape[0] != 1:
         raise ValueError("KDA decode requires one token per request")
     if q.shape[0] == 1 or lower_bound is None:
-        # The Triton recurrence covers single-token and unbounded-gate inputs.
+        # The native SDK portfolio preserves either BF16 or FP32 state for
+        # cases the public FlashInfer portfolio does not currently cover.
         from .registry import get_kda_kernel
 
         return get_kda_kernel("triton").recurrence(
@@ -73,15 +70,17 @@ def indexed_prefill(layer, x, pool, layer_id, indices, metadata):
             raise ValueError("Checkpoint prefill input no longer meets its validated portfolio")
         return None
     lower_bound = layer._config.gate_lower_bound
-    # Grouped single-token inputs and unbounded gates use Triton. Select
-    # before convolution since it advances the request's working state.
+    # This pinned SDK facade reshapes gate bias to [H,D], but FI's grouped
+    # all-T1 portfolio requires a flat bias. Use mature chunk prefill before
+    # any convolution/state write; this is an ABI capability limit, not arithmetic.
+    # Capability rejection precedes every convolution/state write.
     if (
         len(x) <= 1
         or (metadata.lengths and all(length == 1 for length in metadata.lengths))
         or lower_bound is None
         or not math.isfinite(lower_bound)
         or lower_bound >= 0
-        or not supports_chunk_prefill(x.device)
+        or torch.cuda.get_device_capability(x.device) not in ((10, 0), (10, 3))
     ):
         if tracked is not None:
             raise ValueError("Checkpoint prefill cannot switch to an untracked fallback")

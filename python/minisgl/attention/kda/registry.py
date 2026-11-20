@@ -200,13 +200,13 @@ def _triton_recurrence(*args, is_decode=False):
     return recurrent_kda(*args, is_decode=is_decode)
 
 
-def _project(layer, x):
+def _triton_project(layer, x):
     from .projection import project
 
     return project(layer, x)
 
 
-def _fused_decode(layer, x, state):
+def _triton_decode(layer, x, state):
     from .fused_decode import decode
 
     return decode(layer, x, state)
@@ -253,8 +253,8 @@ register_kda_kernel(
 register_kda_kernel(
     "triton",
     _triton_recurrence,
-    _fused_decode,
-    project=_project,
+    _triton_decode,
+    project=_triton_project,
     indexed_decode=_triton_indexed_decode,
     indexed_prefill=_triton_indexed_prefill,
     prepare_checkpoints=_native_prepare_checkpoints,

@@ -217,7 +217,9 @@ class Engine:
 
         # ======================= Attention & MoE backend initialization ========================
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
-            config.attention_backend, config.model_config,
+            config.attention_backend,
+            config.model_config,
+            state_cache_strategy=getattr(config, "state_cache_strategy", "auto"),
         )
         self.checkpoint_quantum = _prepare_checkpoint_model(
             self.attn_backend,
@@ -714,14 +716,11 @@ def _adjust_config(config: EngineConfig):
         return
 
     if config.attention_backend == "auto":
-        from importlib.util import find_spec
-
-        if is_sm100_supported():
-            backend = "trtllm"
-        elif is_sm90_supported() and find_spec("flash_attn_interface") is not None:
-            backend = "flashattention,flashinfer"
-        else:
-            backend = "flashinfer"
+        backend = (
+            "trtllm"
+            if is_sm100_supported()
+            else ("flashattention,flashinfer" if is_sm90_supported() else "flashinfer")
+        )
         override("attention_backend", backend)
         logger.info_rank0(f"Auto-selected attention backend: {config.attention_backend}")
 

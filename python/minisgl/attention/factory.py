@@ -125,14 +125,11 @@ def validate_attn_backend(backend: str, allow_auto: bool = True):
     return backend
 
 
-def create_attention_backend(backend: str, config: ModelConfig) -> BaseAttnBackend:
+def create_attention_backend(
+    backend: str, config: ModelConfig, *, state_cache_strategy="auto"
+) -> BaseAttnBackend:
     if backend == "auto" and config.cache_config is not None:
-        from minisgl.core import get_global_ctx
-
-        from .kda.flashinfer import supports_chunk_prefill
-
-        device = get_global_ctx().kv_cache.device
-        prefill = "flashinfer" if supports_chunk_prefill(device) else "triton"
+        prefill = "flashinfer" if state_cache_strategy == "extra_buffer" else "triton"
         return _create_hybrid(config, prefill, "triton")
     validate_attn_backend(backend, allow_auto=False)
     if "," in backend:
