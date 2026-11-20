@@ -12,7 +12,18 @@ The router defines the score, expert IDs and weights. Local expert implementatio
 
 The model class selects a checkpoint format. The [streaming reader](../python/minisgl/checkpoint/loader.py) resolves the snapshot, checks the index and packed/scale pairs, filters remote experts and reads rank-local slices. KDA, MLA and gated experts declare the row or column ranges next to their projections. The same ranges size the local weights and select which bytes to read. A K3 expert’s `w2` uses the expert tensor-parallel group for its input columns. The reader translates those logical columns to the matching packed bytes and block scales, including when they reside in separate files.
 
-Llama and Qwen use the [Hugging Face checkpoint layout](../python/minisgl/checkpoint/huggingface.py). It combines rank-local Q/K/V and gate/up tensors and stacks local experts in global-ID order. KV head replication follows the QKV layer’s head partition. Model-specific naming stays in the checkpoint format. Execution-specific packing follows weight loading in the expert backend.
+Llama and Qwen use the [Hugging Face checkpoint layout](../python/minisgl/checkpoint/huggingface.py). It combines rank-local Q/K/V and gate/up tensors and stacks local experts in global-ID order. KV head replication follows the QKV layer’s head partition. [Checkpoint interfaces and extension points](../python/minisgl/checkpoint/README.md)
+
+### Checkpoint refactor validation
+
+The standalone wheel from `e81cc31` was checked against the previous delivery on the released K3 index. All 497,220 source names and all 24 rank layouts (TP8/DCP8, EP1/2/8) produced identical text names, expert ownership and logical slices. Reading 31 selected source tensors in three of those layouts also reproduced the previous raw bytes for all 63 emitted tensors. A separate two-layer Hugging Face Qwen2 checkpoint bound all 17 local parameters on each of four ranks with identical shapes, dtypes and bytes.
+
+| B300 layout | GSM8K questions | Correct | Previous Mini on these questions | Full token sequences equal to previous Mini |
+| --- | ---: | ---: | ---: | ---: |
+| EP2, MNNVL | 1,319 | 1,283 | 1,283 | 1,319 |
+| EP1, PyNCCL | 32 | 31 | 31 | 32 |
+
+The EP1 run uses the first 32 questions from the full split. The online AgentX measurement in this guide belongs to the earlier wheel. [Checkpoint validation evidence](validation/kimi-k3-checkpoint-layout.json)
 
 ## Run the measured configuration
 

@@ -1,0 +1,310 @@
+{
+  "runtime_commit": "e81cc31ab324b6957f3fd9d4e37a706a2f7ba820",
+  "wheel_sha256": "7468b0e037ba174d690bf8d477d2f40a0edece96bdec4f2a2d7322b25291eac3",
+  "prior_delivery": "68c08156b77d58ed375c4e66a5738687d35c0361",
+  "prior_wheel_revision": "eae7954894f5de74c39d7135cdce57ab02755e59",
+  "source_equivalence": "The previous wheel has the same python/minisgl tree as the previous delivery.",
+  "checkpoint_index": {
+    "source_sha256": "a1c5210650ce71d2d3ae9ec5a101ac4afd3cf4b10091be589853437eb967febd",
+    "raw_names": 497220,
+    "text_tensors": 497052,
+    "canonical_names_sha256": "d99914b64717c726fe79b982004817518a8b20c882d1ca8d89cda4cff8b9ee4f",
+    "rank_layouts": 24,
+    "tp": 8,
+    "dcp": 8,
+    "ep": [
+      1,
+      2,
+      8
+    ],
+    "rule": "For every indexed tensor in sorted name order compare the text name, expert ownership and logical slice (axis, start, stop) or replication on each rank.",
+    "results": {
+      "ep1_rank0": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "8c82f0687f76ba2bde14adba72d0d30d03b317801e99cfc2a77345843e466ace"
+      },
+      "ep1_rank1": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "27d9a59732ec92da4545bcf66b384887df81cd533b46dcc47fa0fc52d0ab4932"
+      },
+      "ep1_rank2": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "f1b473fd6f1c919205c8cecea784d7a5292a590206bcf705ec28b221e1784f2c"
+      },
+      "ep1_rank3": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "6d0e3a09b5655542d737808473d7fe80a26a31e6e9841e5cac4be8606cf46221"
+      },
+      "ep1_rank4": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "bf1b5a75b44d7b752638ceeeb91c1a6f316ccbfca5b0b98cc2c1e7a7c09821ff"
+      },
+      "ep1_rank5": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "0b06b22285f42de1f8cd567811f8866e78b2881910095008d8e3ecd9341f40b2"
+      },
+      "ep1_rank6": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "8ed786eda72766c66fc9b758d4465415f9e08dd671e56f29a76c2dfcbd3ede3e"
+      },
+      "ep1_rank7": {
+        "filtered": 0,
+        "replicated": 1255,
+        "sliced": 495797,
+        "sha256": "ebe6a678a6dd742d2b6eaec9f048278a72089ff9c606f360e21d285fb6566ba2"
+      },
+      "ep2_rank0": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "eafa99f1c630aaa0b25c5f0e8797f4eff3d6cdf6ec19b3ac34278fa0f5e160af"
+      },
+      "ep2_rank1": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "49614ce6bccc540f30e89c9a2f1cf2820b59a4a505f8b99451a4dd2d4fe4a8fe"
+      },
+      "ep2_rank2": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "a52fa1886e1ecf1b5ce00bc1140fa31b42a132ad3d4d84a51db3a95565ce7e40"
+      },
+      "ep2_rank3": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "35668547991dab99e6e19ffe273845c0846d6656c7510236b03081ac4d9b2ee0"
+      },
+      "ep2_rank4": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "802e57890056bd02fcb1af84933e508dd355c3facb17ca6834d11af5e4f3b04a"
+      },
+      "ep2_rank5": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "4ced13e9f730ddfac8d0e6cb012035caaac594f49fe0510ac982df64c823f3b9"
+      },
+      "ep2_rank6": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "35740fae0c10c2077c366fd608afef62891e781536a16a308f523906a8d95926"
+      },
+      "ep2_rank7": {
+        "filtered": 247296,
+        "replicated": 1255,
+        "sliced": 248501,
+        "sha256": "ae5c859c3d7fa453f4a44d39fe7c462c336756ab72ed64985c35a127e5fb1338"
+      },
+      "ep8_rank0": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "01c750e0de000bc2191bc9114c43f55e3ef5166e8e348322890f0f72180dfcbe"
+      },
+      "ep8_rank1": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "e73d9ba65f4a535ad5b80594d556314755ec28d541aee093e8b7c334475f5549"
+      },
+      "ep8_rank2": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "ca2735c2cb53a618e7b1c9eaf964db355dcbe6120057b8b73ce5c9c95ab9f5f5"
+      },
+      "ep8_rank3": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "7aa24ddff2b50c9823e311ddaedc23de6dd531706dbc515f5e3992ba3e229e39"
+      },
+      "ep8_rank4": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "cd3409e0a46af307a5ee18f681e374341361de3eeac0053c6074374301a7675c"
+      },
+      "ep8_rank5": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "6a904083a553cbfce650e6f82b3a7feea0e7eee14f5ff5d7047012a2bf2d15ed"
+      },
+      "ep8_rank6": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "0db164355932c13cd418420d1f23fdf364e32ef854017fec680a2c67ae01b4bd"
+      },
+      "ep8_rank7": {
+        "filtered": 432768,
+        "replicated": 1255,
+        "sliced": 63029,
+        "sha256": "76a9ca20d092f0357eb875243e483669477fd7455462ed70c80dd7771d790744"
+      }
+    },
+    "before_report_sha256": "374285b99b1eb2809d3fccf9c5a1b6cbf81833e87faa0b72bc13963fcde7ac1d",
+    "after_report_sha256": "374285b99b1eb2809d3fccf9c5a1b6cbf81833e87faa0b72bc13963fcde7ac1d"
+  },
+  "qwen2": {
+    "fixture": "Two-layer HF Qwen2ForCausalLM, 8 query heads, 2 KV heads, head dimension 64, two safetensors files, TP4.",
+    "scope": "Construct the registered Mini model, read via models.load_weight, bind the full state dict, and compare every parameter name, dtype, shape and payload hash.",
+    "hf_tensors": 27,
+    "ranks": 4,
+    "bound_parameters_per_rank": 17,
+    "before_report_sha256": "ab374b61454032a95c8147ea50bb5d04967dc67a63e49f4299420c3c4f75ce42",
+    "after_report_sha256": "ab374b61454032a95c8147ea50bb5d04967dc67a63e49f4299420c3c4f75ce42"
+  },
+  "cpu": {
+    "suites": [
+      "tests/core",
+      "tests/models",
+      "tests/test_kimi_cache.py",
+      "tests/misc"
+    ],
+    "passed": 2396,
+    "skipped": 704,
+    "expected_failures": 2,
+    "log_sha256": "0536fa01a1cf2dc413b8d9c709011c21be41f171b5cc6dd8576faf7800847e01",
+    "additional_k3_gloo": {
+      "passed": 2,
+      "ranks": [
+        2,
+        4
+      ],
+      "log_sha256": "4ca4451850e83cece75ea5e0161d142adec16c895701013617d03979f6137b68"
+    }
+  },
+  "quality": {
+    "ep2": {
+      "gpuq": 26,
+      "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+      "questions": 1319,
+      "correct": 1283,
+      "invalid": 0,
+      "truncated": 1,
+      "compare_previous_mini": {
+        "correct": 1283,
+        "same_token_sequences": 1319,
+        "same_valid_final_answers": 1319,
+        "only_mini_correct": [],
+        "only_reference_correct": []
+      },
+      "previous_mini_revision": "4ad9d9d3ba6eae740caf7216dcd030754b16db53",
+      "compare_sglang_94602c9": {
+        "correct": 1281,
+        "same_token_sequences": 650,
+        "same_valid_final_answers": 1309,
+        "only_mini_correct": [
+          37,
+          73,
+          306,
+          635,
+          926
+        ],
+        "only_reference_correct": [
+          12,
+          187,
+          1038
+        ]
+      },
+      "contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 2,
+        "page_size": 64
+      },
+      "tp_collective": "mnnvl",
+      "responses_sha256": "68789ad33ebb8ab7ae6093e24d6f85649189aea3c01a5d17640b3fe76c99dae2",
+      "report_sha256": "e9e1efd33ffd3986007a213eead34d8674eaddf964cc4abdc8cea7baf50ddc4e",
+      "provenance_sha256": "6d04c63a781d68b9d740654347bb759e514d2b872f4f1bdf6e5bff0c3f944e71",
+      "pre_refactor_responses_sha256": "68789ad33ebb8ab7ae6093e24d6f85649189aea3c01a5d17640b3fe76c99dae2",
+      "official_responses_sha256": "d952f378c477879dcc938a3ac1814626e6cb40ec37f46e5b8b755d555ac848cb"
+    },
+    "ep1": {
+      "gpuq": 27,
+      "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942",
+      "questions": 32,
+      "correct": 31,
+      "invalid": 0,
+      "truncated": 0,
+      "compare_previous_mini": {
+        "correct": 31,
+        "same_token_sequences": 32,
+        "same_valid_final_answers": 32,
+        "only_mini_correct": [],
+        "only_reference_correct": []
+      },
+      "previous_mini_revision": "eae7954894f5de74c39d7135cdce57ab02755e59",
+      "compare_sglang_94602c9": {
+        "correct": 32,
+        "same_token_sequences": 16,
+        "same_valid_final_answers": 31,
+        "only_mini_correct": [],
+        "only_reference_correct": [
+          12
+        ]
+      },
+      "contract": {
+        "model_dtype": "bfloat16",
+        "moe_activation_precision": "mxfp8",
+        "kv_cache_dtype": "fp8_e4m3",
+        "recurrent_state_dtype": "bfloat16",
+        "conv_state_dtype": "bfloat16",
+        "tp_size": 8,
+        "dcp_size": 8,
+        "ep_size": 1,
+        "page_size": 64
+      },
+      "tp_collective": "pynccl",
+      "responses_sha256": "10807e96e8e9b4b20325bfb0c00976a2b5b00da71ed42ab1b1c43d6406418e79",
+      "report_sha256": "e0a85ef6cbc17eff5ba34aaddf5bc04b99eca8620f55de81d653b453ecd31424",
+      "provenance_sha256": "6d04c63a781d68b9d740654347bb759e514d2b872f4f1bdf6e5bff0c3f944e71",
+      "pre_refactor_responses_sha256": "6addf994bfe7fbfc691687510ecd7ee6a6561596fb9de968c926e348fbfaa20e",
+      "official_responses_sha256": "d952f378c477879dcc938a3ac1814626e6cb40ec37f46e5b8b755d555ac848cb"
+    }
+  },
+  "audit_scripts_sha256": {
+    "audit_checkpoint_index.py": "f3a44672c2590e1de621dd936a91a6b52653590e039adbc180e8f2ca78f6bbc3",
+    "read_released_tensors.py": "8c5f21447d8325d6b9eee0ef64b93369bc279e7e328833f367afde2353875cbe",
+    "check_standard_model.py": "9694d7c53998344c38e9543f1959612d139e06cf653116874ff77398b390b8c6",
+    "review.py": "b204890e81d6ef873b3b131815758a04d3c342d01097ea680c11abd7cd420f42"
+  },
+  "released_tensor_sample": {
+    "source_tensors": 31,
+    "scope": "Actual safetensors bytes for KDA, MLA and MXFP4 w1/w2/w3 expert pairs, read through each complete loader. Compare canonical names, shapes, dtypes and payload hashes.",
+    "tensors_by_layout": {
+      "ep1_rank0": 31,
+      "ep2_rank3": 19,
+      "ep8_rank7": 13
+    },
+    "before_sha256": "c81668853bf8eddb160e861b0d4421d0d9eaa4cb38e36beef326acd9f451e759",
+    "after_sha256": "c81668853bf8eddb160e861b0d4421d0d9eaa4cb38e36beef326acd9f451e759"
+  }
+}
