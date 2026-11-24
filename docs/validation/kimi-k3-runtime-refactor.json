@@ -1,0 +1,110 @@
+{
+  "runtime_commit": "76f51efdd44fdc6935faa2808cdd9263d889a5a5",
+  "hardware": "8 NVIDIA B300 on one node",
+  "gpuq_jobs": {
+    "stacked_moe": 163,
+    "gsm8k": 164,
+    "aiperf": 166
+  },
+  "cpu": {
+    "passed": 781,
+    "skipped": 25,
+    "expected_failures": [
+      "HF top-1 routing with renormalization enabled",
+      "HF low-rank MLA normalization epsilon"
+    ],
+    "qwen2_tp4_parameter_hashes_matching_baseline": {
+      "untied": 68,
+      "tied": 64
+    }
+  },
+  "gpu_components": {
+    "suite": "tests/models/test_moe_parallel.py",
+    "passed": 10,
+    "native_stacked_expert_exchange": [
+      "TP4 EP2",
+      "TP4 EP4"
+    ]
+  },
+  "gsm8k": {
+    "scope": "First eight cases from the pinned 1319-example file, batch size 8",
+    "tp": 8,
+    "dcp": 8,
+    "ep": 1,
+    "graph_max_bs": 48,
+    "moe_activations": "mxfp8",
+    "kv_cache": "fp8_e4m3",
+    "kda_state": "bfloat16",
+    "completed": 8,
+    "correct": 8,
+    "expected": 8,
+    "invalid_answers": 0,
+    "truncated": 0,
+    "generated_tokens": 830,
+    "cases_sha256": "9e0d54c28e0dbacad5d4b3ed3cea26f6b0e4868e084f3b82853c10ea2d014942"
+  },
+  "serving": {
+    "protocol": "AIPerf inferencex-agentx-mvp, 393 dataset entries, concurrency 48, 900-second send window plus drain, seed 42",
+    "official_reference": {
+      "gpuq_job": 9,
+      "commit": "94602c9c2b7cbdb8efd5c52802dac6a1c180089e",
+      "manifest": "kimi-k3-delivery-16k.json"
+    },
+    "same_benchmark_argv": true,
+    "same_resolved_workload_except_artifact_directory": true,
+    "mini_max_prefill_tokens": 16384,
+    "mini_state_slots": 367,
+    "mini_kv_token_capacity": 19963904,
+    "throughput_ratio": 0.9853319897279791,
+    "runs": {
+      "official": {
+        "completed": 421,
+        "in_flight_at_drain_timeout": 5,
+        "tokens_per_second": 328.8611647030483,
+        "tokens": 309131.0,
+        "request_errors": 0,
+        "request_window_ns": 940004576944,
+        "export_sha256": "7056bce5d44bb02a01331066016f045f1708adb5d3d8408e9d46049cfb97281e",
+        "latency_ms": {
+          "inter_token_latency": {
+            "p50": 30.574057874999998,
+            "p95": 62.56686129999999
+          },
+          "time_to_first_token": {
+            "p50": 1355.33566,
+            "p95": 10826.225059999999
+          },
+          "request_latency": {
+            "p50": 12684.049524,
+            "p95": 120441.329489
+          }
+        },
+        "cancelled_credit_timeout": true
+      },
+      "mini": {
+        "completed": 403,
+        "in_flight_at_drain_timeout": 4,
+        "tokens_per_second": 324.03742576111523,
+        "tokens": 304596.0,
+        "request_errors": 0,
+        "request_window_ns": 940002529907,
+        "export_sha256": "a483078e6a80c7e6831991043a01c7d9be719a69ceac94eef4a90fc1de243338",
+        "latency_ms": {
+          "inter_token_latency": {
+            "p50": 35.02233821576763,
+            "p95": 73.75920097740459
+          },
+          "time_to_first_token": {
+            "p50": 1054.7192989999999,
+            "p95": 14443.908575299993
+          },
+          "request_latency": {
+            "p50": 13301.350554999999,
+            "p95": 113601.13403009997
+          }
+        },
+        "cancelled_credit_timeout": true
+      }
+    }
+  }
+}

@@ -2,6 +2,11 @@
 
 Kimi-K3 runs on eight B300 GPUs with Mini’s packaged kernels. The release wheel and the retained SGLang reference each delivered **328.86 output tokens/s** on the 900-second AgentX workload. Mini’s p99 inter-token latency was 136.71 ms versus 86.65 ms for SGLang. The first standalone snapshot reached 327.02 output tokens/s. [Serving results](kimi-k3-performance.md) · [Machine-readable measurements](validation/kimi-k3-standalone-serving.json)
 
+After the runtime refactor, commit `76f51ef` delivered **324.04 output tokens/s**
+on the same profile, 98.53% of the retained SGLang run. Median TTFT was 1.05 s
+for Mini and 1.36 s for SGLang. P95 TTFT was 14.44 s and 10.83 s respectively.
+[Refactor validation and latency results](validation/kimi-k3-runtime-refactor.json)
+
 ## Following a request through the runtime
 
 The model declares the attention algorithm for each layer. `HybridAttnBackend` builds one set of packed query offsets and gives the KDA and MLA backends their own metadata. KDA selects its prefill or decode kernel when it runs the layer. For the measured cache policy, prefill uses FlashInfer with BF16 state checkpoints and decode uses the indexed Triton recurrence. MLA uses FlashInfer paged attention and combines the DCP ranks' partial outputs using their log-sum-exp values.
