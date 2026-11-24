@@ -1,4 +1,5 @@
 import functools
+from dataclasses import dataclass
 from typing import Dict, Tuple
 
 import torch
@@ -209,6 +210,49 @@ def fused_experts_impl(
     return out_hidden_states
 
 
+@dataclass
+class StackedExperts:
+    """Fused experts with a leading local expert axis on both weight tensors."""
+
+    gate_up: torch.Tensor
+    down: torch.Tensor
+    activation: str
+    weight_on_input: bool
+    partition: DistributedInfo
+    global_experts: int
+    top_k: int
+
+    @property
+    def dispatch_output_dtype(self):
+        return self.gate_up.dtype
+
+    def forward(self, x, weights, ids):
+        if self.partition.size > 1:
+            ids = self.partition.local_ids(ids, self.global_experts)
+        return fused_experts_impl(
+            x, self.gate_up, self.down, weights, ids, self.activation, self.weight_on_input
+        )
+
+    def dispatch_layout(self):
+        from ..dispatch import DispatchLayout
+
+        hidden = self.gate_up.shape[-1]
+        activation = (self.dispatch_output_dtype, hidden)
+        return DispatchLayout(
+            self.global_experts, self.top_k, (activation, (torch.float32, self.top_k)), activation
+        )
+
+    def prepare_dispatch_inputs(self, backend, x, routing):
+        weights, ids = routing.select(backend)
+        return ids, (x.contiguous(), weights.contiguous())
+
+    def forward_dispatched(self, ids, payloads):
+        x, weights = payloads
+        # Dispatch lends receive storage. The fused kernel writes back into its input.
+        x = x.reshape(-1, x.shape[-1]).clone()
+        return self.forward(x, weights.reshape(-1, self.top_k), ids.reshape(-1, self.top_k))
+
+
 class FusedMoe(BaseMoeBackend):
     route = staticmethod(grouped_topk)
 
@@ -222,34 +266,3 @@ class FusedMoe(BaseMoeBackend):
         if prepare is not None:
             return prepare(self, routing_builder, context, dry_run=dry_run)
         return None
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        w1: torch.Tensor,
-        w2: torch.Tensor,
-        gating_output: torch.Tensor,
-        topk: int,
-        renormalize: bool,
-        activation: str = "silu",
-        apply_router_weight_on_input: bool = False,
-        expert_partition: DistributedInfo = DistributedInfo(0, 1),
-        num_global_experts: int | None = None,
-    ) -> torch.Tensor:
-        topk_weights, topk_ids = fused_topk(
-            hidden_states=hidden_states,
-            gating_output=gating_output,
-            topk=topk,
-            renormalize=renormalize,
-        )
-        if expert_partition.size > 1:
-            topk_ids = expert_partition.local_ids(topk_ids, num_global_experts)
-        return fused_experts_impl(
-            hidden_states,
-            w1,
-            w2,
-            topk_weights,
-            topk_ids,
-            activation,
-            apply_router_weight_on_input=apply_router_weight_on_input,
-        )

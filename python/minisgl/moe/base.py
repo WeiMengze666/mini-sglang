@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -32,6 +32,11 @@ class BaseMoeBackend(ABC):
         from . import create_expert_executor
 
         return create_expert_executor(experts, **options)
+
+    def prepare_stacked(self, gate_up, down, **options):
+        from .experts.fused import StackedExperts
+
+        return StackedExperts(gate_up, down, **options)
 
     @property
     def requires_preparation(self) -> bool:
@@ -89,7 +94,6 @@ class BaseMoeBackend(ABC):
 
         return reduce_outputs(parallel, *outputs, **options)
 
-    @abstractmethod
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -98,8 +102,24 @@ class BaseMoeBackend(ABC):
         gating_output: torch.Tensor,
         topk: int,
         renormalize: bool,
-        activation: str,
-        apply_router_weight_on_input: bool,
+        activation: str = "silu",
+        apply_router_weight_on_input: bool = False,
         expert_partition: DistributedInfo = DistributedInfo(0, 1),
         num_global_experts: int | None = None,
-    ) -> torch.Tensor: ...
+    ) -> torch.Tensor:
+        """One-shot stacked-weight execution for callers without a prepared layer."""
+        from .routing import SoftmaxTopK
+
+        executor = self.prepare_stacked(
+            w1,
+            w2,
+            activation=activation,
+            weight_on_input=apply_router_weight_on_input,
+            partition=expert_partition,
+            global_experts=w1.shape[0] * expert_partition.size
+            if num_global_experts is None
+            else num_global_experts,
+            top_k=topk,
+        )
+        routing = SoftmaxTopK(hidden_states, gating_output, topk, renormalize)
+        return self.forward_experts(executor, hidden_states, routing)

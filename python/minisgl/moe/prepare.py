@@ -79,7 +79,9 @@ def prepare(backend, model, context):
         if not plan:
             return
         sessions = [
-            kind.tuning_session(context, count) for kind, count in Counter(map(type, plan)).items()
+            kind.tuning_session(context, count)
+            for kind, count in Counter(map(type, plan)).items()
+            if hasattr(kind, "tuning_session")
         ]
         backend.prepare_transport(tuple(plan), context)
         with ExitStack() as stack, torch.inference_mode():

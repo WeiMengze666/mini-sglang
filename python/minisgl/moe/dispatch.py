@@ -22,6 +22,12 @@ class DispatchLayout(NamedTuple):
         )
 
 
+class TransportPreparation(NamedTuple):
+    """Exchange layouts for expert kernels that need no warmup or tuning."""
+
+    dispatch_layouts: tuple[DispatchLayout, ...]
+
+
 @dataclass
 class DispatchedTokens:
     """Borrowed receive views plus the single-use inverse-transport handle.

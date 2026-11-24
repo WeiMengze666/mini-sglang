@@ -331,8 +331,11 @@ def test_unknown_portfolio_fails_before_dispatch(monkeypatch):
     )
     with pytest.raises(NotImplementedError, match="prepared EP portfolio"):
         backend.forward_experts(executor, torch.zeros(1, 256), object())
-    with pytest.raises(NotImplementedError, match="prepared expert-executor"):
-        backend.forward(None, None, None, None, 1, False)
+    with pytest.raises(RuntimeError, match="prepared before inference"):
+        FlashInferEPBackend().forward(
+            torch.zeros(1, 4), torch.zeros(2, 8, 4), torch.zeros(2, 4, 4),
+            torch.zeros(1, 2), 1, False,
+        )
 
 
 def test_actual_Engine_passes_budgets_before_KV_and_closes_before_groups(construction, monkeypatch):

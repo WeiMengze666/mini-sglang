@@ -140,15 +140,18 @@ def test_single_local_expert_mixture_matches_dense_reference(tokens):
         torch.testing.assert_close(actual, expected, rtol=0.04, atol=0.002)
 
 
-def _distributed_worker(rank, init_file):
+def _distributed_worker(rank, init_file, native):
     from datetime import timedelta
 
     import minisgl.distributed.info as info
     import torch.distributed as dist
     from minisgl.core import Context, set_global_ctx
+    from minisgl.distributed.context import create_expert_cpu_group
     from minisgl.distributed.layout import configure_parallel, get_parallel_layout
     from minisgl.layers.moe import MoELayer
+    from minisgl.moe.ep import FlashInferEPBackend
     from minisgl.moe.experts.fused import FusedMoe
+    from minisgl.moe.prepare import MoePreparation
 
     torch.set_num_threads(1)
     torch.cuda.set_device(rank)
@@ -173,7 +176,8 @@ def _distributed_worker(rank, init_file):
         expected = ctx.moe_backend.forward(
             x.clone(), torch.cat((gate, up), 1), down, logits, 2, True
         )
-        for ep in (1, 2, 4):
+        tp_cpu = dist.new_group(backend="gloo") if native else None
+        for ep in (2, 4) if native else (1, 2, 4):
             configure_parallel(ep_size=ep)
             layout = get_parallel_layout()
             owned = layout.expert_range(8)
@@ -186,8 +190,34 @@ def _distributed_worker(rank, init_file):
             layer.down_proj = (
                 channels.shard(2, 64).slice(down[owned.start : owned.stop]).contiguous()
             )
+            if native:
+                ctx.moe_backend = FlashInferEPBackend()
+                layer.after_load()
+                etp = create_expert_cpu_group(layout, tp_cpu)
+
+                def abort(error):
+                    raise error
+
+                context = MoePreparation(
+                    device=torch.device("cuda", rank),
+                    layout=layout,
+                    local_rows=(17,),
+                    cpu_group=etp.group if etp else None,
+                    fresh_worker=True,
+                    abort=abort,
+                    tp_cpu_group=tp_cpu,
+                    max_prefill_tokens=32,
+                    max_decode_tokens=17,
+                )
+                ctx.moe_backend.prepare(layer, context)
+                if etp:
+                    etp.close()
             output = layer.forward(x.clone(), logits)
             torch.testing.assert_close(output, expected, rtol=0.04, atol=0.002)
+            if native:
+                ctx.moe_backend.close()
+        if tp_cpu is not None:
+            dist.destroy_process_group(tp_cpu)
     finally:
         info._TP_INFO = None
         configure_parallel()
@@ -195,7 +225,8 @@ def _distributed_worker(rank, init_file):
 
 
 @pytest.mark.skipif(os.environ.get("MINISGL_RUN_CUDA_TESTS") != "1", reason="queued CUDA gate")
-def test_existing_moe_layer_four_rank_nccl(tmp_path):
+@pytest.mark.parametrize("native", [False, True], ids=["replicated", "dispatch"])
+def test_existing_moe_layer_four_rank_nccl(tmp_path, native):
     import torch.multiprocessing as mp
 
-    mp.spawn(_distributed_worker, args=(str(tmp_path / "moe-group"),), nprocs=4, join=True)
+    mp.spawn(_distributed_worker, args=(str(tmp_path / "moe-group"), native), nprocs=4, join=True)

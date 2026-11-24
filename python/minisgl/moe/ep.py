@@ -41,6 +41,12 @@ class FlashInferEPBackend(BaseMoeBackend):
 
     def prepare_local(self, executor, routing_builder, context, *, dry_run=False):
         plan = self.local.prepare_local(executor, routing_builder, context, dry_run=dry_run)
+        if dry_run and context.layout.ep_size > 1 and plan is None:
+            describe = getattr(executor, "dispatch_layout", None)
+            if describe is not None:
+                from .dispatch import TransportPreparation
+
+                return TransportPreparation((describe(),))
         if dry_run and context.layout.ep_size > 1 and not getattr(plan, "dispatch_layouts", ()):
             raise NotImplementedError("Native EP requires an executor with a token exchange layout")
         return plan
@@ -151,11 +157,6 @@ class FlashInferEPBackend(BaseMoeBackend):
             return mixed, *shared
         except BaseException as error:
             self._abort_failure(error)
-
-    def forward(self, *args, **kwargs):
-        if get_parallel_layout().ep_size > 1:
-            raise NotImplementedError("Native EP requires the prepared expert-executor interface")
-        return self.local.forward(*args, **kwargs)
 
     def _abort_failure(self, error):
         # Native work may have advanced peer epochs. Never retry or enter a

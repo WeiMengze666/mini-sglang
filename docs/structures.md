@@ -35,7 +35,7 @@ The source code is located in `python/minisgl`. Here is a breakdown of the modul
 - `minisgl.core`: Provides core dataclasses `Req` and `Batch` representing the state of requests, class `Context` which holds the global state of the inference context, and class `SamplingParams` holds the sampling parameters provided by users.
 - `minisgl.distributed`: Provides the interface to all-reduce and all-gather in tensor parallelism, and dataclass `DistributedInfo` which holds the TP information for a TP worker.
 - `minisgl.layers`: Implements basic building blocks for building LLMs with TP support, including linear, layernorm, embedding, RoPE, etc. They share common base classes defined in `minisgl.layers.base`.
-- `minisgl.models`: Implements LLM models, including Llama and Qwen3. Also defines utilities for loading weights from huggingface and sharding weights.
+- `minisgl.models`: Implements LLM models, including Llama and Qwen3. Each model selects a checkpoint adapter and translates model-specific metadata into layer configurations.
 - `minisgl.attention`: Provides interface of attention Backends and implements backends of `flashattention` and `flashinfer`. They are called by `AttentionLayer` and use metadata stored in `Context`.
 - `minisgl.kvcache`: Provides interface of KVCache pool and KVCache manager, and implements `MHAKVCache`, `NaiveCacheManager` and `RadixCacheManager`.
 - `minisgl.utils`: Provides a collection of utilities, including logger setup and wrappers around zmq.
@@ -47,3 +47,28 @@ The source code is located in `python/minisgl`. Here is a breakdown of the modul
 - `minisgl.llm`: Provides class `LLM` as a python interface to interact with the Mini-SGLang system easily.
 - `minisgl.kernel`: Implements custom CUDA kernels, supported by `tvm-ffi` for python binding and jit interface.
 - `minisgl.benchmark`: Benchmark utilities.
+
+### Model construction and weight loading
+
+The engine constructs the model on the meta device. The model's checkpoint
+adapter maps external names to local parameters and requests the slices owned
+by this rank. The checkpoint reader streams those tensors to the model.
+Calling `after_load` binds executors to the installed weights before GPU
+workspace preparation and cache sizing. Dense and hybrid attention models
+share this loading sequence. For instance, the Hugging Face adapter assembles
+split Q/K/V projections and skips duplicate LM-head weights for tied embeddings.
+
+### Request execution and cache ownership
+
+The scheduler admits requests, locks matched prefixes and plans checkpoint
+boundaries. The cache manager coordinates page allocation and prefix publication.
+The state pool reserves working slots and tracks ownership by request ID and
+table index. A batch commits its updated lengths after all layers succeed.
+The scheduler publishes completed checkpoints after the device completion event.
+Attention backends access the storage their kernels consume. Standard attention
+uses separate K/V views, MLA uses compressed pages and KDA updates recurrent state.
+
+MoE layers submit routing and a weight-bound expert executor to the backend.
+The ordinary backend computes local expert contributions. A prepared EP backend
+also exchanges token rows, combines their contributions and restores source order.
+Both stacked expert weights and packed latent experts use this entry point.

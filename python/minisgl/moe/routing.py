@@ -17,6 +17,19 @@ class RoutingPolicy:
 
 
 @dataclass(frozen=True)
+class SoftmaxTopK:
+    inputs: torch.Tensor
+    logits: torch.Tensor
+    topk: int
+    renormalize: bool
+
+    def select(self, backend):
+        from .experts.fused import fused_topk
+
+        return fused_topk(self.inputs, self.logits, self.topk, self.renormalize)
+
+
+@dataclass(frozen=True)
 class GroupedRouting:
     """Raw router scores and model semantics, before selecting any kernel path."""
 

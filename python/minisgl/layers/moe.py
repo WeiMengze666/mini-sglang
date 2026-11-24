@@ -26,6 +26,7 @@ class MoELayer(BaseOP):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self._comm = DistributedCommunicator()
+        self._executor = None
 
         tp_info = get_tp_info()
         self.tp_size = tp_info.size
@@ -49,19 +50,33 @@ class MoELayer(BaseOP):
             intermediate_size_per_partition,
         )
 
-    def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor):
-        ctx = get_global_ctx()
-        final_hidden_states = ctx.moe_backend.forward(
-            hidden_states=hidden_states,
-            w1=self.gate_up_proj,
-            w2=self.down_proj,
-            gating_output=router_logits,
-            topk=self.top_k,
-            renormalize=self.renormalize,
+    def after_load(self):
+        from minisgl.moe import get_moe_backend
+
+        self._executor = get_moe_backend().prepare_stacked(
+            self.gate_up_proj,
+            self.down_proj,
             activation=self.activation.name,
-            apply_router_weight_on_input=self.apply_router_weight_on_input,
-            expert_partition=self._expert_partition,
-            num_global_experts=self.num_experts,
+            weight_on_input=self.apply_router_weight_on_input,
+            partition=self._expert_partition,
+            global_experts=self.num_experts,
+            top_k=self.top_k,
+        )
+
+    def prepare_runtime(self, context, *, dry_run=False):
+        return get_global_ctx().moe_backend.prepare_local(
+            self._executor, None, context, dry_run=dry_run
+        )
+
+    def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor):
+        from minisgl.moe.routing import SoftmaxTopK
+
+        ctx = get_global_ctx()
+        if self._executor is None:
+            self.after_load()
+        routing = SoftmaxTopK(hidden_states, router_logits, self.top_k, self.renormalize)
+        final_hidden_states = ctx.moe_backend.forward_experts(
+            self._executor, hidden_states, routing
         )
         if self.tp_size > 1:
             (final_hidden_states,) = ctx.moe_backend.reduce_outputs(self._comm, final_hidden_states)
