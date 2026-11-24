@@ -59,7 +59,7 @@ def test_actual_auto_extra_buffer_factory_keeps_native_decode_capability(monkeyp
     from minisgl.distributed import DistributedInfo
     from minisgl.engine.config import EngineConfig
 
-    layout = SimpleNamespace(head_dim=128, state_bytes_per_request=lambda *a, **k: 1)
+    layout = SimpleNamespace(head_dim=128, recurrent_layers=(0,), mla_layers=(1,), supports_context_sharding=True, state_bytes_per_request=lambda *a, **k: 1)
     model = SimpleNamespace(
         cache_config=layout,
         has_recurrent_state=True,

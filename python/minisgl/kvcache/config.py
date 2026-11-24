@@ -42,6 +42,10 @@ class HybridCacheConfig:
         ):
             raise ValueError("Invalid hybrid cache dimensions")
 
+    @property
+    def supports_context_sharding(self):
+        return bool(self.mla_layers)
+
     def cache_bytes_per_token(self, dtype: torch.dtype) -> int:
         return len(self.mla_layers) * (self.latent_dim + self.key_dim) * dtype.itemsize
 

@@ -18,17 +18,13 @@ from minisgl.layers.norm import TorchRMSNorm
 
 from ..base import BaseLLMModel
 from .checkpoint import KimiCheckpoint, configure_linears
-from .config import is_moe_layer, kda_config, mla_config, validate_partitions
+from .config import is_moe_layer, kda_config, kda_layer_ids, mla_config, validate_partitions
 
 
 class KimiDecoderLayer(BaseOP):
-    def __init__(self, config, layer_id, attention_config=None):
+    def __init__(self, config, layer_id, attention_config):
         self._layer_id = layer_id
-        self._is_kda = layer_id + 1 in config.linear_attn_config["kda_layers"]
-        if attention_config is None:
-            attention_config = kda_config(config) if self._is_kda else mla_config(config)
-        if not isinstance(attention_config, KDAConfig if self._is_kda else MLAConfig):
-            raise ValueError("Declared attention configuration differs from the decoder layer")
+        self._is_kda = isinstance(attention_config, KDAConfig)
         self.self_attn = KDALayer(attention_config) if self._is_kda else MLALayer(attention_config)
         is_moe = is_moe_layer(config, layer_id)
         self.mlp = LatentMoE(config) if is_moe else GatedMLP(config)
@@ -86,12 +82,15 @@ class KimiModel(BaseOP):
             or set(declared) != set(range(config.num_hidden_layers))
         ):
             raise ValueError("Attention records must cover every decoder layer exactly once")
+        kda_ids = frozenset(kda_layer_ids(config))
+        if not declared:
+            kda, mla = kda_config(config), mla_config(config)
+            declared = {i: kda if i in kda_ids else mla for i in range(config.num_hidden_layers)}
+        elif any(isinstance(spec, KDAConfig) != (i in kda_ids) for i, spec in declared.items()):
+            raise ValueError("Declared attention configuration differs from the decoder layer")
         self.embed_tokens = Embedding(config.vocab_size, config.hidden_size)
         self.layers = OPList(
-            [
-                KimiDecoderLayer(config, i, declared[i] if attention_configs else None)
-                for i in range(config.num_hidden_layers)
-            ]
+            [KimiDecoderLayer(config, i, declared[i]) for i in range(config.num_hidden_layers)]
         )
         self.norm = TorchRMSNorm(config.hidden_size, config.rms_norm_eps)
         self._attn_res = config.attn_res_block_size is not None

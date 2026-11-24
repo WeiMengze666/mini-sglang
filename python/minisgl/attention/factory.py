@@ -28,6 +28,7 @@ class AttentionBackendSpec:
     create: BackendCreator
     stateful_layers: bool = False
     cuda_graphs: bool = True
+    context_sharding: bool = False
 
     def __call__(self, config: ModelConfig) -> BaseAttnBackend:
         return self.create(config)
@@ -36,12 +37,14 @@ class AttentionBackendSpec:
 SUPPORTED_ATTENTION_BACKENDS = Registry[AttentionBackendSpec]("Attention Backend")
 
 
-def register_attention_backend(name, *, stateful_layers=False, cuda_graphs=True):
+def register_attention_backend(
+    name, *, stateful_layers=False, cuda_graphs=True, context_sharding=False
+):
     """Declare startup capabilities without constructing GPU resources."""
 
     def register(create):
         SUPPORTED_ATTENTION_BACKENDS.register(name)(
-            AttentionBackendSpec(create, stateful_layers, cuda_graphs)
+            AttentionBackendSpec(create, stateful_layers, cuda_graphs, context_sharding)
         )
         return create
 
@@ -60,45 +63,52 @@ def load_attention_provider(module_name: str) -> None:
     register()
 
 
-@register_attention_backend("torch", stateful_layers=True, cuda_graphs=False)
+def _compose_layers(config, kda, mla):
+    layout = config.cache_config
+    if not layout.recurrent_layers:
+        return mla()
+    if not layout.mla_layers:
+        return kda()
+    return HybridAttnBackend(kda(), mla(), config.is_kda_layer)
+
+
+@register_attention_backend("torch", stateful_layers=True, cuda_graphs=False, context_sharding=True)
 def create_torch_backend(config: ModelConfig, *, cache=None):
     from .kda.backend import KDAAttentionBackend
     from .mla.backend import MLAAttentionBackend
 
     if config.cache_config is None:
         raise ValueError("The Torch reference backend requires a KDA/MLA cache layout")
-    return HybridAttnBackend(
-        KDAAttentionBackend(config, cache=cache),
-        MLAAttentionBackend(config, cache=cache),
-        config.is_kda_layer,
+    return _compose_layers(
+        config,
+        lambda: KDAAttentionBackend(config, cache=cache),
+        lambda: MLAAttentionBackend(config, cache=cache),
     )
 
 
-def _create_hybrid(config, prefill: str, decode: str):
+def _create_layer_backend(config, prefill: str, decode: str):
     from minisgl.utils import init_logger
 
     from .kda.backend import KDAAttentionBackend
     from .kda.registry import get_kda_kernel
     from .mla.flashinfer import FlashInferMLABackend
 
-    init_logger(__name__).info_rank0(
-        f"Attention kernels: KDA prefill={prefill}, decode={decode}; "
-        "MLA prefill=flashinfer, decode=flashinfer"
-    )
-    return HybridAttnBackend(
-        KDAAttentionBackend(config, get_kda_kernel(prefill), decode_kernel=get_kda_kernel(decode)),
-        FlashInferMLABackend(config),
-        config.is_kda_layer,
-    )
+    def create_kda():
+        init_logger(__name__).info_rank0(f"KDA kernels: prefill={prefill}, decode={decode}")
+        return KDAAttentionBackend(
+            config, get_kda_kernel(prefill), decode_kernel=get_kda_kernel(decode)
+        )
+
+    return _compose_layers(config, create_kda, lambda: FlashInferMLABackend(config))
 
 
-@register_attention_backend("flashinfer", stateful_layers=True)
+@register_attention_backend("flashinfer", stateful_layers=True, context_sharding=True)
 def create_flashinfer_backend(config: ModelConfig):
     from .flashinfer import FlashInferBackend
 
     if config.cache_config is None:
         return FlashInferBackend(config)
-    return _create_hybrid(config, "flashinfer", "flashinfer")
+    return _create_layer_backend(config, "flashinfer", "flashinfer")
 
 
 @register_attention_backend("trtllm")
@@ -132,8 +142,12 @@ def create_attention_backend(backend: str, config: ModelConfig) -> BaseAttnBacke
         from .kda.flashinfer import supports_chunk_prefill
 
         device = get_global_ctx().kv_cache.device
-        prefill = "flashinfer" if supports_chunk_prefill(device) else "triton"
-        return _create_hybrid(config, prefill, "triton")
+        prefill = (
+            "flashinfer"
+            if config.has_recurrent_state and supports_chunk_prefill(device)
+            else "triton"
+        )
+        return _create_layer_backend(config, prefill, "triton")
     validate_attn_backend(backend, allow_auto=False)
     if "," in backend:
         prefill, decode = backend.split(",")

@@ -227,7 +227,7 @@ def test_same_official_flag_names_defaults_and_validation():
         parse_args(base + ["--weight-loader-prefetch-num-threads", "0"])
 
 
-def test_both_engine_weight_paths_forward_prefetch_options(monkeypatch):
+def test_engine_weight_stream_forwards_prefetch_options(monkeypatch):
     import minisgl.engine.engine as module
 
     expected = {"weight": torch.ones(2)}
@@ -243,15 +243,15 @@ def test_both_engine_weight_paths_forward_prefetch_options(monkeypatch):
     )
     config = SimpleNamespace(
         model_path="unused",
+        model_config=object(),
         use_dummy_weight=False,
         weight_loader_prefetch_checkpoints=True,
         weight_loader_prefetch_num_threads=8,
     )
     assert len(list(module.Engine._iter_weights(fake, config))) == 1
-    assert set(module.Engine._load_weight_state_dict(fake, config)) == {"weight"}
-    assert len(calls) == 2 and all(
-        c[2] == {"prefetch": True, "prefetch_num_threads": 8} for c in calls
-    )
+    assert calls == [("unused", torch.device("cpu"), {
+        "config": config.model_config, "prefetch": True, "prefetch_num_threads": 8,
+    })]
 
 
 def test_enabled_cross_shard_packed_scales_and_column_slices(tmp_path):

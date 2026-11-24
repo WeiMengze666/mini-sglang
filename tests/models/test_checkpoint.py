@@ -70,10 +70,11 @@ def test_gqa_replication_and_fused_weights_use_rank_local_checkpoint_slices(tmp_
             prefix + "self_attn.k_proj.weight": k,
             prefix + "mlp.up_proj.weight": up,
             "language_model.model.embed_tokens.weight": vocab,
+            "language_model.lm_head.weight": -vocab,
         },
         tmp_path / "second.safetensors",
     )
-    config = SimpleNamespace(num_kv_heads=2, is_moe=False)
+    config = SimpleNamespace(tie_word_embeddings=True, num_kv_heads=2, is_moe=False)
     for rank in range(4):
         layout = ParallelLayout(DistributedInfo(rank, 4))
         loaded = dict(
@@ -81,6 +82,7 @@ def test_gqa_replication_and_fused_weights_use_rank_local_checkpoint_slices(tmp_
                 tmp_path, "cpu", checkpoint_type=HuggingFaceCheckpoint, config=config, layout=layout
             )
         )
+        assert "lm_head.weight" not in loaded
         local = slice(rank * 2, rank * 2 + 2)
         kv = slice(rank // 2 * 2, rank // 2 * 2 + 2)
         torch.testing.assert_close(

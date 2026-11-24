@@ -27,7 +27,12 @@ class HuggingFaceCheckpoint(Checkpoint):
     def normalize(self, name):
         if name.startswith(("vision_tower.", "multi_modal_projector.")):
             return None
-        return name.removeprefix("language_model.")
+        name = name.removeprefix("language_model.")
+        if name in ("lm_head.weight", "lm_head.bias") and getattr(
+            self.config, "tie_word_embeddings", False
+        ):
+            return None
+        return name
 
     def shard(self, name, shape):
         tp = self.layout.expert_tensor if _EXPERT.match(name) else self.layout.tensor

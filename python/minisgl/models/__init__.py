@@ -7,12 +7,13 @@ def create_model(model_config: ModelConfig) -> BaseLLMModel:
     return get_model_class(model_config.architectures[0], model_config)
 
 
-def load_weight(model_path, device, *, prefetch=False, prefetch_num_threads=4):
+def load_weight(model_path, device, *, config=None, prefetch=False, prefetch_num_threads=4):
     from minisgl.checkpoint.loader import load_checkpoint
     from minisgl.distributed.layout import get_parallel_layout
     from minisgl.utils import cached_load_hf_config
 
-    config = ModelConfig.from_hf(cached_load_hf_config(model_path))
+    if config is None:
+        config = ModelConfig.from_hf(cached_load_hf_config(model_path))
     checkpoint = model_class(config.architectures[0]).checkpoint_type
     return load_checkpoint(
         model_path,

@@ -12,7 +12,7 @@ from minisgl.layers.latent_moe import GatedExpert, GatedMLP
 from minisgl.layers.mla import MLALayer
 from minisgl.layers.weight import quantization_rules, replace_quantized_linears
 
-from .config import KimiTextConfig, validate_partitions
+from .config import KimiTextConfig, kda_layer_ids, validate_partitions
 
 _LAYER = re.compile(r"(?:^|\.)layers\.(\d+)\.")
 
@@ -93,6 +93,10 @@ class KimiCheckpoint(Checkpoint):
         return text_weight_name(name, getattr(self.config, "num_hidden_layers", None))
 
     @cached_property
+    def kda_layers(self):
+        return frozenset(kda_layer_ids(self.config))
+
+    @cached_property
     def kda(self):
         kda = self.config.linear_attn_config
         return KDALayer.weight_shards(self.layout.tensor, kda["num_heads"], kda["head_dim"])
@@ -134,11 +138,7 @@ class KimiCheckpoint(Checkpoint):
             return None
         _, _, layer, module, parameter = parts
         if module == "self_attn":
-            weights = (
-                self.kda
-                if int(layer) + 1 in self.config.linear_attn_config["kda_layers"]
-                else self.mla
-            )
+            weights = self.kda if int(layer) in self.kda_layers else self.mla
         elif module != "mlp":
             return None
         elif parameter.startswith("experts."):

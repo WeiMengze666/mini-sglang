@@ -129,6 +129,11 @@ def mla_config(config):
     )
 
 
+def kda_layer_ids(config):
+    """Convert the checkpoint’s one-based KDA layer IDs at the model boundary."""
+    return tuple(i - 1 for i in config.linear_attn_config["kda_layers"])
+
+
 def cache_config(config):
     from minisgl.kvcache.config import HybridCacheConfig
 
@@ -136,7 +141,7 @@ def cache_config(config):
     return HybridCacheConfig(
         config.num_hidden_layers,
         tuple(i - 1 for i in c["full_attn_layers"]),
-        tuple(i - 1 for i in c["kda_layers"]),
+        kda_layer_ids(config),
         config.kv_lora_rank,
         config.qk_rope_head_dim,
         c["num_heads"],
@@ -181,3 +186,42 @@ def validate_partitions(config, layout):
                 layout.tensor.size,
                 "shared intermediate_size",
             )
+
+
+def model_config_from_hf(config):
+    from minisgl.models.config import ModelConfig, RotaryConfig
+
+    kimi = KimiTextConfig(**config.to_dict())
+    kimi.validate_text()
+    cache = cache_config(kimi)
+    kda, mla = kda_config(kimi), mla_config(kimi)
+    return ModelConfig(
+        num_layers=kimi.num_hidden_layers,
+        num_qo_heads=kimi.num_attention_heads,
+        num_kv_heads=1,
+        head_dim=kimi.kv_lora_rank + kimi.qk_rope_head_dim,
+        hidden_size=kimi.hidden_size,
+        vocab_size=kimi.vocab_size,
+        intermediate_size=kimi.intermediate_size,
+        rms_norm_eps=kimi.rms_norm_eps,
+        rotary_config=RotaryConfig(
+            head_dim=kimi.qk_rope_head_dim,
+            rotary_dim=kimi.qk_rope_head_dim,
+            max_position=kimi.max_position_embeddings,
+            base=kimi.rope_theta,
+            scaling=kimi.rope_scaling,
+        ),
+        hidden_act=kimi.hidden_act,
+        tie_word_embeddings=kimi.tie_word_embeddings,
+        num_experts=kimi.num_experts,
+        num_experts_per_tok=kimi.num_experts_per_token,
+        moe_intermediate_size=getattr(kimi, "moe_intermediate_size", 0),
+        norm_topk_prob=kimi.moe_renormalize,
+        model_type="kimi_linear",
+        architectures=["KimiK3LinearForCausalLM"],
+        hf_config=kimi,
+        cache_config=cache,
+        attention_configs=tuple(
+            (i, kda if i in cache.recurrent_layers else mla) for i in range(kimi.num_hidden_layers)
+        ),
+    )

@@ -135,11 +135,26 @@ def test_attention_factory_owns_its_kda_kernel(monkeypatch, name, kernel):
     ctx.kv_cache = cache
     monkeypatch.setattr(core, "_GLOBAL_CTX", ctx)
     monkeypatch.setattr(flashinfer, "FlashInferMLABackend", lambda config: Backend("mla", []))
-    config = SimpleNamespace(cache_config=object(), is_kda_layer=lambda layer_id: layer_id == 0)
+    config = SimpleNamespace(cache_config=SimpleNamespace(recurrent_layers=(0,), mla_layers=(1,)), has_recurrent_state=True, is_kda_layer=lambda layer_id: layer_id == 0)
     backend = create_attention_backend(name, config)
     assert isinstance(backend, HybridAttnBackend)
     assert backend.kda_backend.prefill_kernel.name == kernel
     assert backend.is_kda_layer(0) and not backend.is_kda_layer(1)
+
+
+@pytest.mark.parametrize("recurrent,mla,expected", [((0,), (), "kda"), ((), (0,), "mla")])
+def test_single_kind_layout_constructs_only_its_backend(recurrent, mla, expected):
+    from minisgl.attention.factory import _compose_layers
+
+    layout = SimpleNamespace(recurrent_layers=recurrent, mla_layers=mla)
+    calls = []
+    def make(name):
+        calls.append(name)
+        return name
+    assert _compose_layers(
+        SimpleNamespace(cache_config=layout), lambda: make("kda"), lambda: make("mla")
+    ) == expected
+    assert calls == [expected]
 
 
 def test_attention_provider_registration_is_explicit_and_idempotent(monkeypatch):

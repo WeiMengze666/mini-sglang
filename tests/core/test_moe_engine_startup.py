@@ -137,7 +137,6 @@ def construction(monkeypatch):
     monkeypatch.setattr(Engine, "_sync_get_memory", memory)
     monkeypatch.setattr(Engine, "_check_capacity", lambda *args: events.append("precheck"))
     monkeypatch.setattr(Engine, "_iter_weights", lambda *args: iter(()))
-    monkeypatch.setattr(Engine, "_load_weight_state_dict", lambda *args: {})
     monkeypatch.setattr(Engine, "_determine_num_pages", pages)
     monkeypatch.setattr(torch, "zeros", device_zeros)
     monkeypatch.setattr(torch, "manual_seed", lambda *args: None)

@@ -76,6 +76,7 @@ def test_engine_stream_only_casts_floating_parameters(monkeypatch):
 
     monkeypatch.setattr(module, "load_weight", lambda *args, **kwargs: iter(raw))
     config = EngineConfig("x", DistributedInfo(0, 1), torch.float32)
+    config.__dict__["model_config"] = object()
     result = dict(engine._iter_weights(config))
     assert result["layers.0.weight"].dtype == torch.float32
     assert result["layers.0.scale"] is raw[1][1]

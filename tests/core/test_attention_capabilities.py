@@ -83,3 +83,19 @@ def test_registration_still_constructs_through_the_common_factory(backends):
     value = object()
     actual = create_attention_backend("native-test", value)
     assert actual.config is value and backends == [value]
+
+
+def test_dcp_checks_both_storage_and_selected_decode_backend(backends):
+    value = config("native-test", False)
+    object.__setattr__(value, "tp_info", DistributedInfo(0, 2))
+    object.__setattr__(value, "dcp_size", 2)
+    value.model_config.cache_config.supports_context_sharding = True
+    with pytest.raises(ValueError, match="context-sharded"):
+        _adjust_config(value)
+    register_attention_backend("dcp-test", stateful_layers=True, context_sharding=True)(lambda c: None)
+    object.__setattr__(value, "attention_backend", "native-test,dcp-test")
+    value.model_config.cache_config.supports_context_sharding = False
+    with pytest.raises(ValueError, match="context-sharded"):
+        _adjust_config(value)
+    value.model_config.cache_config.supports_context_sharding = True
+    _adjust_config(value)

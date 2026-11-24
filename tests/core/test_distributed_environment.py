@@ -72,7 +72,7 @@ def test_rank_device_precedes_provider_and_probe_with_original_startup_order(mon
     )
     config.__dict__["model_config"] = SimpleNamespace(
         hf_config=SimpleNamespace(quantization_config=None),
-        cache_config=SimpleNamespace(state_bytes_per_request=lambda *args, **kwargs: 0),
+        cache_config=SimpleNamespace(supports_context_sharding=True, state_bytes_per_request=lambda *args, **kwargs: 0),
         has_recurrent_state=True,
         is_moe=False,
         num_qo_heads=8,

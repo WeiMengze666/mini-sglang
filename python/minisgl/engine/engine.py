@@ -4,7 +4,7 @@ import gc
 import os
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Callable, Dict, Iterator, NamedTuple, NoReturn, Tuple
+from typing import Any, Callable, Iterator, NamedTuple, NoReturn, Tuple
 
 import torch
 from minisgl.attention import (
@@ -154,9 +154,7 @@ class Engine:
         logger.info_rank0(f"Free memory before loading model: {mem_GB(init_free_memory)}")
         if config.model_config.cache_config is not None:
             self._check_capacity(init_free_memory, config)
-            self.model.load_weights(self._iter_weights(config), device=self.device)
-        else:
-            self.model.load_state_dict(self._load_weight_state_dict(config))
+        self.model.load_weights(self._iter_weights(config), device=self.device)
 
         if config.model_config.is_moe and worker_owner is not None and worker_owner.fresh_worker:
             try:
@@ -217,7 +215,8 @@ class Engine:
 
         # ======================= Attention & MoE backend initialization ========================
         self.ctx.attn_backend = self.attn_backend = create_attention_backend(
-            config.attention_backend, config.model_config,
+            config.attention_backend,
+            config.model_config,
         )
         self.checkpoint_quantum = _prepare_checkpoint_model(
             self.attn_backend,
@@ -386,6 +385,7 @@ class Engine:
         for name, tensor in load_weight(
             config.model_path,
             torch.device("cpu"),
+            config=config.model_config,
             prefetch=config.weight_loader_prefetch_checkpoints,
             prefetch_num_threads=config.weight_loader_prefetch_num_threads,
         ):
@@ -393,24 +393,6 @@ class Engine:
             if target is not None and target.is_floating_point() and tensor.is_floating_point():
                 tensor = tensor.to(target.dtype)
             yield name, tensor
-
-    def _load_weight_state_dict(self, config: EngineConfig) -> Dict[str, torch.Tensor]:
-        if config.use_dummy_weight:
-            return {
-                k: torch.randn_like(v, device=self.device)
-                for k, v in self.model.state_dict().items()
-            }
-        else:
-            expected = self.model.state_dict()
-            return {
-                k: v.to(expected[k].dtype) if k in expected else v
-                for k, v in load_weight(
-                    config.model_path,
-                    self.device,
-                    prefetch=config.weight_loader_prefetch_checkpoints,
-                    prefetch_num_threads=config.weight_loader_prefetch_num_threads,
-                )
-            }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
         layout = config.model_config.cache_config
@@ -634,8 +616,15 @@ def _adjust_config(config: EngineConfig):
     ParallelLayout(
         DistributedInfo(config.tp_info.rank, config.tp_info.size), config.dcp_size, config.ep_size
     )
-    if config.dcp_size > 1 and config.model_config.cache_config is None:
-        raise ValueError("DCP requires a context-sharded attention/cache implementation")
+    if config.dcp_size > 1:
+        cache = config.model_config.cache_config
+        decode = config.attention_backend.split(",")[-1]
+        if (
+            cache is None
+            or not cache.supports_context_sharding
+            or (decode != "auto" and not SUPPORTED_ATTENTION_BACKENDS[decode].context_sharding)
+        ):
+            raise ValueError("DCP requires a context-sharded attention/cache implementation")
     if config.ep_size > 1:
         if not config.model_config.is_moe:
             raise ValueError("EP requires a model with routed experts")
