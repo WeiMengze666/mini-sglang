@@ -7,12 +7,14 @@ import secrets
 from .formats import reasoning as reasoning_formats
 from .formats.xtml_tools import ToolDetector
 
+_TOOL_DETECTORS = {"kimi_k3": ToolDetector}
+
 
 def validate_parser_names(reasoning=None, tool_calls=None):
     unknown_reasoning = (
         reasoning if reasoning and reasoning.lower() not in reasoning_formats.FORMATS else None
     )
-    unknown_tools = tool_calls if tool_calls and tool_calls != "kimi_k3" else None
+    unknown_tools = tool_calls if tool_calls and tool_calls not in _TOOL_DETECTORS else None
     if unknown_reasoning or unknown_tools:
         from .formats.external import validate_parser_names as validate_external
 
@@ -35,8 +37,8 @@ class CompletionParser:
         if reasoning in reasoning_formats.FORMATS:
             self.reasoning = reasoning_formats.ReasoningParser(reasoning, data)
             reasoning = None
-        if tool_calls == "kimi_k3":
-            self.tools = ToolDetector()
+        if tool_calls in _TOOL_DETECTORS:
+            self.tools = _TOOL_DETECTORS[tool_calls]()
             tool_calls = None
         if reasoning or tool_calls:
             from .formats.external import create

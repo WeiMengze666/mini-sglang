@@ -38,11 +38,14 @@ class CacheManager:
         self.arena = getattr(pool, "arena", None)
         self._handles = {}
         self._tracking = {}
-        states = getattr(pool, "recurrent", None)
-        self.tracks_decode = states is not None and states.checkpoint_enabled
+        self.tracks_decode = self.states is not None and self.states.checkpoint_enabled
         self._tracking_slots = 2 if getattr(pool, "supports_overlap", False) else 1
         self._checkpoint_cpu_group = cpu_group
         self._checkpoint_quantum = checkpoint_quantum
+
+    @property
+    def states(self):
+        return getattr(self.pool, "recurrent", None)
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
@@ -51,15 +54,14 @@ class CacheManager:
 
     def restore_state(self, table_idx: int, uid: int, handle: BaseCacheHandle) -> None:
         self.prefix_cache.restore_state(table_idx, uid, handle)
-        if getattr(self.pool, "recurrent", None) is not None and handle.cached_len == 0:
-            while True:
-                try:
-                    self.pool.recurrent.reserve_request(table_idx, uid)
-                    break
-                except MemoryError:
-                    if not self.prefix_cache.evict_checkpoint():
-                        raise
+        if self.states is not None and handle.cached_len == 0:
+            self.states.reserve_request(table_idx, uid, evict=self.prefix_cache.evict_checkpoint)
         self._handles[table_idx, uid] = handle
+
+    def fail_device(self, error):
+        if self.states is not None:
+            self.states.fail_device(error)
+        raise error
 
     def release_state(self, table_idx, uid):
         if self.arena is not None:
@@ -108,7 +110,7 @@ class CacheManager:
                 raise RuntimeError("Batch already owns a checkpoint plan")
             capability = getattr(backend, "checkpoint_quantum", None)
             quantum = capability(batch) if capability is not None else None
-            states = getattr(self.pool, "recurrent", None)
+            states = self.states
             if not coordinated and (not batch.is_prefill or quantum is None or states is None):
                 return ()
             grid_quantum = self._checkpoint_quantum if coordinated else quantum
@@ -201,7 +203,7 @@ class CacheManager:
         failure = None
         for plan in plans:
             try:
-                self.pool.recurrent.abort_checkpoint(plan)
+                self.states.abort_checkpoint(plan)
             except BaseException as exc:
                 if error is not None:
                     error.add_note(f"Checkpoint abort failed: {exc}")
@@ -259,7 +261,7 @@ class CacheManager:
         except BaseException as error:
             # A failed copy may still own device resources: the worker exits first.
             if staged or self.has_tracking:
-                self.pool.recurrent.fail_device(error)
+                self.fail_device(error)
             raise
         return staged
 
@@ -389,7 +391,7 @@ class CacheManager:
             self._free = lazy_free
             yield
         except BaseException as error:
-            states = getattr(self.pool, "recurrent", None)
+            states = self.states
             if states is not None and states.device_abort is not None:
                 # An owned worker must exit before deferred resources can be recycled.
                 failed = True

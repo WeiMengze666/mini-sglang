@@ -110,6 +110,11 @@ class Scheduler(SchedulerIOMixin):
         logger.info_rank0("Scheduler is idle, waiting for new reqs...")
         self.cache_manager.check_integrity()
 
+    def reset_completed_requests(self):
+        """Forget terminal requests after a drained offline run, before UIDs restart."""
+        self.finished_reqs.clear()
+        self.aborted_reqs.clear()
+
     def overlap_loop(self, last_data: ForwardData | None) -> ForwardData | None:
         """
         The main loop of overlapping scheduling and execution.
@@ -157,7 +162,7 @@ class Scheduler(SchedulerIOMixin):
             )
             if live_plans or staged or getattr(self.cache_manager, "has_tracking", False):
                 failed_with_live_state = True
-                self.engine.kv_cache.recurrent.fail_device(error)
+                self.cache_manager.fail_device(error)
             raise
         finally:
             if not failed_with_live_state:
@@ -192,13 +197,15 @@ class Scheduler(SchedulerIOMixin):
             # Serial prefill still publishes directly from its unadvanced working state.
             self._process_last_data(
                 ongoing_data,
-                staged=staged if ongoing_data is not None and not forward_input.batch.is_prefill else None,
+                staged=staged
+                if ongoing_data is not None and not forward_input.batch.is_prefill
+                else None,
             )
         except BaseException as error:
             live_plans = forward_input is not None and forward_input.batch.checkpoint_plan
             if live_plans or staged or getattr(self.cache_manager, "has_tracking", False):
                 failed_with_live_state = True
-                self.engine.kv_cache.recurrent.fail_device(error)
+                self.cache_manager.fail_device(error)
             raise
         finally:
             if not failed_with_live_state:
@@ -244,8 +251,12 @@ class Scheduler(SchedulerIOMixin):
         try:
             copy_done.synchronize()
         except BaseException as error:
-            if last_data.checkpoint_plan or staged or getattr(self.cache_manager, "has_tracking", False):
-                self.engine.kv_cache.recurrent.fail_device(error)
+            if (
+                last_data.checkpoint_plan
+                or staged
+                or getattr(self.cache_manager, "has_tracking", False)
+            ):
+                self.cache_manager.fail_device(error)
             raise
         error = None
         try:
@@ -299,7 +310,8 @@ class Scheduler(SchedulerIOMixin):
                             checkpoint = self.cache_manager.finished_checkpoint(req, length)
                             cache_args = {
                                 "frontier": (
-                                    checkpoint.length if checkpoint is not None
+                                    checkpoint.length
+                                    if checkpoint is not None
                                     else self.cache_manager.current_handle(req).cached_len
                                 ),
                                 "checkpoint": checkpoint,
@@ -412,7 +424,7 @@ class Scheduler(SchedulerIOMixin):
             )
         except BaseException as exc:
             if self.cache_manager.coordinates_checkpoints(batch) or batch.checkpoint_plan:
-                self.engine.kv_cache.recurrent.fail_device(exc)
+                self.cache_manager.fail_device(exc)
             error = exc
         self.cache_manager.checkpoint_metadata_ready(batch, error)
         return prepared
@@ -482,7 +494,7 @@ class Scheduler(SchedulerIOMixin):
             return forward_output
         except BaseException as error:
             if batch.checkpoint_plan:
-                self.engine.kv_cache.recurrent.fail_device(error)
+                self.cache_manager.fail_device(error)
             raise
 
 

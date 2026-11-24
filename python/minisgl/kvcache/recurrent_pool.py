@@ -319,12 +319,18 @@ class RecurrentStatePool:
             raise RuntimeError("Request has no working state lease")
         return self._slot_views(physical)
 
-    def reserve_request(self, table_idx, uid):
-        """Reserve all destinations, initialize, then publish request ownership."""
+    def reserve_request(self, table_idx, uid, *, evict=None):
+        """Reserve working state, initialize it, and then publish ownership."""
         self._slot(table_idx)
         if self._owners[table_idx] == uid:
             return
-        self._allocate_request_slots(table_idx, uid)
+        while True:
+            try:
+                self._allocate_request_slots(table_idx, uid)
+                break
+            except MemoryError:
+                if evict is None or not evict():
+                    raise
         try:
             conv, recurrent = self._working(table_idx)
             recurrent.zero_()

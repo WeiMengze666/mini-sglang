@@ -31,7 +31,6 @@ def scheduler_with_fault(log_path, case):
     scheduler.engine_stream_ctx = nullcontext()
     scheduler.engine = SimpleNamespace(
         stream=SimpleNamespace(wait_stream=lambda stream: None),
-        kv_cache=SimpleNamespace(recurrent=SimpleNamespace(fail_device=owner.abort)),
     )
     plans = (object(),) if case in ("new-plan", "message-with-old-plan", "old-plan") else ()
     batch = SimpleNamespace(reqs=[], checkpoint_plan=plans, is_prefill=True)
@@ -39,6 +38,7 @@ def scheduler_with_fault(log_path, case):
     scheduler._schedule_next_batch = lambda **kwargs: forward if case == "new-plan" else None
     scheduler._forward = error
     scheduler.cache_manager = SimpleNamespace(
+        fail_device=owner.abort,
         stage_states=lambda *args, **kwargs: {"lease": object()} if case == "staged" else {},
         release_staged=lambda staged: record("released"),
     )

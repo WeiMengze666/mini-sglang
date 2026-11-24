@@ -86,6 +86,8 @@ def _child(kind, folder):
         )
 
         class Cache:
+            fail_device = staticmethod(states.fail_device)
+
             def coordinates_checkpoints(self, batch):
                 return True
 
@@ -156,6 +158,7 @@ def test_failed_event_without_owner_retains_explicit_manual_lease():
     scheduler = object.__new__(Scheduler)
     scheduler.engine = SimpleNamespace(kv_cache=SimpleNamespace(recurrent=states))
     scheduler.cache_manager = SimpleNamespace(
+        fail_device=states.fail_device,
         release_checkpoint_plan=lambda *a, **kw: pytest.fail("unconfirmed lease reclaimed"),
     )
 

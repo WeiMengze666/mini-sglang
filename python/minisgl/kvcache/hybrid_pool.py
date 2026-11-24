@@ -182,12 +182,3 @@ class HybridCache(BaseKVCachePool):
     @property
     def num_layers(self) -> int:
         return self._num_layers
-
-    def k_cache(self, index: int) -> torch.Tensor:
-        raise NotImplementedError("Hybrid uses compressed MLA storage; use gather_mla")
-
-    def v_cache(self, index: int) -> torch.Tensor:
-        raise NotImplementedError("Hybrid uses compressed MLA storage; use gather_mla")
-
-    def store_kv(self, k, v, out_loc, layer_id) -> None:
-        raise NotImplementedError("Hybrid uses store_mla and request-local KDA state")

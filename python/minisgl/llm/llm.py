@@ -87,9 +87,7 @@ class LLM(Scheduler):
         self.pending_requests = []
         self.status_map = {}
         self.counter = 0
-        # The previous invocation drained before request IDs restart at zero.
-        self.finished_reqs.clear()
-        self.aborted_reqs.clear()
+        self.reset_completed_requests()
         if isinstance(sampling_params, SamplingParams):
             sampling_params = [sampling_params] * len(prompts)
         elif len(sampling_params) != len(prompts):
